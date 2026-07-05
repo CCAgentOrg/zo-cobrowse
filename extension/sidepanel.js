@@ -108,6 +108,8 @@ let ttsRate = 1.0;
 let ttsVoice = '';
 let ttsLang = 'en-US';
 let currentUtterance = null;
+let ttsWarmedUp = false;
+let voicesCache = [];
 
 // ---- DOM refs ----
 const msgsEl = $('#messages');
@@ -251,14 +253,14 @@ function bindEvents() {
   });
 
   // Send
-  sendBtn.addEventListener('click', sendQuery);
+  sendBtn.addEventListener('click', () => { warmupTts(); sendQuery(); });
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); warmupTts(); sendQuery(); }
   });
 
   // Mic button — STT
   if (micBtn) {
-    micBtn.addEventListener('click', startRecording);
+    micBtn.addEventListener('click', () => { warmupTts(); startRecording(); });
   }
 
   // Chips (event delegation for dynamically rendered chips)
@@ -831,8 +833,8 @@ async function runPendingActions() {
 // ---- Messages ----
 function addMessage(role, text) {
   addMessageDOM(role, text);
-  // Auto-read assistant messages via TTS
-  if (role === 'assistant' && ttsAutoRead) {
+  // Auto-read assistant messages via TTS (only after user gesture has primed the API)
+  if (role === 'assistant' && ttsAutoRead && ttsWarmedUp) {
     speakText(text);
   }
   // Persist non-system, non-thinking messages to current conversation
@@ -1094,50 +1096,63 @@ function startRecording() {
     addMessageDOM('error', 'Speech recognition not supported in this browser. Try Chrome.');
     return;
   }
-  try {
-    recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = ttsLang || 'en-US';
 
-    recognition.onresult = (event) => {
-      let final = '';
-      sttInterim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) {
-          final += event.results[i][0].transcript;
-        } else {
-          sttInterim += event.results[i][0].transcript;
-        }
-      }
-      if (final) {
-        input.value = (input.value + ' ' + final).trim();
-      }
-      // Show interim in placeholder
-      if (sttInterim) {
-        input.placeholder = '🎤 ' + sttInterim;
-      }
-    };
+  // Request microphone access first — Chrome blocks SpeechRecognition in
+  // extension pages without an explicit getUserMedia grant. Once the user
+  // approves, start recognition.
+  navigator.mediaDevices.getUserMedia({ audio: true })
+    .then((stream) => {
+      // Stop the stream immediately — we only needed the permission prompt
+      stream.getTracks().forEach(t => t.stop());
 
-    recognition.onerror = (event) => {
-      stopRecording();
-      if (event.error !== 'no-speech' && event.error !== 'aborted') {
-        addMessageDOM('error', `🎤 STT error: ${event.error}`);
+      try {
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = ttsLang || 'en-US';
+
+        recognition.onresult = (event) => {
+          let final = '';
+          sttInterim = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) {
+              final += event.results[i][0].transcript;
+            } else {
+              sttInterim += event.results[i][0].transcript;
+            }
+          }
+          if (final) {
+            input.value = (input.value + ' ' + final).trim();
+          }
+          // Show interim in placeholder
+          if (sttInterim) {
+            input.placeholder = '🎤 ' + sttInterim;
+          }
+        };
+
+        recognition.onerror = (event) => {
+          stopRecording();
+          if (event.error !== 'no-speech' && event.error !== 'aborted') {
+            addMessageDOM('error', `🎤 STT error: ${event.error}`);
+          }
+        };
+
+        recognition.onend = () => {
+          stopRecording();
+        };
+
+        recognition.start();
+        isRecording = true;
+        micBtn.classList.add('recording');
+        micBtn.textContent = '🔴';
+        micBtn.title = 'Stop recording';
+      } catch (err) {
+        addMessageDOM('error', `🎤 STT error: ${err.message}`);
       }
-    };
-
-    recognition.onend = () => {
-      stopRecording();
-    };
-
-    recognition.start();
-    isRecording = true;
-    micBtn.classList.add('recording');
-    micBtn.textContent = '🔴';
-    micBtn.title = 'Stop recording';
-  } catch (err) {
-    addMessageDOM('error', `🎤 STT error: ${err.message}`);
-  }
+    })
+    .catch((err) => {
+      addMessageDOM('error', `🎤 Microphone access denied: ${err.message}. Grant microphone permission in Chrome settings.`);
+    });
 }
 
 function stopRecording() {
@@ -1164,19 +1179,35 @@ async function loadTtsConfig() {
   ttsLang = saved.zoTtsLang || 'en-US';
   ttsRate = parseFloat(saved.zoTtsRate) || 1.0;
   ttsVoice = saved.zoTtsVoice || '';
+
+  // Populate voice cache & listen for async voice loading
+  voicesCache = window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = () => {
+    voicesCache = window.speechSynthesis.getVoices();
+  };
 }
 
-/** Resolve a voice name/URI to a SpeechSynthesisVoice, waiting for voices to load if needed. */
+/** Resolve a voice name/URI to a SpeechSynthesisVoice from cache. */
 function _resolveVoice(nameOrUri) {
-  const voices = window.speechSynthesis.getVoices();
-  if (voices.length > 0) {
-    return voices.find(v => v.name === nameOrUri || v.voiceURI === nameOrUri) || null;
+  return voicesCache.find(v => v.name === nameOrUri || v.voiceURI === nameOrUri) || null;
+}
+
+/** Warm up speech synthesis — speak a silent utterance so Chrome grants autoplay privilege for the session. */
+function warmupTts() {
+  if (ttsWarmedUp) return;
+  try {
+    const u = new SpeechSynthesisUtterance('.');
+    u.volume = 0;
+    window.speechSynthesis.speak(u);
+    ttsWarmedUp = true;
+  } catch {
+    // swallow — non-critical
   }
-  return null;
 }
 
 function speakText(text) {
   if (!text || !text.trim()) return;
+  warmupTts();
   window.speechSynthesis.cancel();
   const plain = text
     .replace(/[*_#`\[\]]/g, '')
