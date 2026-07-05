@@ -857,8 +857,19 @@ function escapeHtml(str) {
 
 function markdownToHtml(md) {
   if (!md) return '';
-  // Escape HTML, then convert markdown patterns
+  // Escape HTML to prevent XSS
   var html = escapeHtml(md);
+
+  // Horizontal rules
+  html = html.replace(/^-{3,}$/gm, '<hr>');
+
+  // Headings (### → <h3>, #### → <h4>, etc.)
+  html = html.replace(/^##### (.+)$/gm, '<h5>$1</h5>');
+  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
   // Code blocks: triple backtick with optional language
   html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
     var cls = lang ? ' class="lang-' + escapeHtml(lang) + '"' : '';
@@ -879,7 +890,49 @@ function markdownToHtml(md) {
     }
     return '<a href="' + safeUrl.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener noreferrer">' + text + '</a>';
   });
-  // Paragraphs for double newlines
+  // Bare URL auto-linking — wrap http(s):// URLs in anchor tags
+  html = html.replace(/(?<!="|>)(https?:\/\/[^\s<"]+)(?!["])/g, function(_, url) {
+    var safeUrl = url.replace(/[<>]/g, '');
+    if (!/^(https?:)/i.test(safeUrl)) return url;
+    return '<a href="' + safeUrl.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener noreferrer">' + safeUrl + '</a>';
+  });
+
+  // Lists + paragraphs: single-pass line processor
+  var lines = html.split('\n');
+  var out = [];
+  var listTag = null;
+  var listStart = -1;
+  function flushList(i) {
+    if (listStart === -1) return;
+    var tag = listTag;
+    out.push('<' + tag + '>');
+    for (var li = listStart; li < i; li++) {
+      var item = lines[li].replace(/^\d+\.\s+|^[-*]\s+/, '');
+      out.push('<li>' + item + '</li>');
+    }
+    out.push('</' + tag + '>');
+    listStart = -1;
+    listTag = null;
+  }
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (/^\d+\.\s/.test(line)) {
+      if (listTag === 'ul' && listStart !== -1) flushList(i);
+      if (listStart === -1) { listStart = i; listTag = 'ol'; }
+    } else if (/^[-*]\s/.test(line)) {
+      if (listTag === 'ol' && listStart !== -1) flushList(i);
+      if (listStart === -1) { listStart = i; listTag = 'ul'; }
+    } else if (/^\s*$/.test(line) && listStart !== -1) {
+      flushList(i);
+    } else {
+      if (listStart !== -1) flushList(i);
+      out.push(line);
+    }
+  }
+  if (listStart !== -1) flushList(lines.length);
+  html = out.join('\n');
+
+  // Paragraphs for double newlines (must run last)
   var paras = html.split('\n\n').filter(function(p) { return p.trim(); });
   if (paras.length > 1) {
     html = paras.map(function(p) { return '<p>' + p.replace(/\n/g, '<br>') + '</p>'; }).join('');
