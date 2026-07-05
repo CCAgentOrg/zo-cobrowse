@@ -870,8 +870,15 @@ function markdownToHtml(md) {
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   // Italic
   html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  // Links
-  html = html.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Links — only allow safe URL schemes
+  html = html.replace(/\[(.+?)\]\((.+?)\)/g, function(_, text, url) {
+    var safeUrl = url.trim();
+    // Only http:, https:, mailto:, and relative paths are allowed
+    if (!/^(https?:\/\/|mailto:|\/|#)/i.test(safeUrl)) {
+      return text; // render as plain text instead of a link
+    }
+    return '<a href="' + safeUrl.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener noreferrer">' + text + '</a>';
+  });
   // Paragraphs for double newlines
   var paras = html.split('\n\n').filter(function(p) { return p.trim(); });
   if (paras.length > 1) {

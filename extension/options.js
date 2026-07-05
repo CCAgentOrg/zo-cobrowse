@@ -85,26 +85,30 @@ document.addEventListener('DOMContentLoaded', () => {
     return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  // Load config
-  chrome.storage.sync.get([
-    'zoAccessToken', 'zoModel', 'zoSpaceEndpoint', 'zoPersonaId', 'zoQuickActions',
-    'zoTtsLang', 'zoTtsRate', 'zoTtsAutoRead'
-  ], (result) => {
-    if (result.zoAccessToken) tokenInput.value = result.zoAccessToken;
-    if (result.zoSpaceEndpoint) spaceEndpointInput.value = result.zoSpaceEndpoint;
-    if (result.zoPersonaId) personaSelect.value = result.zoPersonaId;
-    quickActions = result.zoQuickActions || [];
-    renderQuickActionsEditor();
-    if (result.zoAccessToken) populateModels(tokenInput.value, result.zoModel);
-    if (result.zoAccessToken) populatePersonas(tokenInput.value, personaSelect);
+  // Load config — sensitive fields from storage.local, rest from storage.sync
+  chrome.storage.local.get(['zoAccessToken', 'zoSpaceEndpoint'], (localResult) => {
+    chrome.storage.sync.get([
+      'zoModel', 'zoPersonaId', 'zoQuickActions',
+      'zoTtsLang', 'zoTtsRate', 'zoTtsAutoRead'
+    ], (syncResult) => {
+      const token = localResult.zoAccessToken;
+      const spaceEndpoint = localResult.zoSpaceEndpoint;
+      if (token) tokenInput.value = token;
+      if (spaceEndpoint) spaceEndpointInput.value = spaceEndpoint;
+      if (syncResult.zoPersonaId) personaSelect.value = syncResult.zoPersonaId;
+      quickActions = syncResult.zoQuickActions || [];
+      renderQuickActionsEditor();
+      if (token) populateModels(token, syncResult.zoModel);
+      if (token) populatePersonas(token, personaSelect);
 
-    // Restore TTS fields
-    const langInput = document.getElementById('tts-lang');
-    const rateInput = document.getElementById('tts-rate');
-    const autoReadCheck = document.getElementById('tts-auto-read');
-    if (langInput) langInput.value = result.zoTtsLang || 'en-US';
-    if (rateInput) rateInput.value = result.zoTtsRate || '1.0';
-    if (autoReadCheck) autoReadCheck.checked = result.zoTtsAutoRead || false;
+      // Restore TTS fields
+      const langInput = document.getElementById('tts-lang');
+      const rateInput = document.getElementById('tts-rate');
+      const autoReadCheck = document.getElementById('tts-auto-read');
+      if (langInput) langInput.value = syncResult.zoTtsLang || 'en-US';
+      if (rateInput) rateInput.value = syncResult.zoTtsRate || '1.0';
+      if (autoReadCheck) autoReadCheck.checked = syncResult.zoTtsAutoRead || false;
+    });
   });
 
   // Token change → fetch models
@@ -158,19 +162,24 @@ document.addEventListener('DOMContentLoaded', () => {
       statusMsg.className = 'inline-status err';
       return;
     }
-    chrome.storage.sync.set({
+    // Store sensitive data separately in storage.local (not synced across devices)
+    chrome.storage.local.set({
       zoAccessToken: token,
-      zoModel: getModelValue(),
       zoSpaceEndpoint: spaceEndpointInput.value.trim() || 'https://cashlessconsumer.zo.space',
-      zoPersonaId: personaSelect.value,
-      zoQuickActions: quickActions,
-      zoTtsLang: (document.getElementById('tts-lang')?.value || 'en-US').trim(),
-      zoTtsRate: (document.getElementById('tts-rate')?.value || '1.0').trim(),
-      zoTtsAutoRead: !!(document.getElementById('tts-auto-read')?.checked),
     }, () => {
-      statusMsg.textContent = '✅ Saved!';
-      statusMsg.className = 'inline-status ok';
-      setTimeout(() => { statusMsg.textContent = ''; statusMsg.className = 'inline-status'; }, 3000);
+      // Non-sensitive config stays in storage.sync
+      chrome.storage.sync.set({
+        zoModel: getModelValue(),
+        zoPersonaId: personaSelect.value,
+        zoQuickActions: quickActions,
+        zoTtsLang: (document.getElementById('tts-lang')?.value || 'en-US').trim(),
+        zoTtsRate: (document.getElementById('tts-rate')?.value || '1.0').trim(),
+        zoTtsAutoRead: !!(document.getElementById('tts-auto-read')?.checked),
+      }, () => {
+        statusMsg.textContent = '✅ Saved!';
+        statusMsg.className = 'inline-status ok';
+        setTimeout(() => { statusMsg.textContent = ''; statusMsg.className = 'inline-status'; }, 3000);
+      });
     });
   });
 

@@ -13,21 +13,29 @@ let zoConversationId = null;
 
 // ---- Init ----
 chrome.storage.sync.get(
-  ['zoApiUrl', 'zoAccessToken', 'zoModel', 'zoSpaceEndpoint', 'zoPersonaId'],
+  ['zoApiUrl', 'zoModel', 'zoPersonaId'],
   (result) => {
     if (result.zoApiUrl) config.zoApiUrl = result.zoApiUrl;
-    if (result.zoAccessToken) config.zoAccessToken = result.zoAccessToken;
     if (result.zoModel) config.zoModel = result.zoModel;
-    if (result.zoSpaceEndpoint) config.zoSpaceEndpoint = result.zoSpaceEndpoint;
     if (result.zoPersonaId) config.zoPersonaId = result.zoPersonaId;
+  }
+);
+// Sensitive config from storage.local (not synced)
+chrome.storage.local.get(
+  ['zoAccessToken', 'zoSpaceEndpoint'],
+  (result) => {
+    if (result.zoAccessToken) config.zoAccessToken = result.zoAccessToken;
+    if (result.zoSpaceEndpoint) config.zoSpaceEndpoint = result.zoSpaceEndpoint;
   }
 );
 
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.zoApiUrl?.newValue) config.zoApiUrl = changes.zoApiUrl.newValue;
   if (changes.zoAccessToken?.newValue) config.zoAccessToken = changes.zoAccessToken.newValue;
+  else if (changes.zoAccessToken?.oldValue && !changes.zoAccessToken?.newValue) config.zoAccessToken = undefined;
   if (changes.zoModel?.newValue) config.zoModel = changes.zoModel.newValue;
   if (changes.zoSpaceEndpoint?.newValue) config.zoSpaceEndpoint = changes.zoSpaceEndpoint.newValue;
+  else if (changes.zoSpaceEndpoint?.oldValue && !changes.zoSpaceEndpoint?.newValue) config.zoSpaceEndpoint = undefined;
   if (changes.zoPersonaId?.newValue) config.zoPersonaId = changes.zoPersonaId.newValue;
 });
 
