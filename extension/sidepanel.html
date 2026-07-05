@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zo Co-browse</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="sidepanel">
+  <div id="app">
+    <!-- Header -->
+    <header id="header">
+      <div class="logo-row">
+        <span class="logo">⢕⣿ Zo</span>
+        <span id="status-dot" class="dot dot-disconnected" title="Disconnected"></span>
+      </div>
+      <div class="page-info" id="page-info">
+        <span class="page-url" id="page-url">— no page —</span>
+      </div>
+    </header>
+
+    <!-- Messages -->
+    <div id="messages" role="log" aria-live="polite">
+      <div class="msg msg-system">
+        <div class="msg-body">Connected to Zo. Ask me about this page, or tell me what to do.</div>
+      </div>
+    </div>
+
+    <!-- Actions bar (auto-execution controls) -->
+    <div id="actions-bar" class="hidden">
+      <div class="actions-header">
+        <span id="actions-reasoning"></span>
+        <button id="run-all-btn" class="btn btn-primary btn-sm">▶ Run All</button>
+        <button id="skip-btn" class="btn btn-sm">✕ Skip</button>
+      </div>
+    </div>
+
+    <!-- Input area -->
+    <div id="input-area">
+      <div class="input-row">
+        <input
+          type="text"
+          id="query-input"
+          placeholder="Ask Zo about this page..."
+          autofocus
+        />
+        <button id="send-btn" class="btn btn-primary" title="Send">→</button>
+      </div>
+      <div class="input-row action-chips">
+        <button class="chip" data-action="summarize">Summarize</button>
+        <button class="chip" data-action="extract-links">Extract links</button>
+        <button class="chip" data-action="fill-form">Fill forms</button>
+        <button class="chip" data-action="page-data">Page data</button>
+      </div>
+    </div>
+  </div>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

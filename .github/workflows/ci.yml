@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run tests
+        run: bun test
+
+      - name: Validate manifest.json
+        run: bun run -e "JSON.parse(Bun.file('extension/manifest.json').text()); console.log('manifest: valid')"
+
+      - name: Validate extension JS files
+        run: |
+          for f in extension/*.js; do
+            node --check "$f" && echo "OK: $f" || exit 1
+          done
+
+      - name: Check for Chrome API usage consistency
+        run: |
+          echo "=== Checking missing permissions ==="
+          grep -rn 'chrome\.' extension/*.js | grep -v 'console\|//' | sort -u
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Check for TODO/FIXME
+        run: |
+          ! grep -rn 'TODO\|FIXME\|HACK' extension/*.js extension/*.html extension/*.css backend/*.ts || \
+            echo "WARNING: Found TODO/FIXME markers"
+
+      - name: Check line endings
+        run: file extension/*.js extension/*.html extension/*.css | grep -v 'ASCII text\|UTF-8\|empty'
+
+  publish:
+    if: github.ref == 'refs/heads/main'
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create release artifact
+        run: |
+          mkdir -p dist
+          cp -r extension/ dist/zo-cobrowse/
+          cd dist && zip -r ../zo-cobrowse.zip zo-cobrowse/
+          echo "Artifact created: zo-cobrowse.zip"
+
+      - name: Upload extension package
+        uses: actions/upload-artifact@v4
+        with:
+          name: zo-cobrowse-extension
+          path: zo-cobrowse.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: zo-cobrowse.zip
+          generate_release_notes: true

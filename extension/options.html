@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zo Co-browse — Settings</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="settings">
+  <main class="settings-container">
+    <h1>⢕⣿ Zo Co-browse</h1>
+    <p class="subtitle">Connect your browser to your Zo Computer's AI backend.</p>
+
+    <form id="settings-form">
+      <!-- Connection -->
+      <fieldset>
+        <legend>Connection</legend>
+
+        <label for="api-url">Zo API URL</label>
+        <input type="url" id="api-url" value="https://api.zo.computer/zo/ask"
+               placeholder="https://api.zo.computer/zo/ask" />
+
+        <label for="access-token">Access Token</label>
+        <div class="input-with-toggle">
+          <input type="password" id="access-token" placeholder="zo_access_..." autocomplete="off" />
+          <button type="button" id="toggle-token" class="btn btn-sm" title="Show/hide token">👁</button>
+        </div>
+        <p class="hint">
+          Generate a token in your
+          <a href="https://cashlessconsumer.zo.computer/?t=settings&s=advanced" target="_blank">
+            Zo Settings → Advanced → Access Tokens
+          </a>
+        </p>
+
+        <label for="model">Model (optional)</label>
+        <input type="text" id="model" value="byok:b5700bd6-fca9-4aa2-9d31-bc9f5bb33bbc"
+               placeholder="Model ID or leave default" />
+
+        <label for="space-endpoint">Zo.space Endpoint</label>
+        <input type="url" id="space-endpoint" value="https://cashlessconsumer.zo.space"
+               placeholder="https://yourhandle.zo.space" />
+      </fieldset>
+
+      <!-- Co-browsing -->
+      <fieldset>
+        <legend>Co-browsing</legend>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="auto-run" checked />
+          <span>Auto-execute actions from Zo (click, fill, scroll)</span>
+        </label>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="capture-screenshots" />
+          <span>Include page screenshots in context (more accurate, uses more tokens)</span>
+        </label>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="confirm-navigation" checked />
+          <span>Confirm before Zo navigates to a new page</span>
+        </label>
+
+        <label for="max-text-len">Max page text sent to Zo</label>
+        <select id="max-text-len">
+          <option value="2000">2,000 chars</option>
+          <option value="4000">4,000 chars</option>
+          <option value="8000" selected>8,000 chars</option>
+          <option value="16000">16,000 chars</option>
+        </select>
+      </fieldset>
+
+      <!-- Actions -->
+      <div class="form-actions">
+        <button type="submit" id="save-btn" class="btn btn-primary">Save Settings</button>
+        <button type="button" id="test-btn" class="btn">Test Connection</button>
+      </div>
+
+      <div id="status-message" class="status hidden"></div>
+
+      <!-- Connection test results -->
+      <div id="test-results" class="test-results hidden">
+        <h3>Connection Test</h3>
+        <div class="test-row">
+          <span>Zo API</span>
+          <span id="test-zo-api" class="test-status">—</span>
+        </div>
+        <div class="test-row">
+          <span>Zo.space</span>
+          <span id="test-zo-space" class="test-status">—</span>
+        </div>
+      </div>
+    </form>
+
+    <!-- About -->
+    <section class="about">
+      <h3>About</h3>
+      <p><strong>Zo Co-browse</strong> connects your browser to <a href="https://cashlessconsumer.zo.computer" target="_blank">Zo Computer</a>.
+      Zo sees what you see and can take actions — click, fill, navigate — using its full AI toolset
+      (web search, DuckDB, files, integrations).</p>
+      <p>Version 0.1.0 · Built on Zo</p>
+    </section>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

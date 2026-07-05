@@ -1,0 +1,16 @@
+{
+  "name": "zo-cobrowse",
+  "version": "0.1.0",
+  "description": "Co-browsing extension powered by Zo — AI backend that sees your page and takes actions through it.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "lint": "bun test --coverage",
+    "package": "cd extension && zip -r ../zo-cobrowse.zip . -x '*.git*' -x '*.DS_Store'"
+  },
+  "devDependencies": {
+    "bun-types": "latest"
+  }
+}

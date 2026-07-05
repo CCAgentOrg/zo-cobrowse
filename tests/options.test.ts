@@ -1,0 +1,37 @@
+import { describe, it, expect } from "bun:test";
+import { readFileSync } from "fs";
+import { resolve } from "path";
+
+const OPTIONS_PATH = resolve(import.meta.dir, "../extension/options.js");
+
+describe("options.js", () => {
+  const code = readFileSync(OPTIONS_PATH, "utf-8");
+
+  it("is valid JavaScript", () => {
+    expect(() => new Function(code)).not.toThrow();
+  });
+
+  it("loads saved config on DOMContentLoaded", () => {
+    expect(code).toContain("DOMContentLoaded");
+    expect(code).toContain("chrome.storage.sync.get");
+  });
+
+  it("saves config on form submit", () => {
+    expect(code).toContain("submit");
+    expect(code).toContain("chrome.storage.sync.set");
+    expect(code).toContain("access-token");
+    expect(code).toContain("api-url");
+    expect(code).toContain("model");
+  });
+
+  it("has a test connection button", () => {
+    expect(code).toContain("testBtn");
+    expect(code).toContain("test-btn");
+    expect(code).toContain("fetch");
+  });
+
+  it("shows status messages", () => {
+    expect(code).toContain("statusMsg");
+    expect(code).toContain("status-message");
+  });
+});
