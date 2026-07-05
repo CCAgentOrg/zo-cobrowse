@@ -42,7 +42,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const testBtn = document.getElementById('test-btn');
   const statusMsg = document.getElementById('status-message');
   const tokenInput = document.getElementById('access-token');
-  const apiUrlInput = document.getElementById('api-url');
   const spaceEndpointInput = document.getElementById('space-endpoint');
   const personaSelect = document.getElementById('persona-select');
   const modelStatus = document.getElementById('model-status');
@@ -88,16 +87,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load config
   chrome.storage.sync.get([
-    'zoAccessToken', 'zoApiUrl', 'zoModel', 'zoSpaceEndpoint', 'zoPersonaId', 'zoQuickActions'
+    'zoAccessToken', 'zoModel', 'zoSpaceEndpoint', 'zoPersonaId', 'zoQuickActions',
+    'zoTtsLang', 'zoTtsRate', 'zoTtsAutoRead'
   ], (result) => {
     if (result.zoAccessToken) tokenInput.value = result.zoAccessToken;
-    if (result.zoApiUrl) apiUrlInput.value = result.zoApiUrl;
     if (result.zoSpaceEndpoint) spaceEndpointInput.value = result.zoSpaceEndpoint;
     if (result.zoPersonaId) personaSelect.value = result.zoPersonaId;
     quickActions = result.zoQuickActions || [];
     renderQuickActionsEditor();
     if (result.zoAccessToken) populateModels(tokenInput.value, result.zoModel);
     if (result.zoAccessToken) populatePersonas(tokenInput.value, personaSelect);
+
+    // Restore TTS fields
+    const langInput = document.getElementById('tts-lang');
+    const rateInput = document.getElementById('tts-rate');
+    const autoReadCheck = document.getElementById('tts-auto-read');
+    if (langInput) langInput.value = result.zoTtsLang || 'en-US';
+    if (rateInput) rateInput.value = result.zoTtsRate || '1.0';
+    if (autoReadCheck) autoReadCheck.checked = result.zoTtsAutoRead || false;
   });
 
   // Token change → fetch models
@@ -148,20 +155,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const token = tokenInput.value.trim();
     if (!token) {
       statusMsg.textContent = 'Access token is required.';
-      statusMsg.className = 'status-message error';
+      statusMsg.className = 'inline-status err';
       return;
     }
     chrome.storage.sync.set({
       zoAccessToken: token,
-      zoApiUrl: apiUrlInput.value.trim() || 'https://api.zo.computer/zo/ask',
       zoModel: getModelValue(),
       zoSpaceEndpoint: spaceEndpointInput.value.trim() || 'https://cashlessconsumer.zo.space',
       zoPersonaId: personaSelect.value,
       zoQuickActions: quickActions,
+      zoTtsLang: (document.getElementById('tts-lang')?.value || 'en-US').trim(),
+      zoTtsRate: (document.getElementById('tts-rate')?.value || '1.0').trim(),
+      zoTtsAutoRead: !!(document.getElementById('tts-auto-read')?.checked),
     }, () => {
       statusMsg.textContent = '✅ Saved!';
-      statusMsg.className = 'status-message success';
-      setTimeout(() => { statusMsg.textContent = ''; statusMsg.className = 'status-message'; }, 3000);
+      statusMsg.className = 'inline-status ok';
+      setTimeout(() => { statusMsg.textContent = ''; statusMsg.className = 'inline-status'; }, 3000);
     });
   });
 
@@ -170,15 +179,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const token = tokenInput.value.trim();
     if (!token) {
       statusMsg.textContent = 'Enter an access token first.';
-      statusMsg.className = 'status-message error';
+      statusMsg.className = 'inline-status err';
       return;
     }
     testBtn.disabled = true;
     testBtn.textContent = 'Testing…';
     statusMsg.textContent = 'Testing…';
-    statusMsg.className = 'status-message';
+    statusMsg.className = 'inline-status pending';
     try {
-      const r = await fetch(apiUrlInput.value.trim() || 'https://api.zo.computer/zo/ask', {
+      const r = await fetch('https://api.zo.computer/zo/ask', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -190,14 +199,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const text = await r.text();
       if (r.ok && text.includes('ZO_OK')) {
         statusMsg.textContent = '✅ Connection successful!';
-        statusMsg.className = 'status-message success';
+        statusMsg.className = 'inline-status ok';
       } else {
         statusMsg.textContent = `⚠️ API returned ${r.status}`;
-        statusMsg.className = 'status-message error';
+        statusMsg.className = 'inline-status err';
       }
     } catch (err) {
       statusMsg.textContent = `❌ ${err.message}`;
-      statusMsg.className = 'status-message error';
+      statusMsg.className = 'inline-status err';
     }
     testBtn.disabled = false;
     testBtn.textContent = 'Test Connection';

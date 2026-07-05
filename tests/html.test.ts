@@ -45,7 +45,8 @@ describe("options.html", () => {
 
   it("has settings form fields", () => {
     expect(html).toContain("id=\"access-token\"");
-    expect(html).toContain("id=\"api-url\"");
+    expect(html).toContain("id=\"space-endpoint\"");
+    expect(html).toContain("id=\"options-theme\"");
     expect(html).toContain("id=\"model\"");
     expect(html).toContain("id=\"model-status\"");
     expect(html).toContain("needs token");

@@ -258,26 +258,7 @@ function bindEvents() {
 
   // Mic button — STT
   if (micBtn) {
-    micBtn.addEventListener('click', () => {
-      isRecording = !isRecording;
-      if (isRecording) {
-        recognition = new webkitSpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'en-US';
-        recognition.onresult = (e) => {
-          let transcript = '';
-          for (let i = e.resultIndex; i < e.results.length; i++) {
-            transcript += e.results[i][0].transcript;
-          }
-          sttInterim = transcript;
-          input.value = sttInterim;
-        }
-        recognition.start();
-      } else {
-        recognition.stop();
-      }
-    });
+    micBtn.addEventListener('click', startRecording);
   }
 
   // Chips (event delegation for dynamically rendered chips)
@@ -851,7 +832,7 @@ async function runPendingActions() {
 function addMessage(role, text) {
   addMessageDOM(role, text);
   // Auto-read assistant messages via TTS
-  if (role === 'assistant') {
+  if (role === 'assistant' && ttsAutoRead) {
     speakText(text);
   }
   // Persist non-system, non-thinking messages to current conversation
@@ -1185,6 +1166,15 @@ async function loadTtsConfig() {
   ttsVoice = saved.zoTtsVoice || '';
 }
 
+/** Resolve a voice name/URI to a SpeechSynthesisVoice, waiting for voices to load if needed. */
+function _resolveVoice(nameOrUri) {
+  const voices = window.speechSynthesis.getVoices();
+  if (voices.length > 0) {
+    return voices.find(v => v.name === nameOrUri || v.voiceURI === nameOrUri) || null;
+  }
+  return null;
+}
+
 function speakText(text) {
   if (!text || !text.trim()) return;
   window.speechSynthesis.cancel();
@@ -1197,8 +1187,7 @@ function speakText(text) {
   utterance.lang = ttsLang;
   utterance.rate = ttsRate;
   if (ttsVoice) {
-    const voices = window.speechSynthesis.getVoices();
-    const match = voices.find(v => v.name === ttsVoice || v.voiceURI === ttsVoice);
+    const match = _resolveVoice(ttsVoice);
     if (match) utterance.voice = match;
   }
   window.speechSynthesis.speak(utterance);

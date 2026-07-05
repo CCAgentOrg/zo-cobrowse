@@ -6,41 +6,218 @@
   <title>Zo Co-browse — Settings</title>
   <link rel="stylesheet" href="styles.css" />
   <style>
-    body { width: 540px; margin: 0 auto; padding: 28px 24px; }
-    h1 { font-family: var(--font-display); font-size: 22px; font-weight: 700; font-variation-settings: 'wght' 700, 'SOFT' 80; color: var(--text); margin: 0 0 4px; }
-    .subtitle { font-size: 13px; color: var(--text-muted); margin: 0 0 24px; }
-    .settings-section { margin-bottom: 20px; }
-    .settings-section h2 { font-family: var(--font-display); font-size: 15px; font-weight: 600; font-variation-settings: 'wght' 600, 'SOFT' 60; color: var(--text); margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
-    label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px; }
-    .field-group { margin-bottom: 14px; }
-    input[type="text"], input[type="password"], input[type="url"] { width: 100%; box-sizing: border-box; }
-    .btn-row { display: flex; gap: 8px; margin-top: 4px; }
-    .btn-row .btn { flex: 0 0 auto; }
-    .inline-status { font-size: 12px; margin-top: 4px; padding: 4px 8px; border-radius: 4px; }
+    /* ── Reset & base ── */
+    * { box-sizing: border-box; }
+    body {
+      width: 540px;
+      margin: 0 auto;
+      padding: 24px;
+      min-height: 100vh;
+      overflow: visible !important;
+      background: var(--bg-deep);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ── */
+    .page-header { margin-bottom: 20px; }
+    .page-header h1 {
+      font-family: var(--font-display);
+      font-size: 22px;
+      font-weight: 700;
+      font-variation-settings: 'wght' 700, 'SOFT' 80;
+      margin: 0 0 2px;
+      letter-spacing: -0.01em;
+    }
+    .page-header h1 .star { color: var(--amber); }
+    .page-header h1 .zo { background: linear-gradient(135deg, var(--amber), var(--indigo)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .page-header .subtitle { font-size: 13px; color: var(--text-muted); margin: 0; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .card h2 {
+      font-family: var(--font-display);
+      font-size: 14px;
+      font-weight: 600;
+      font-variation-settings: 'wght' 600, 'SOFT' 60;
+      margin: 0 0 12px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border-soft);
+      color: var(--text);
+    }
+    .card-group { margin-bottom: 16px; }
+    .card-group:last-child { margin-bottom: 0; }
+
+    /* ── Labels ── */
+    label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 4px;
+    }
+    label.row-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      text-transform: none;
+      font-size: 13px;
+      font-weight: 400;
+      color: var(--text);
+      cursor: pointer;
+    }
+    label.row-label input[type="checkbox"] { accent-color: var(--amber); }
+
+    /* ── Inputs & selects ── */
+    input[type="text"],
+    input[type="password"],
+    input[type="url"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 8px 10px;
+      font-family: var(--font-ui);
+      font-size: 13px;
+      color: var(--text);
+      background: var(--bg-input);
+      border: 1px solid var(--border-soft);
+      border-radius: var(--radius-sm);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--amber);
+      box-shadow: 0 0 0 2px var(--amber-glow);
+    }
+    input::placeholder { color: var(--text-faint); font-size: 12px; }
+    select {
+      cursor: pointer;
+      appearance: auto;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-surface);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+    .btn:hover { background: var(--bg-hover); border-color: var(--text-faint); }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--amber), var(--indigo));
+      color: white;
+      border: none;
+    }
+    .btn-primary:hover { opacity: 0.9; box-shadow: 0 0 16px var(--amber-glow); }
+    .btn-ghost { background: transparent; border: none; color: var(--text-muted); padding: 4px 8px; }
+    .btn-ghost:hover { background: var(--bg-hover); color: var(--text); }
+    .btn-sm { padding: 4px 10px; font-size: 11px; }
+    .btn-danger {
+      background: transparent;
+      border-color: color-mix(in srgb, var(--red) 30%, transparent);
+      color: var(--red);
+    }
+    .btn-danger:hover { background: color-mix(in srgb, var(--red) 10%, transparent); }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .btn-row-right { margin-left: auto; }
+
+    /* ── Inline status ── */
+    .inline-status {
+      font-size: 12px;
+      margin-top: 6px;
+      padding: 5px 10px;
+      border-radius: var(--radius-sm);
+    }
     .inline-status.ok { background: color-mix(in srgb, var(--amber) 15%, transparent); color: var(--amber); }
-    .inline-status.err { background: color-mix(in srgb, #ef4444 15%, transparent); color: #ef4444; }
+    .inline-status.err { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); }
     .inline-status.pending { background: color-mix(in srgb, var(--indigo) 15%, transparent); color: var(--indigo); }
-    .quick-action-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
-    .quick-action-row input[type="text"]:first-child { flex: 0 0 100px; }
-    .quick-action-row input[type="text"]:last-child { flex: 1; }
-    .quick-action-row .btn { flex: 0 0 auto; }
-    .add-action-btn { margin-top: 6px; }
+
+    /* ── Quick actions editor ── */
+    .qa-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .qa-row input[type="text"]:first-child { flex: 0 0 100px; }
+    .qa-row input[type="text"]:last-child { flex: 1; }
+    .qa-remove {
+      flex: 0 0 auto;
+      width: 26px; height: 26px;
+      display: flex; align-items: center; justify-content: center;
+      border: none;
+      border-radius: 50%;
+      background: transparent;
+      color: var(--text-faint);
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .qa-remove:hover { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); }
+    .qa-remove:disabled { opacity: 0.3; cursor: default; }
+
+    /* ── Field groups ── */
+    .field-group { margin-bottom: 12px; }
+    .field-group:last-child { margin-bottom: 0; }
+    .field-group-double {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    /* ── Description text ── */
+    .desc { font-size: 12px; color: var(--text-muted); margin: 0 0 10px; line-height: 1.4; }
+
+    /* ── Utility ── */
+    .mt-2 { margin-top: 8px; }
+    .flex { display: flex; }
+    .gap-2 { gap: 8px; }
+    .items-center { align-items: center; }
   </style>
 </head>
 <body>
-  <h1>✦ Zo Co-browse</h1>
-  <p class="subtitle">Configure your co-browsing connection to Zo Computer</p>
+  <div class="page-header">
+    <h1><span class="star">✦</span> <span class="zo">Zo</span> Co-browse</h1>
+    <p class="subtitle">Configure your co-browsing connection to Zo Computer</p>
+  </div>
 
   <form id="settings-form">
-    <div class="settings-section">
-      <h2>Connection</h2>
+    <!-- ── Connection ── -->
+    <div class="card">
+      <h2>🔌 Connection</h2>
       <div class="field-group">
         <label for="access-token">Zo Access Token</label>
         <input type="password" id="access-token" placeholder="zo_…" />
-      </div>
-      <div class="field-group">
-        <label for="api-url">API URL</label>
-        <input type="url" id="api-url" placeholder="https://api.zo.computer/zo/ask" />
       </div>
       <div class="field-group">
         <label for="space-endpoint">Zo.space Endpoint</label>
@@ -50,15 +227,15 @@
         <button type="button" id="test-btn" class="btn btn-primary">Test Connection</button>
         <button type="submit" class="btn">Save Settings</button>
       </div>
-      <div id="status-message" class="inline-status"></div>
     </div>
 
-    <div class="settings-section">
-      <h2>Theme</h2>
+    <!-- ── Theme ── -->
+    <div class="card">
+      <h2>🎨 Theme</h2>
       <div class="field-group">
-        <label for="options-theme">Theme</label>
-        <select id="options-theme" style="width:100%">
-          <option value="">◐ System (follow device)</option>
+        <label for="options-theme">Interface Theme</label>
+        <select id="options-theme">
+          <option value="">◐ System — follow device</option>
           <option value="dark">☾ Dark — Midnight Observatory</option>
           <option value="light">☀ Light — Sunlit Observatory</option>
           <option value="sepia">♨ Sepia — Warm Paper</option>
@@ -68,43 +245,57 @@
       </div>
     </div>
 
-    <div class="settings-section">
-      <h2>Model &amp; Persona</h2>
-      <div class="field-group">
-        <label for="model">Default Model</label>
-        <select id="model" style="width:100%">
-          <option value="">— needs token —</option>
-        </select>
-        <div id="model-status" class="inline-status" style="margin-top:4px;"></div>
-      </div>
-      <div class="field-group">
-        <label for="persona">Default Persona</label>
-        <select id="persona-select" style="width:100%">
-          <option value="">Zo (default)</option>
-        </select>
+    <!-- ── Model & Persona ── -->
+    <div class="card">
+      <h2>🧠 Model &amp; Persona</h2>
+      <div class="field-group-double">
+        <div class="field-group">
+          <label for="model">Default Model</label>
+          <select id="model">
+            <option value="">— needs token —</option>
+          </select>
+          <div id="model-status" class="inline-status"></div>
+        </div>
+        <div class="field-group">
+          <label for="persona-select">Default Persona</label>
+          <select id="persona-select">
+            <option value="">Zo (default)</option>
+          </select>
+        </div>
       </div>
     </div>
 
-    <div class="settings-section">
-      <h2>Quick Actions</h2>
-      <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px;">Chips shown above the input for one-click prompts.</p>
+    <!-- ── Speech ── -->
+    <div class="card">
+      <h2>🎤 Speech</h2>
+      <div class="field-group-double">
+        <div class="field-group">
+          <label for="tts-lang">TTS Language</label>
+          <input type="text" id="tts-lang" placeholder="en-US" />
+        </div>
+        <div class="field-group">
+          <label for="tts-rate">TTS Rate (0.5–2.0)</label>
+          <input type="text" id="tts-rate" placeholder="1.0" />
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="row-label">
+          <input type="checkbox" id="tts-auto-read" />
+          Auto-read assistant responses aloud
+        </label>
+      </div>
+    </div>
+
+    <!-- ── Quick Actions ── -->
+    <div class="card">
+      <h2>⚡ Quick Actions</h2>
+      <p class="desc">Chips shown above the input for one-click prompts.</p>
       <div id="quick-actions-list"></div>
-      <button type="button" id="add-qa-row" class="btn btn-sm add-action-btn">+ Add Action</button>
+      <button type="button" id="add-qa-row" class="btn btn-sm">+ Add Action</button>
     </div>
 
-    <div class="settings-section">
-      <h2>Speech</h2>
-      <div class="field-group">
-        <label for="tts-lang">TTS Language</label>
-        <input type="text" id="tts-lang" placeholder="en-US" />
-      </div>
-      <div class="field-group">
-        <label for="tts-rate">TTS Rate (0.5 – 2.0)</label>
-        <input type="text" id="tts-rate" placeholder="1.0" />
-      </div>
-    </div>
-
-    <div class="btn-row">
+    <!-- ── Save ── -->
+    <div class="flex gap-2 items-center">
       <button type="submit" class="btn btn-primary">Save Settings</button>
     </div>
   </form>
