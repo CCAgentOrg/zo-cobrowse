@@ -28,10 +28,23 @@ let currentContext = null;
 let actionRunning = false;
 let isHistoryView = false;
 
+// ---- STT state ----
+let recognition = null;
+let isRecording = false;
+let sttInterim = '';
+
+// ---- TTS state ----
+let ttsAutoRead = false;
+let ttsRate = 1.0;
+let ttsVoice = '';
+let ttsLang = 'en-US';
+let currentUtterance = null;
+
 // ---- DOM refs ----
 const msgsEl = $('#messages');
 const input = $('#query-input');
 const sendBtn = $('#send-btn');
+const micBtn = $('#mic-btn');
 const statusDot = $('#status-dot');
 const pageUrl = $('#page-url');
 const modelSelect = $('#model-select');
@@ -134,6 +147,7 @@ async function init() {
   await fetchModelsAndPersonas();
   await loadPresets();
   await loadQuickActions();
+  await loadTtsConfig();
   // Re-render quick actions when they change in another view (e.g. Options)
   chrome.storage.onChanged.addListener((changes) => {
     if (changes[STORAGE_ACTIONS_KEY]) {
@@ -170,6 +184,30 @@ function bindEvents() {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(); }
   });
+
+  // Mic button — STT
+  if (micBtn) {
+    micBtn.addEventListener('click', () => {
+      isRecording = !isRecording;
+      if (isRecording) {
+        recognition = new webkitSpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+        recognition.onresult = (e) => {
+          let transcript = '';
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            transcript += e.results[i][0].transcript;
+          }
+          sttInterim = transcript;
+          input.value = sttInterim;
+        }
+        recognition.start();
+      } else {
+        recognition.stop();
+      }
+    });
+  }
 
   // Chips (event delegation for dynamically rendered chips)
   const chipsContainer = $('#action-chips');
@@ -737,6 +775,10 @@ async function runPendingActions() {
 // ---- Messages ----
 function addMessage(role, text) {
   addMessageDOM(role, text);
+  // Auto-read assistant messages via TTS
+  if (role === 'assistant') {
+    speakText(text);
+  }
   // Persist non-system, non-thinking messages to current conversation
   if (role !== 'system' && role !== 'thinking') {
     const conv = getActiveConversation();
@@ -796,6 +838,20 @@ function addMessageDOM(role, text) {
   }
 
   div.appendChild(body);
+
+  // TTS speaker button on assistant and system messages (only non-empty)
+  if ((role === 'assistant' || role === 'system') && text && text.trim()) {
+    const ttsBtn = document.createElement('button');
+    ttsBtn.className = 'tts-btn msg-tts-btn';
+    ttsBtn.textContent = '🔊';
+    ttsBtn.title = 'Read aloud';
+    ttsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      speakText(text);
+    });
+    div.appendChild(ttsBtn);
+  }
+
   msgsEl.appendChild(div);
   msgsEl.scrollTop = msgsEl.scrollHeight;
   return div;
@@ -971,4 +1027,108 @@ function renderQuickActions(actions) {
     chip.title = a.prompt;
     container.appendChild(chip);
   }
+}
+
+// ---- STT (Speech-to-Text) ----
+
+function startRecording() {
+  if (isRecording) { stopRecording(); return; }
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    addMessageDOM('error', 'Speech recognition not supported in this browser. Try Chrome.');
+    return;
+  }
+  try {
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = ttsLang || 'en-US';
+
+    recognition.onresult = (event) => {
+      let final = '';
+      sttInterim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          final += event.results[i][0].transcript;
+        } else {
+          sttInterim += event.results[i][0].transcript;
+        }
+      }
+      if (final) {
+        input.value = (input.value + ' ' + final).trim();
+      }
+      // Show interim in placeholder
+      if (sttInterim) {
+        input.placeholder = '🎤 ' + sttInterim;
+      }
+    };
+
+    recognition.onerror = (event) => {
+      stopRecording();
+      if (event.error !== 'no-speech' && event.error !== 'aborted') {
+        addMessageDOM('error', `🎤 STT error: ${event.error}`);
+      }
+    };
+
+    recognition.onend = () => {
+      stopRecording();
+    };
+
+    recognition.start();
+    isRecording = true;
+    micBtn.classList.add('recording');
+    micBtn.textContent = '🔴';
+    micBtn.title = 'Stop recording';
+  } catch (err) {
+    addMessageDOM('error', `🎤 STT error: ${err.message}`);
+  }
+}
+
+function stopRecording() {
+  if (recognition) {
+    try { recognition.stop(); } catch {}
+    recognition = null;
+  }
+  isRecording = false;
+  micBtn.classList.remove('recording');
+  micBtn.textContent = '🎤';
+  micBtn.title = 'Voice input (STT)';
+  if (sttInterim) {
+    input.value = (input.value + ' ' + sttInterim).trim();
+    sttInterim = '';
+  }
+  input.placeholder = 'Ask Zo about this page...';
+}
+
+// ---- TTS (Text-to-Speech) ----
+
+async function loadTtsConfig() {
+  const saved = await chrome.storage.sync.get(['zoTtsAutoRead', 'zoTtsLang', 'zoTtsRate', 'zoTtsVoice']);
+  ttsAutoRead = saved.zoTtsAutoRead || false;
+  ttsLang = saved.zoTtsLang || 'en-US';
+  ttsRate = parseFloat(saved.zoTtsRate) || 1.0;
+  ttsVoice = saved.zoTtsVoice || '';
+}
+
+function speakText(text) {
+  if (!text || !text.trim()) return;
+  window.speechSynthesis.cancel();
+  const plain = text
+    .replace(/[*_#`\[\]]/g, '')
+    .replace(/\n{2,}/g, '. ')
+    .trim();
+  if (!plain) return;
+  const utterance = new SpeechSynthesisUtterance(plain);
+  utterance.lang = ttsLang;
+  utterance.rate = ttsRate;
+  if (ttsVoice) {
+    const voices = window.speechSynthesis.getVoices();
+    const match = voices.find(v => v.name === ttsVoice || v.voiceURI === ttsVoice);
+    if (match) utterance.voice = match;
+  }
+  window.speechSynthesis.speak(utterance);
+}
+
+function stopSpeaking() {
+  window.speechSynthesis.cancel();
 }

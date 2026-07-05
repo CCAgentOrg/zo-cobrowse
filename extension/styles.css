@@ -246,6 +246,52 @@ body.sidepanel { display: flex; flex-direction: column; height: 100vh; overflow:
 
 #send-btn { flex-shrink: 0; }
 
+/* Mic button */
+#mic-btn {
+  flex-shrink: 0;
+  font-size: 16px;
+  transition: all 0.2s;
+  min-width: 36px;
+  height: 36px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+#mic-btn.recording {
+  background: rgba(248, 113, 113, 0.2);
+  border-color: var(--error);
+  color: var(--error);
+  animation: mic-pulse 1s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.2); }
+}
+
+/* TTS button on messages */
+.msg-tts-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  margin-top: 4px;
+  opacity: 0.4;
+  transition: opacity 0.15s, color 0.15s;
+  align-self: flex-start;
+}
+.msg-tts-btn:hover {
+  opacity: 1;
+  color: var(--accent);
+}
+.msg-assistant:hover .msg-tts-btn,
+.msg-system:hover .msg-tts-btn {
+  opacity: 0.6;
+}
+
 
 /* Action chips */
 .chips {

@@ -73,6 +73,25 @@
         </select>
       </fieldset>
 
+      <!-- Speech (STT / TTS) -->
+      <fieldset>
+        <legend>🎤 Speech</legend>
+
+        <label class="checkbox-row">
+          <input type="checkbox" id="auto-tts" />
+          <span>Auto-read assistant responses aloud</span>
+        </label>
+
+        <div id="tts-options" style="opacity:0.6;pointer-events:none;">
+          <label for="tts-rate">Speech rate</label>
+          <input type="range" id="tts-rate" min="0.5" max="2" step="0.1" value="1" />
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-top:2px;">
+            <span>Slow</span><span id="tts-rate-value">1.0</span><span>Fast</span>
+          </div>
+        </div>
+        <p class="hint">Microphone input uses your browser's built-in speech recognition (Chrome). TTS reads responses aloud.</p>
+      </fieldset>
+
       <!-- Quick Actions (chips) -->
       <fieldset id="quick-actions-fieldset">
         <legend>⚡ Quick Actions</legend>

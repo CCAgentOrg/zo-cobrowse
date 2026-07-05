@@ -23,6 +23,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const qaList = document.getElementById('qa-list');
   const qaAddBtn = document.getElementById('qa-add-btn');
 
+  // TTS elements
+  const autoTts = document.getElementById('auto-tts');
+
   // ---- Quick Actions state ----
   let quickActions = [];
 
@@ -30,6 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const saved = await chrome.storage.sync.get([
     'zoApiUrl', 'zoAccessToken', 'zoModel', 'zoSpaceEndpoint',
     'zoAutoRun', 'zoCaptureScreenshots', 'zoConfirmNavigation', 'zoMaxTextLen',
+    'zoTtsAutoRead', 'zoTtsRate',
     STORAGE_ACTIONS_KEY,
   ]);
 
@@ -40,6 +44,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (saved.zoCaptureScreenshots !== undefined) captureScreenshots.checked = saved.zoCaptureScreenshots;
   if (saved.zoConfirmNavigation !== undefined) confirmNavigation.checked = saved.zoConfirmNavigation;
   if (saved.zoMaxTextLen) maxTextLen.value = String(saved.zoMaxTextLen);
+  if (saved.zoTtsAutoRead !== undefined) autoTts.checked = saved.zoTtsAutoRead;
+  if (saved.zoTtsRate) ttsRate.value = String(saved.zoTtsRate);
 
   // Load quick actions (with defaults)
   quickActions = saved[STORAGE_ACTIONS_KEY] || [
@@ -64,6 +70,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     accessToken.type = accessToken.type === 'password' ? 'text' : 'password';
     toggleToken.textContent = accessToken.type === 'password' ? '👁' : '🙈';
   });
+
+  // TTS rate display
+  const ttsRateValue = document.
 
   // ---- Quick Action CRUD ----
 
@@ -140,6 +149,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       zoCaptureScreenshots: captureScreenshots.checked,
       zoConfirmNavigation: confirmNavigation.checked,
       zoMaxTextLen: parseInt(maxTextLen.value, 10),
+      zoTtsAutoRead: autoTts.checked,
+      zoTtsRate: parseFloat(ttsRate.value) || 1.0,
       [STORAGE_ACTIONS_KEY]: valid,
     });
 
