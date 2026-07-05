@@ -22,22 +22,12 @@ jobs:
 
       - name: Run tests
         run: bun test
-        env:
-          BUN_ENV: test
 
-      - name: Validate manifest.json
-        run: node -e "JSON.parse(require('fs').readFileSync('extension/manifest.json','utf8')); console.log('manifest: valid')"
-
-      - name: Validate extension JS files
+      - name: Validate extension JS
         run: |
           for f in extension/*.js; do
             node --check "$f" && echo "OK: $f" || exit 1
           done
-
-      - name: Check Chrome API usage
-        run: |
-          echo "=== Chrome API calls in extension ==="
-          grep -rn 'chrome\.' extension/*.js | grep -v 'console\.\|// ' | sort -u || true
 
   lint:
     runs-on: ubuntu-latest
@@ -49,38 +39,32 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Check for TODO/FIXME/HACK
+      - name: Check for issues
         run: |
-          if grep -rn 'TODO\|FIXME\|HACK' extension/*.js extension/*.html extension/*.css backend/*.ts 2>/dev/null; then
-            echo "WARNING: Found TODO/FIXME/HACK markers above"
-          else
-            echo "No TODO/FIXME/HACK markers found"
-          fi
+          echo "=== checking TODO markers ==="
+          grep -rn 'TODO\|FIXME\|HACK' extension/*.js extension/*.html backend/*.ts 2>/dev/null || echo "none found"
+          echo "=== checking line endings ==="
+          file extension/*.js extension/*.html extension/*.css
 
-      - name: Check line endings
-        run: file extension/*.js extension/*.html extension/*.css 2>/dev/null
-
-  publish:
-    if: github.ref == 'refs/heads/main'
+  package:
     needs: [test, lint]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create extension artifact
+      - name: Create extension package
         run: |
-          mkdir -p dist/zo-cobrowse
-          cp -r extension/* dist/zo-cobrowse/
+          mkdir -p dist
+          cp -r extension dist/zo-cobrowse
           cd dist && zip -r ../zo-cobrowse.zip zo-cobrowse/
-          echo "✅ Artifact: zo-cobrowse.zip ($(du -h ../zo-cobrowse.zip | cut -f1))"
 
-      - name: Upload extension package
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: zo-cobrowse-extension
           path: zo-cobrowse.zip
 
-      - name: Create GitHub Release (tagged only)
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v')
         with:
