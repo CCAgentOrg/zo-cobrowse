@@ -22,6 +22,7 @@ describe("sidepanel.html", () => {
     expect(html).toContain("id=\"status-dot\"");
     expect(html).toContain("id=\"actions-bar\"");
     expect(html).toContain("id=\"page-url\"");
+    expect(html).toContain("id=\"new-chat-btn\"");
   });
 
   it("includes CSS and JS", () => {

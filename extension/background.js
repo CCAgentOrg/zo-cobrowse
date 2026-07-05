@@ -8,6 +8,8 @@ const DEFAULTS = {
 };
 
 let config = { ...DEFAULTS };
+// Track Zo API conversation ID for multi-turn context
+let zoConversationId = null;
 
 // ---- Init ----
 chrome.storage.sync.get(
@@ -51,6 +53,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse(sanitizedConfig());
       return true;
     }
+    case 'NEW_CONVERSATION': {
+      zoConversationId = null;
+      sendResponse({ ok: true });
+      return true;
+    }
     case 'EXECUTE_ACTIONS': {
       executeActions(request.actions, request.tabId || sender.tab?.id).then(sendResponse);
       return true;
@@ -83,6 +90,7 @@ function sanitizedConfig() {
     zoModel: config.zoModel,
     zoSpaceEndpoint: config.zoSpaceEndpoint,
     hasToken: !!config.zoAccessToken,
+    zoConversationId: zoConversationId,
   };
 }
 
@@ -193,6 +201,7 @@ Think step by step about what actions to take, then respond with a valid JSON ob
       body: JSON.stringify({
         input: prompt,
         model_name: config.zoModel,
+        conversation_id: zoConversationId || undefined,
         // no output_format — prompted for raw JSON
       }),
     });
@@ -205,6 +214,8 @@ Think step by step about what actions to take, then respond with a valid JSON ob
     }
 
     const data = await response.json();
+    // Persist Zo conversation ID for context in subsequent calls
+    if (data.conversation_id) zoConversationId = data.conversation_id;
     // data.output is a string — the model's markdown or JSON text
     return { success: true, output: data.output };
   } catch (err) {
@@ -230,6 +241,7 @@ async function testConnection() {
       body: JSON.stringify({
         input: 'Reply with just: ZO_OK',
         model_name: config.zoModel,
+        conversation_id: zoConversationId || undefined,
       }),
     });
     if (r.ok) zoOk = true;

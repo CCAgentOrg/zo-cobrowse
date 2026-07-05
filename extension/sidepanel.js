@@ -3,6 +3,10 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+// ---- Constants ----
+const MAX_HISTORY = 50;
+const STORAGE_KEY = 'cobrowse_history';
+
 // ---- State ----
 let config = { hasToken: false };
 let conversation = [];
@@ -20,6 +24,7 @@ const actionsBar = $('#actions-bar');
 const actionsReasoning = $('#actions-reasoning');
 const runAllBtn = $('#run-all-btn');
 const skipBtn = $('#skip-btn');
+const newChatBtn = $('#new-chat-btn');
 
 // ---- Init ----
 init();
@@ -29,6 +34,7 @@ async function init() {
   updateStatus(config.hasToken);
   bindEvents();
   await refreshPageContext();
+  await loadHistory();
 }
 
 async function loadConfig() {
@@ -44,7 +50,6 @@ function updateStatus(connected) {
 function bindEvents() {
   // Send
   sendBtn.addEventListener('click', sendQuery);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(); } });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(); }
   });
@@ -61,8 +66,62 @@ function bindEvents() {
   runAllBtn.addEventListener('click', runPendingActions);
   skipBtn.addEventListener('click', () => { pendingActions = null; actionsBar.classList.add('hidden'); });
 
+  // New conversation
+  newChatBtn.addEventListener('click', startNewConversation);
+
   // Open settings on status dot double-click
   statusDot.addEventListener('dblclick', () => chrome.runtime.openOptionsPage());
+}
+
+// ---- Conversation History ----
+
+async function loadHistory() {
+  const result = await chrome.storage.local.get(STORAGE_KEY);
+  const saved = result[STORAGE_KEY] || [];
+  conversation = saved;
+
+  // Clear default system message if we have history
+  const systemMsg = msgsEl.querySelector('.msg-system');
+  if (systemMsg) systemMsg.remove();
+
+  // Replay saved messages
+  for (const msg of conversation) {
+    addMessageDOM(msg.role, msg.text);
+  }
+
+  // If no history, show default
+  if (!conversation.length) {
+    addMessage('system', 'Connected to Zo. Ask me about this page, or tell me what to do.');
+  }
+}
+
+async function saveHistory() {
+  // Trim to max
+  if (conversation.length > MAX_HISTORY) {
+    conversation = conversation.slice(-MAX_HISTORY);
+  }
+  await chrome.storage.local.set({ [STORAGE_KEY]: conversation });
+}
+
+function addHistoryEntry(role, text) {
+  conversation.push({ role, text, timestamp: Date.now() });
+  saveHistory();
+}
+
+async function clearHistory() {
+  conversation = [];
+  await chrome.storage.local.remove(STORAGE_KEY);
+}
+
+function startNewConversation() {
+  // Clear UI
+  msgsEl.innerHTML = '';
+  // Clear saved history
+  clearHistory();
+  // Reset Zo conversation on the backend
+  chrome.runtime.sendMessage({ type: 'NEW_CONVERSATION' });
+  // Show welcome
+  addMessage('system', 'Connected to Zo. Ask me about this page, or tell me what to do.');
 }
 
 // ---- Page Context ----
@@ -125,13 +184,12 @@ async function sendQuery() {
     return;
   }
 
-  // Try to parse output — could be JSON (when model follows {{ ... }} instructions) or plain text
+  // Try to parse output — could be JSON or plain text
   const output = resp.output;
   let reasoning = '';
   let actions = [];
 
   if (typeof output === 'object' && output !== null) {
-    // Already parsed JSON object (rare, but handle it)
     reasoning = output.reasoning || '';
     actions = output.actions || [];
   } else if (typeof output === 'string') {
@@ -142,7 +200,6 @@ async function sendQuery() {
         actions = parsed.actions || [];
       }
     } catch {
-      // Not JSON — treat as plain text response
       reasoning = output;
     }
   }
@@ -166,7 +223,6 @@ async function sendQuery() {
       type: 'NAVIGATE',
       url: navigateActions[0].url,
     });
-    // Wait for page to load, then recapture context
     setTimeout(async () => {
       await refreshPageContext();
       if (doneResponse) addMessage('assistant', doneResponse);
@@ -182,7 +238,6 @@ async function sendQuery() {
     actionsReasoning.textContent = `🧠 ${reasoning.substring(0, 200)}`;
     actionsBar.classList.remove('hidden');
     addMessage('assistant', `🧠 ${reasoning} ${doneResponse ? '\n\n' + doneResponse : ''}`);
-    // Auto-run by default
     runPendingActions();
   } else if (doneResponse) {
     addMessage('assistant', doneResponse);
@@ -200,7 +255,6 @@ async function runPendingActions() {
   runAllBtn.disabled = true;
   skipBtn.disabled = true;
 
-  // Get current tab id
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const tabId = tab?.id;
   if (!tabId) {
@@ -226,9 +280,7 @@ async function runPendingActions() {
       addMessage('error', `Action failed: ${result?.error || 'unknown error'}`);
       break;
     }
-    // Wait a beat for page mutations
     await new Promise((r) => setTimeout(r, 600));
-    // Refresh context after each action
     await refreshPageContext();
   }
 
@@ -241,6 +293,14 @@ async function runPendingActions() {
 
 // ---- Messages ----
 function addMessage(role, text) {
+  addMessageDOM(role, text);
+  // Persist non-system, non-thinking messages
+  if (role !== 'system' && role !== 'thinking') {
+    addHistoryEntry(role, text);
+  }
+}
+
+function addMessageDOM(role, text) {
   const div = document.createElement('div');
   div.className = `msg msg-${role}`;
   const body = document.createElement('div');
