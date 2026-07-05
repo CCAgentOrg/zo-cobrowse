@@ -54,6 +54,21 @@
     </div>
 
     <div class="settings-section">
+      <h2>Theme</h2>
+      <div class="field-group">
+        <label for="options-theme">Theme</label>
+        <select id="options-theme" style="width:100%">
+          <option value="">◐ System (follow device)</option>
+          <option value="dark">☾ Dark — Midnight Observatory</option>
+          <option value="light">☀ Light — Sunlit Observatory</option>
+          <option value="sepia">♨ Sepia — Warm Paper</option>
+          <option value="forest">♣ Forest — Deep Grove</option>
+          <option value="ocean">⊡ Ocean — Deep Water</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="settings-section">
       <h2>Model &amp; Persona</h2>
       <div class="field-group">
         <label for="model">Default Model</label>
@@ -74,7 +89,7 @@
       <h2>Quick Actions</h2>
       <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px;">Chips shown above the input for one-click prompts.</p>
       <div id="quick-actions-list"></div>
-      <button type="button" id="add-action-btn" class="btn btn-sm add-action-btn">+ Add Action</button>
+      <button type="button" id="add-qa-row" class="btn btn-sm add-action-btn">+ Add Action</button>
     </div>
 
     <div class="settings-section">

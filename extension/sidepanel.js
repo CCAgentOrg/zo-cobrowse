@@ -15,24 +15,69 @@ const STORAGE_ACTIONS_KEY = 'zoQuickActions';
 const THEME_STORAGE_KEY = 'cobrowse_theme';
 let currentTheme = '';
 
+const THEMES = {
+  '':      { name: 'System',   icon: '◐', label: 'Follow system' },
+  'dark':  { name: 'Dark',     icon: '☾', label: 'Midnight Observatory' },
+  'light': { name: 'Light',    icon: '☀', label: 'Sunlit Observatory' },
+  'sepia': { name: 'Sepia',    icon: '♨', label: 'Warm Paper' },
+  'forest':{ name: 'Forest',   icon: '♣', label: 'Deep Grove' },
+  'ocean': { name: 'Ocean',    icon: '⊡', label: 'Deep Water' },
+};
+
 async function loadTheme() {
   const saved = await chrome.storage.sync.get(THEME_STORAGE_KEY);
   currentTheme = saved[THEME_STORAGE_KEY] || '';
-  applyTheme(currentTheme);
+  applyTheme(currentTheme, true);
 }
 
-function applyTheme(theme) {
+function applyTheme(theme, skipPersist) {
   currentTheme = theme;
-  // If empty (system), still reflect preference in data-theme for the CSS
   const effective = theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   document.documentElement.setAttribute('data-theme', effective);
   const btn = document.getElementById('theme-toggle');
-  if (btn) btn.textContent = theme === 'light' ? '☾' : '☀';
-  chrome.storage.sync.set({ [THEME_STORAGE_KEY]: theme });
+  const info = THEMES[theme] || THEMES[''];
+  if (btn) btn.textContent = info.icon;
+  if (!skipPersist) chrome.storage.sync.set({ [THEME_STORAGE_KEY]: theme });
 }
 
-function toggleTheme() {
-  applyTheme(currentTheme === 'light' ? 'dark' : 'light');
+function showThemePopover() {
+  let popover = document.getElementById('theme-popover');
+  if (!popover) {
+    popover = document.createElement('div');
+    popover.id = 'theme-popover';
+    popover.className = 'theme-popover';
+    const themeKeys = ['', 'dark', 'light', 'sepia', 'forest', 'ocean'];
+    for (const key of themeKeys) {
+      const t = THEMES[key];
+      const opt = document.createElement('button');
+      opt.className = `theme-option${key === currentTheme ? ' selected' : ''}`;
+      opt.dataset.theme = key;
+      opt.innerHTML = `<div class="theme-swatch ${key || 'system'}"></div><span class="theme-label">${t.icon} ${t.name}</span>`;
+      opt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        applyTheme(key);
+        closeThemePopover();
+      });
+      popover.appendChild(opt);
+    }
+    document.getElementById('theme-toggle').parentElement.appendChild(popover);
+  }
+  popover.classList.add('open');
+  document.addEventListener('click', closeThemePopoverOutside, true);
+}
+
+function closeThemePopover() {
+  const popover = document.getElementById('theme-popover');
+  if (popover) popover.classList.remove('open');
+  document.removeEventListener('click', closeThemePopoverOutside, true);
+}
+
+function closeThemePopoverOutside(e) {
+  const popover = document.getElementById('theme-popover');
+  const btn = document.getElementById('theme-toggle');
+  if (popover && !popover.contains(e.target) && e.target !== btn) {
+    closeThemePopover();
+  }
 }
 
 // ---- Quick Actions (user-manageable chips) ----
@@ -253,7 +298,7 @@ function bindEvents() {
 
   // Theme toggle
   const themeToggle = $('#theme-toggle');
-  if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
+  if (themeToggle) themeToggle.addEventListener('click', showThemePopover);
 
   // Pending actions
   runAllBtn.addEventListener('click', runPendingActions);
