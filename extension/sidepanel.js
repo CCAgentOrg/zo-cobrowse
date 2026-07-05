@@ -891,7 +891,7 @@ function markdownToHtml(md) {
     return '<a href="' + safeUrl.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener noreferrer">' + text + '</a>';
   });
   // Bare URL auto-linking — wrap http(s):// URLs in anchor tags
-  html = html.replace(/(?<!="|>)(https?:\/\/[^\s<"]+)(?!["])/g, function(_, url) {
+  html = html.replace(/(?<!=\"|>)(https?:\/\/[^\s<\"\)\]>,;!?]+)/g, function(_, url) {
     var safeUrl = url.replace(/[<>]/g, '');
     if (!/^(https?:)/i.test(safeUrl)) return url;
     return '<a href="' + safeUrl.replace(/"/g, '&quot;') + '" target="_blank" rel="noopener noreferrer">' + safeUrl + '</a>';
