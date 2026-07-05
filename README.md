@@ -1,5 +1,8 @@
 # Zo Co-browse
 
+[![CI](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml/badge.svg)](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml)
+
+
 > ***Browser extension + Zo backend — AI that sees your page, understands context, and acts through your browser.***
 
 A co-browsing extension that connects your browser to your [Zo Computer](https://zocomputer.com) as the AI backend. Zo sees your page DOM, uses its full toolchain (DuckDB, files, web search, integrations), and returns structured browser actions — click, fill, navigate, extract.
