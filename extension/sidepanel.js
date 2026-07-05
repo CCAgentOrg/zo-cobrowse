@@ -730,12 +730,50 @@ function addMessage(role, text) {
   }
 }
 
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function markdownToHtml(md) {
+  if (!md) return '';
+  // Escape HTML, then convert markdown patterns
+  var html = escapeHtml(md);
+  // Code blocks: triple backtick with optional language
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
+    var cls = lang ? ' class="lang-' + escapeHtml(lang) + '"' : '';
+    return '<pre><code' + cls + '>' + escapeHtml(code.trim()) + '</code></pre>';
+  });
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, function(_, c) { return '<code>' + escapeHtml(c) + '</code>'; });
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Italic
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Links
+  html = html.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Paragraphs for double newlines
+  var paras = html.split('\n\n').filter(function(p) { return p.trim(); });
+  if (paras.length > 1) {
+    html = paras.map(function(p) { return '<p>' + p.replace(/\n/g, '<br>') + '</p>'; }).join('');
+  } else {
+    html = html.replace(/\n/g, '<br>');
+  }
+  return html;
+}
+
 function addMessageDOM(role, text) {
   const div = document.createElement('div');
   div.className = `msg msg-${role}`;
   const body = document.createElement('div');
   body.className = 'msg-body';
-  body.textContent = text;
+
+  // Render markdown for assistant messages, keep others as plain text
+  if (role === 'assistant' || role === 'system' || role === 'thinking') {
+    body.innerHTML = markdownToHtml(text);
+  } else {
+    body.textContent = text;
+  }
+
   div.appendChild(body);
   msgsEl.appendChild(div);
   msgsEl.scrollTop = msgsEl.scrollHeight;
