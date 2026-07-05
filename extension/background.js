@@ -13,12 +13,13 @@ let zoConversationId = null;
 
 // ---- Init ----
 chrome.storage.sync.get(
-  ['zoApiUrl', 'zoAccessToken', 'zoModel', 'zoSpaceEndpoint'],
+  ['zoApiUrl', 'zoAccessToken', 'zoModel', 'zoSpaceEndpoint', 'zoPersonaId'],
   (result) => {
     if (result.zoApiUrl) config.zoApiUrl = result.zoApiUrl;
     if (result.zoAccessToken) config.zoAccessToken = result.zoAccessToken;
     if (result.zoModel) config.zoModel = result.zoModel;
     if (result.zoSpaceEndpoint) config.zoSpaceEndpoint = result.zoSpaceEndpoint;
+    if (result.zoPersonaId) config.zoPersonaId = result.zoPersonaId;
   }
 );
 
@@ -27,6 +28,7 @@ chrome.storage.onChanged.addListener((changes) => {
   if (changes.zoAccessToken?.newValue) config.zoAccessToken = changes.zoAccessToken.newValue;
   if (changes.zoModel?.newValue) config.zoModel = changes.zoModel.newValue;
   if (changes.zoSpaceEndpoint?.newValue) config.zoSpaceEndpoint = changes.zoSpaceEndpoint.newValue;
+  if (changes.zoPersonaId?.newValue) config.zoPersonaId = changes.zoPersonaId.newValue;
 });
 
 // Open side panel on toolbar icon click
@@ -42,7 +44,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
     case 'ASK_ZO': {
-      askZo(request.pageContext, request.userQuery).then(sendResponse);
+      askZo(request.pageContext, request.userQuery, request.modelName, request.personaId).then(sendResponse);
       return true;
     }
     case 'TEST_CONNECTION': {
@@ -56,6 +58,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     case 'NEW_CONVERSATION': {
       zoConversationId = null;
       sendResponse({ ok: true });
+      return true;
+    }
+    case 'LIST_MODELS': {
+      listModels().then(sendResponse);
+      return true;
+    }
+    case 'LIST_PERSONAS': {
+      listPersonas().then(sendResponse);
       return true;
     }
     case 'EXECUTE_ACTIONS': {
@@ -88,6 +98,7 @@ function sanitizedConfig() {
   return {
     zoApiUrl: config.zoApiUrl,
     zoModel: config.zoModel,
+    zoPersonaId: config.zoPersonaId,
     zoSpaceEndpoint: config.zoSpaceEndpoint,
     hasToken: !!config.zoAccessToken,
     zoConversationId: zoConversationId,
@@ -149,7 +160,7 @@ async function getActiveTabContext(tabId) {
   }
 }
 
-async function askZo(pageContext, userQuery) {
+async function askZo(pageContext, userQuery, modelName, personaId) {
   if (!config.zoAccessToken) {
     return { error: '❌ Zo access token not configured. Open extension settings to set it up.' };
   }
@@ -200,9 +211,9 @@ Think step by step about what actions to take, then respond with a valid JSON ob
       },
       body: JSON.stringify({
         input: prompt,
-        model_name: config.zoModel,
+        model_name: modelName || config.zoModel,
         conversation_id: zoConversationId || undefined,
-        // no output_format — prompted for raw JSON
+        ...((personaId || config.zoPersonaId) ? { persona_id: personaId || config.zoPersonaId } : {}),
       }),
     });
 
@@ -220,6 +231,32 @@ Think step by step about what actions to take, then respond with a valid JSON ob
     return { success: true, output: data.output };
   } catch (err) {
     return { error: `Connection failed: ${err.message}` };
+  }
+}
+
+async function listModels() {
+  if (!config.zoAccessToken) return { error: 'No token' };
+  try {
+    const r = await fetch('https://api.zo.computer/models/available', {
+      headers: { Authorization: `Bearer ${config.zoAccessToken}` }
+    });
+    if (!r.ok) return { error: `HTTP ${r.status}` };
+    return { success: true, models: await r.json() };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+async function listPersonas() {
+  if (!config.zoAccessToken) return { error: 'No token' };
+  try {
+    const r = await fetch('https://api.zo.computer/personas/available', {
+      headers: { Authorization: `Bearer ${config.zoAccessToken}` }
+    });
+    if (!r.ok) return { error: `HTTP ${r.status}` };
+    return { success: true, personas: await r.json() };
+  } catch (err) {
+    return { error: err.message };
   }
 }
 
@@ -262,6 +299,8 @@ async function testConnection() {
 
   return { success: zoOk, zoApi: zoOk, zoSpace: spaceOk };
 }
+
+
 
 async function executeActions(actions, tabId) {
   if (!tabId) {
@@ -353,4 +392,6 @@ function executeDomAction(action) {
   });
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}

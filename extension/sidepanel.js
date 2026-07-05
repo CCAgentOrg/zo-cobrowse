@@ -20,6 +20,8 @@ const input = $('#query-input');
 const sendBtn = $('#send-btn');
 const statusDot = $('#status-dot');
 const pageUrl = $('#page-url');
+const modelSelect = $('#model-select');
+const personaSelect = $('#persona-select');
 const actionsBar = $('#actions-bar');
 const actionsReasoning = $('#actions-reasoning');
 const runAllBtn = $('#run-all-btn');
@@ -48,6 +50,15 @@ function updateStatus(connected) {
 }
 
 function bindEvents() {
+  // Model/Persona selection
+  modelSelect.addEventListener('change', () => {
+    config.selectedModel = modelSelect.value;
+    chrome.storage.local.set({ zoSelectedModel: modelSelect.value });
+  });
+  personaSelect.addEventListener('change', () => {
+    config.selectedPersona = personaSelect.value;
+    chrome.storage.local.set({ zoSelectedPersona: personaSelect.value });
+  });
   // Send
   sendBtn.addEventListener('click', sendQuery);
   input.addEventListener('keydown', (e) => {
@@ -137,6 +148,40 @@ async function refreshPageContext() {
   }
 }
 
+// ---- Fetch models and personas ----
+async function fetchModelsAndPersonas() {
+  // Restore saved selections
+  const saved = await chrome.storage.local.get(['zoSelectedModel', 'zoSelectedPersona']);
+  if (saved.zoSelectedModel) config.selectedModel = saved.zoSelectedModel;
+  if (saved.zoSelectedPersona) config.selectedPersona = saved.zoSelectedPersona;
+
+  const modelsResp = await chrome.runtime.sendMessage({ type: 'LIST_MODELS' });
+  if (modelsResp?.success && Array.isArray(modelsResp.models)) {
+    modelSelect.innerHTML = '<option value="">Default model</option>';
+    for (const m of modelsResp.models) {
+      const opt = document.createElement('option');
+      opt.value = m.id || m.name;
+      opt.textContent = m.name || m.id;
+      if (opt.value === config.selectedModel) opt.selected = true;
+      modelSelect.appendChild(opt);
+    }
+  } else {
+    modelSelect.innerHTML = '<option value="">Model (unavailable)</option>';
+  }
+
+  const personasResp = await chrome.runtime.sendMessage({ type: 'LIST_PERSONAS' });
+  if (personasResp?.success && Array.isArray(personasResp.personas)) {
+    personaSelect.innerHTML = '<option value="">Zo (default)</option>';
+    for (const p of personasResp.personas) {
+      const opt = document.createElement('option');
+      opt.value = p.id || p.name;
+      opt.textContent = p.name || p.id;
+      if (opt.value === config.selectedPersona) opt.selected = true;
+      personaSelect.appendChild(opt);
+    }
+  }
+}
+
 // ---- Send ----
 async function sendQuery() {
   const query = input.value.trim();
@@ -170,6 +215,8 @@ async function sendQuery() {
     type: 'ASK_ZO',
     pageContext: currentContext,
     userQuery: query,
+    modelName: config.selectedModel || undefined,
+    personaId: config.selectedPersona || undefined,
   });
 
   // Remove thinking indicator

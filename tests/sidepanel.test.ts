@@ -28,4 +28,31 @@ describe("sidepanel.js", () => {
     expect(code).toContain("loadHistory()");
     expect(code).toContain("msg-system");
   });
+
+describe("sidepanel model/persona selectors", () => {
+  it("has model-select and persona-select elements in HTML", () => {
+    const htmlPath = resolve(import.meta.dir, "../extension/sidepanel.html");
+    const html = readFileSync(htmlPath, "utf-8");
+    expect(html).toContain('id="model-select"');
+    expect(html).toContain('id="persona-select"');
+  });
+
+  it("fetches models and personas from background", () => {
+    expect(code).toContain('LIST_MODELS');
+    expect(code).toContain('LIST_PERSONAS');
+    expect(code).toContain('config.selectedModel');
+    expect(code).toContain('config.selectedPersona');
+  });
+
+  it("passes modelName and personaId in ASK_ZO", () => {
+    expect(code).toContain('modelName:');
+    expect(code).toContain('personaId:');
+  });
+
+  it("persists selections to chrome.storage.local", () => {
+    expect(code).toContain('zoSelectedModel');
+    expect(code).toContain('zoSelectedPersona');
+  });
+});
+
 });

@@ -237,6 +237,36 @@ body.sidepanel { display: flex; flex-direction: column; height: 100vh; overflow:
 
 #send-btn { flex-shrink: 0; }
 
+
+/* Model/Persona selector row */
+.selector-row {
+  display: flex;
+  gap: 4px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-alt);
+  flex-shrink: 0;
+}
+.selector-select {
+  flex: 1;
+  padding: 3px 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  max-width: 50%;
+}
+.selector-select:focus { border-color: var(--accent); }
+.selector-select option {
+  background: var(--bg-alt);
+  color: var(--text);
+}
+
 /* Action chips */
 .chips {
   display: flex;
