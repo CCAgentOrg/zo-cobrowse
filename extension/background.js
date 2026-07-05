@@ -165,7 +165,7 @@ ${JSON.stringify(pageContext.formFields || [], null, 2)}
 ${userQuery}
 
 ## Instructions
-Think step by step about what actions to take, then respond **only** with a valid JSON object matching this schema:
+Think step by step about what actions to take, then respond with a valid JSON object.
 {
   "reasoning": "your step-by-step thinking",
   "actions": [
@@ -193,33 +193,7 @@ Think step by step about what actions to take, then respond **only** with a vali
       body: JSON.stringify({
         input: prompt,
         model_name: config.zoModel,
-        output_format: {
-          type: 'object',
-          properties: {
-            reasoning: { type: 'string' },
-            actions: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  type: {
-                    type: 'string',
-                    enum: ['navigate', 'click', 'fill', 'extract', 'scroll', 'wait', 'done'],
-                  },
-                  url: { type: 'string' },
-                  selector: { type: 'string' },
-                  value: { type: 'string' },
-                  attribute: { type: 'string' },
-                  direction: { type: 'string' },
-                  amount: { type: 'number' },
-                  ms: { type: 'number' },
-                  response: { type: 'string' },
-                },
-              },
-            },
-          },
-          required: ['reasoning', 'actions'],
-        },
+        // no output_format — prompted for raw JSON
       }),
     });
 
@@ -231,7 +205,10 @@ Think step by step about what actions to take, then respond **only** with a vali
     }
 
     const data = await response.json();
-    return { success: true, output: data.output };
+    // Parse the text output as JSON (model was prompted for raw JSON)
+    const raw = typeof data.output === 'string' ? data.output : JSON.stringify(data.output);
+    const parsed = JSON.parse(raw);
+    return { success: true, output: parsed };
   } catch (err) {
     return { error: `Connection failed: ${err.message}` };
   }
