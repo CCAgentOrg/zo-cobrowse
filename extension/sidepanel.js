@@ -125,9 +125,27 @@ async function sendQuery() {
     return;
   }
 
+  // Try to parse output — could be JSON (when model follows {{ ... }} instructions) or plain text
   const output = resp.output;
-  const reasoning = output?.reasoning || '';
-  const actions = output?.actions || [];
+  let reasoning = '';
+  let actions = [];
+
+  if (typeof output === 'object' && output !== null) {
+    // Already parsed JSON object (rare, but handle it)
+    reasoning = output.reasoning || '';
+    actions = output.actions || [];
+  } else if (typeof output === 'string') {
+    try {
+      const parsed = JSON.parse(output);
+      if (parsed && typeof parsed === 'object') {
+        reasoning = parsed.reasoning || '';
+        actions = parsed.actions || [];
+      }
+    } catch {
+      // Not JSON — treat as plain text response
+      reasoning = output;
+    }
+  }
 
   if (!actions.length) {
     addMessage('assistant', reasoning || 'Done.');

@@ -205,10 +205,8 @@ Think step by step about what actions to take, then respond with a valid JSON ob
     }
 
     const data = await response.json();
-    // Parse the text output as JSON (model was prompted for raw JSON)
-    const raw = typeof data.output === 'string' ? data.output : JSON.stringify(data.output);
-    const parsed = JSON.parse(raw);
-    return { success: true, output: parsed };
+    // data.output is a string — the model's markdown or JSON text
+    return { success: true, output: data.output };
   } catch (err) {
     return { error: `Connection failed: ${err.message}` };
   }
