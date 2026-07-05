@@ -1,5 +1,170 @@
 # Zo Co-browse Extension — Agent Notes
 
+## Zo API Reference
+
+### Base URL
+`https://api.zo.computer`
+
+### Authentication
+Bearer token in `Authorization` header. Create tokens at Settings → Advanced → Access Tokens.
+Key: `zo_sk_...`
+
+### Endpoints
+
+#### `POST /zo/ask`
+Send a message to Zo. Zo has full access to files, tools, integrations.
+
+**Request body:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `input` | string | ✅ | Your message to Zo |
+| `conversation_id` | string | ❌ | Continue an existing conversation thread |
+| `model_name` | string | ❌ | Override model (see GET /models/available) |
+| `persona_id` | string | ❌ | Override persona (see GET /personas/available) |
+| `output_format` | object | ❌ | JSON Schema for structured output. When set, `output` in response is an object instead of string |
+| `stream` | boolean | ❌ | Enable SSE streaming. Default false |
+
+**Response:**
+```json
+{
+  "output": "string | object",
+  "conversation_id": "conv_..."
+}
+```
+
+**Streaming** (when `stream: true`): SSE events with `Content-Type: text/event-stream`.
+- Event types: `FrontendModelResponse` (text chunk in `data.content`), `End` (complete, has `data.output`), `Error` (`data.message`)
+- `x-conversation-id` response header has the conversation ID
+
+#### `GET /models/available`
+List models you can use (includes BYOK configs). Requires auth.
+
+**Response:**
+```json
+{
+  "models": [{
+    "model_name": "anthropic:claude-haiku-4-5-20251001",
+    "label": "Haiku 4.5",
+    "vendor": "Anthropic",
+    "description": "string | null",
+    "type": "fast | capable | null",
+    "context_window": 200000,
+    "is_byok": false
+  }]
+}
+```
+
+#### `GET /models/catalog`
+Full public model catalog. No auth required. Cached 5 min.
+
+**Response extras:** `default_chat_model_id`, `featured_model_ids`, `featured_models_are_free`, `featured_model_labels`, `promo_end_date`, `deprecation_map`
+
+#### `GET /personas/available`
+List configured personas. Requires auth.
+
+**Response:**
+```json
+{
+  "personas": [{
+    "id": "a1b2c3d4",
+    "name": "Technical Writer",
+    "prompt": "System prompt text...",
+    "model": "anthropic:claude-sonnet-4 | null",
+    "image": "url | null"
+  }]
+}
+```
+
+Download the full spec: https://www.zo.computer/docs-assets/openapi.json
+
+## Delta — Official API features we don't use
+
+| Feature | Official API Support | Current State | Effort | Impact |
+|---------|---------------------|---------------|--------|--------|
+| `output_format` | First-class JSON Schema support | Prompt-based: we ask for JSON in the prompt text and parse from string. Fragile — model sometimes returns plain text instead | Low | **High** — eliminates parse failures, guarantees structured actions |
+| `stream: true` | SSE streaming with typed events | Non-streaming only. Full response latency on every call | Medium | **High** — real-time token-by-token display in sidepanel, faster perceived response |
+| `GET /models/catalog` (no-auth) | Public catalog endpoint | We only call `/models/available` (auth required). Options page cannot show models until token is saved | Low | Medium — options page could show model list without requiring token save first |
+| `featured_models_are_free` | Free model flag in catalog | Not checked anywhere | Low | Low — could highlight free models in the selector |
+| `deprecation_map` | Active → successor model mapping | Not used | Low | Low — could auto-migrate deprecated model selections |
+| Persona `model` override | Persona can specify its own model | Not displayed or honored in the panel | Medium | Medium — could let persona override model automatically when selected |
+
+### Priority implementation notes
+
+#### 1. `output_format` (P0)
+
+The API now supports `output_format` as a JSON Schema object. The background.js `askZo()` already sends the request; we just need to add `output_format` to the body. This eliminates all the JSON-parse-from-text fragility.
+
+**Current (fragile):**
+```js
+// prompt instructs: "respond with valid JSON object { reasoning, actions }"
+// Then we parse: JSON.parse(output)
+```
+
+**Target:**
+```js
+body: JSON.stringify({
+  input: prompt,
+  model_name: ...,
+  conversation_id: ...,
+  output_format: {
+    type: "object",
+    properties: {
+      reasoning: { type: "string" },
+      actions: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["navigate","click","fill","extract","scroll","wait","done"] },
+            selector: { type: "string" },
+            url: { type: "string" },
+            value: { type: "string" },
+            attribute: { type: "string" },
+            direction: { type: "string", enum: ["up","down"] },
+            amount: { type: "number" },
+            ms: { type: "number" },
+            response: { type: "string" },
+          },
+          required: ["type"],
+        }
+      }
+    },
+    required: ["reasoning", "actions"]
+  }
+})
+```
+
+This makes the response `data.output` a typed object instead of a string — no more try/catch JSON.parse.
+
+**⚠️ Caveat:** The `output_format` schema uses the `type: "array"` pattern which was previously reported as unsupported. Test this with the actual API before removing the text-fallback path.
+
+#### 2. `stream: true` (P1)
+
+SSE streaming would show Zo's response token-by-token in the side panel. Implementation involves:
+- In background.js `askZo()`: add `stream: true` to the body, change from `fetch().json()` to `fetch().body.getReader()` for SSE
+- Pipe SSE events back to sidepanel via `chrome.runtime.sendMessage` with a new message type (e.g., `ZO_STREAM_CHUNK` and `ZO_STREAM_END`)
+- In sidepanel.js: accumulate chunks, update the thinking/assistant message incrementally
+- The `x-conversation-id` header from the SSE response must be captured for thread continuity
+
+**Consideration:** SSE streaming requires the background service worker to maintain an open connection and relay chunks to the panel. MV3 service workers have lifetime limits (30s for normal, 5min for extension API-connected). For long responses the stream may be cut off.
+
+#### 3. `GET /models/catalog` for options page (P2)
+
+The options page currently shows "fetching..." until a token is saved. Using the no-auth `/models/catalog` endpoint would let us populate the model selector immediately.
+
+#### 4. Persona model override (P3)
+
+When a persona has its own `model` field, selecting that persona should automatically switch the model selector. Currently we only read `p.name` and `p.id`.
+
+## Design System: "The Observatory" (2026-07-05)
+
+- **Dark palette:** Midnight blue (#0b0e1e) base, deep cobalt (#0f1428) cards, amber (#c47f20) accents, indigo (#6c5ce7) secondary
+- **Light palette:** Cream (#f4f1ea) base, warm white (#fcfaf5) cards, amber (#b8860b) accents, slate (#5a5f7a) secondary
+- **Fonts:** Fraunces (display), Figtree (UI), JetBrains Mono (code) — all loaded from Google Fonts
+- **Theme toggle:** `data-theme` attribute on `<html>` — empty = system, "light" = light, "dark" = dark
+- **System theme:** `prefers-color-scheme` media query respected when `data-theme=""`
+- **Theme persistence:** `chrome.storage.sync` key `cobrowse_theme`
+
 ## State machine
 
 - `conversation` array in sidepanel.js — local chat history, persisted to `chrome.storage.local` under key `cobrowse_convos`

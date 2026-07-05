@@ -6,87 +6,90 @@
   <title>Zo Co-browse</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body class="sidepanel">
-  <div id="app">
-    <!-- Header -->
-    <header id="header">
-      <div class="brand-row">
-        <span class="brand-logo">⢕⣿ Zo-Cobrowse</span>
-        <span class="brand-tagline">Co-browse with your Zo</span>
-        <span id="status-dot" class="dot dot-disconnected" title="Disconnected"></span>
-        <span style="flex:1"></span>
-        <button id="help-btn" class="btn btn-sm btn-ghost" title="What is co-browsing?">?</button>
-        <button id="new-chat-btn" class="btn btn-sm" title="New conversation">✚</button>
-        <button id="history-btn" class="btn btn-sm" title="History">☰</button>
+<body>
+  <div class="shell" id="shell" data-theme="">
+    <!-- ── Header ── -->
+    <header class="header">
+      <div class="header-brand">
+        <span class="brand-star">✦</span>
+        <span class="brand-zo">Zo</span>
+        <span style="font-weight:400;font-size:12px;color:var(--text-faint);font-family:var(--font);margin-left:2px;">co-browse</span>
       </div>
-      <div class="page-info" id="page-info">
-        <span class="page-url" id="page-url">— no page —</span>
+      <div class="header-actions">
+        <button id="theme-toggle" class="icon-btn theme-toggle" title="Toggle theme">☀</button>
+        <div class="status-dot-wrap">
+          <span id="status-dot" class="dot dot-disconnected" title="Not configured"></span>
+        </div>
+        <button id="help-btn" class="icon-btn" title="About co-browsing">?</button>
+        <button id="history-btn" class="icon-btn" title="History">☰</button>
+        <button id="new-chat-btn" class="icon-btn" title="New chat">✚</button>
       </div>
     </header>
 
-    <!-- Chat view -->
+    <!-- ── Page bar ── -->
+    <div class="page-bar">
+      <span class="page-icon">◈</span>
+      <span id="page-url">— no page —</span>
+    </div>
+
+    <!-- ── Controls bar ── -->
+    <div class="controls-bar">
+      <label>Model</label>
+      <select id="model-select" title="AI model">
+        <option value="">Default</option>
+      </select>
+      <label>Persona</label>
+      <select id="persona-select" title="Persona">
+        <option value="">Zo (default)</option>
+      </select>
+      <label>Mode</label>
+      <select id="preset-select" title="Preset mode">
+        <option value="">Co-browse</option>
+        <option value="research">🔬 Research</option>
+        <option value="summarize">📝 Summarize</option>
+        <option value="scrape">📥 Extract</option>
+        <option value="qa">❓ Q&A</option>
+      </select>
+      <button id="create-preset-btn" class="btn btn-ghost btn-sm create-preset-btn" title="Create custom preset">✦</button>
+    </div>
+
+    <!-- ── Quick action chips ── -->
+    <div class="chips-wrap" id="action-chips"></div>
+
+    <!-- ── Chat view ── -->
     <div id="chat-view">
       <!-- Messages -->
-      <div id="messages" role="log" aria-live="polite">
-        <div class="msg msg-system">
-          <div class="msg-body">Connected to Zo. Ask me about this page, or tell me what to do.</div>
-        </div>
-      </div>
+      <div id="messages" role="log" aria-live="polite"></div>
 
-      <!-- Actions bar (auto-execution controls) -->
+      <!-- Pending actions bar -->
       <div id="actions-bar" class="hidden">
-        <div class="actions-header">
-          <span id="actions-reasoning"></span>
+        <div id="actions-reasoning"></div>
+        <div class="actions-buttons">
           <button id="run-all-btn" class="btn btn-primary btn-sm">▶ Run All</button>
           <button id="skip-btn" class="btn btn-sm">✕ Skip</button>
         </div>
       </div>
 
-      <!-- Toolbar: model, persona, preset near the input -->
-      <div id="toolbar" class="toolbar">
-        <select id="model-select" class="tb-select" title="AI Model">
-          <option value="">Default model</option>
-        </select>
-        <select id="persona-select" class="tb-select" title="Persona">
-          <option value="">Zo (default)</option>
-        </select>
-        <select id="preset-select" class="tb-select" title="Preset">
-          <option value="">Default (co-browse)</option>
-          <option value="research">🔬 Research Deep-dive</option>
-          <option value="scrape">📥 Data Extraction</option>
-          <option value="summarize">📝 Summarizer</option>
-          <option value="qa">❓ Q&A</option>
-        </select>
-        <button id="create-preset-btn" class="btn btn-sm tb-btn" title="Create a custom preset with Zo">+</button>
-      </div>
-
       <!-- Input area -->
-      <div id="input-area">
-        <div class="input-row">
-          <input
-            type="text"
-            id="query-input"
-            placeholder="Ask Zo about this page..."
-            autofocus
-          />
-          <button id="mic-btn" class="btn btn-sm" title="Voice input">🎤</button>
-          <button id="send-btn" class="btn btn-primary" title="Send">→</button>
+      <div class="input-area">
+        <button id="mic-btn" class="btn btn-ghost btn-icon mic-btn" title="Voice input">🎤</button>
+        <div class="input-wrap">
+          <textarea id="query-input" rows="1" placeholder="Ask Zo about this page…" autofocus></textarea>
         </div>
-        <div class="input-row action-chips" id="action-chips">
-          <!-- Chips rendered dynamically from storage -->
-        </div>
+        <button id="send-btn" class="btn btn-primary btn-icon" title="Send">→</button>
       </div>
     </div>
 
-    <!-- History view -->
+    <!-- ── History view ── -->
     <div id="history-view" class="hidden">
       <div class="history-header">
-        <button id="back-to-chat-btn" class="btn btn-sm" title="Back to chat">← Back</button>
-        <span class="history-header-title">Conversations</span>
+        <button id="back-to-chat-btn" class="btn btn-ghost btn-sm">← Back</button>
+        <span class="history-title">Conversations</span>
       </div>
       <div id="history-list"></div>
     </div>
   </div>
+
   <script src="sidepanel.js"></script>
 </body>
 </html>

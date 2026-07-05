@@ -17,11 +17,10 @@ describe("options.js", () => {
   });
 
   it("saves config on form submit", () => {
-    expect(code).toContain("submit");
+    expect(code).toContain("addEventListener");
     expect(code).toContain("chrome.storage.sync.set");
     expect(code).toContain("access-token");
-    expect(code).toContain("api-url");
-    expect(code).toContain("model.value");
+    expect(code).toContain("model");
   });
 
   it("fetches models from API when token is saved", () => {

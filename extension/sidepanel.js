@@ -11,6 +11,30 @@ const STORAGE_ACTIVE_KEY = 'cobrowse_active_id';
 const STORAGE_PRESETS_KEY = 'cobrowse_presets';
 const STORAGE_ACTIONS_KEY = 'zoQuickActions';
 
+// ---- Theme ----
+const THEME_STORAGE_KEY = 'cobrowse_theme';
+let currentTheme = '';
+
+async function loadTheme() {
+  const saved = await chrome.storage.sync.get(THEME_STORAGE_KEY);
+  currentTheme = saved[THEME_STORAGE_KEY] || '';
+  applyTheme(currentTheme);
+}
+
+function applyTheme(theme) {
+  currentTheme = theme;
+  // If empty (system), still reflect preference in data-theme for the CSS
+  const effective = theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', effective);
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = theme === 'light' ? '☾' : '☀';
+  chrome.storage.sync.set({ [THEME_STORAGE_KEY]: theme });
+}
+
+function toggleTheme() {
+  applyTheme(currentTheme === 'light' ? 'dark' : 'light');
+}
+
 // ---- Quick Actions (user-manageable chips) ----
 const DEFAULT_QUICK_ACTIONS = [
   { label: 'Summarize', prompt: 'Summarize this page in 3-5 bullet points.' },
@@ -139,6 +163,8 @@ init();
 
 async function init() {
   await loadConfig();
+  await loadTheme();
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => loadTheme());
   updateStatus(config.hasToken);
   bindEvents();
   await refreshPageContext();
@@ -224,6 +250,10 @@ function bindEvents() {
   // Preset selection
   presetSelect.addEventListener('change', applyPreset);
   createPresetBtn.addEventListener('click', startPresetCreation);
+
+  // Theme toggle
+  const themeToggle = $('#theme-toggle');
+  if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
 
   // Pending actions
   runAllBtn.addEventListener('click', runPendingActions);

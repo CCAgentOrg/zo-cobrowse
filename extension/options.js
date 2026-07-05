@@ -1,261 +1,250 @@
-// Zo Co-browse — Settings Page Logic
+// Zo Co-browse — Options / Settings Logic
 
-const STORAGE_ACTIONS_KEY = 'zoQuickActions';
+const $ = (sel) => document.querySelector(sel);
 
-document.addEventListener('DOMContentLoaded', async () => {
+// ---- Theme ----
+const THEME_STORAGE_KEY = 'cobrowse_theme';
+
+function loadOptionsTheme() {
+  chrome.storage.sync.get(THEME_STORAGE_KEY, (result) => {
+    const theme = result[THEME_STORAGE_KEY] || '';
+    const effective = theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', effective);
+  });
+}
+
+// ---- Init ----
+document.addEventListener('DOMContentLoaded', () => {
+  loadOptionsTheme();
+  // Listen for system theme changes when no override is set
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', loadOptionsTheme);
+
   const form = document.getElementById('settings-form');
-  const apiUrl = document.getElementById('api-url');
-  const accessToken = document.getElementById('access-token');
-  const model = document.getElementById('model');
-  const modelStatus = document.getElementById('model-status');
-  const spaceEndpoint = document.getElementById('space-endpoint');
-  const autoRun = document.getElementById('auto-run');
-  const captureScreenshots = document.getElementById('capture-screenshots');
-  const confirmNavigation = document.getElementById('confirm-navigation');
-  const maxTextLen = document.getElementById('max-text-len');
+  const saveBtn = form.querySelector('.btn-primary');
   const testBtn = document.getElementById('test-btn');
-  const saveBtn = document.getElementById('save-btn');
   const statusMsg = document.getElementById('status-message');
-  const testResults = document.getElementById('test-results');
-  const testZoApi = document.getElementById('test-zo-api');
-  const testZoSpace = document.getElementById('test-zo-space');
-  const toggleToken = document.getElementById('toggle-token');
-  const qaList = document.getElementById('qa-list');
-  const qaAddBtn = document.getElementById('qa-add-btn');
+  const tokenInput = document.getElementById('access-token');
+  const apiUrlInput = document.getElementById('api-url');
+  const modelInput = document.getElementById('model');
+  const spaceEndpointInput = document.getElementById('space-endpoint');
+  const personaSelect = document.getElementById('persona-select');
+  const modelStatus = document.getElementById('model-status');
+  const quickActionsArea = document.getElementById('quick-actions-area');
+  const themeBtn = document.getElementById('options-theme-toggle');
 
-  // TTS elements
-  const autoTts = document.getElementById('auto-tts');
+  // Theme toggle
+  if (themeBtn) {
+    themeBtn.addEventListener('click', () => {
+      chrome.storage.sync.get(THEME_STORAGE_KEY, (result) => {
+        const current = result[THEME_STORAGE_KEY] || '';
+        const next = current === 'light' ? 'dark' : 'light';
+        chrome.storage.sync.set({ [THEME_STORAGE_KEY]: next }, () => {
+          document.documentElement.setAttribute('data-theme', next);
+          themeBtn.textContent = next === 'light' ? '☾' : '☀';
+        });
+      });
+    });
+  }
 
-  // ---- Quick Actions state ----
+  // Quick Actions management
   let quickActions = [];
 
-  // ---- Load saved settings ----
-  const saved = await chrome.storage.sync.get([
-    'zoApiUrl', 'zoAccessToken', 'zoModel', 'zoSpaceEndpoint',
-    'zoAutoRun', 'zoCaptureScreenshots', 'zoConfirmNavigation', 'zoMaxTextLen',
-    'zoTtsAutoRead', 'zoTtsRate',
-    STORAGE_ACTIONS_KEY,
-  ]);
-
-  if (saved.zoApiUrl) apiUrl.value = saved.zoApiUrl;
-  if (saved.zoAccessToken) accessToken.value = saved.zoAccessToken;
-  if (saved.zoSpaceEndpoint) spaceEndpoint.value = saved.zoSpaceEndpoint;
-  if (saved.zoAutoRun !== undefined) autoRun.checked = saved.zoAutoRun;
-  if (saved.zoCaptureScreenshots !== undefined) captureScreenshots.checked = saved.zoCaptureScreenshots;
-  if (saved.zoConfirmNavigation !== undefined) confirmNavigation.checked = saved.zoConfirmNavigation;
-  if (saved.zoMaxTextLen) maxTextLen.value = String(saved.zoMaxTextLen);
-  if (saved.zoTtsAutoRead !== undefined) autoTts.checked = saved.zoTtsAutoRead;
-  if (saved.zoTtsRate) ttsRate.value = String(saved.zoTtsRate);
-
-  // Load quick actions (with defaults)
-  quickActions = saved[STORAGE_ACTIONS_KEY] || [
-    { label: 'Summarize', prompt: 'Summarize this page in 3-5 bullet points.' },
-    { label: 'Extract links', prompt: 'Extract all links from this page.' },
-    { label: 'Fill forms', prompt: 'Identify all form fields on this page and fill them with relevant test data.' },
-    { label: 'Page data', prompt: 'Extract all structured data (tables, lists, prices, dates, contacts) from this page.' },
-  ];
-  renderQuickActions();
-
-  // ---- Load models from API ----
-  const hasToken = !!saved.zoAccessToken;
-  if (hasToken) {
-    modelStatus.textContent = 'loading...';
-    await populateModels(saved.zoAccessToken, saved.zoModel);
-  } else {
-    modelStatus.textContent = '⏳ needs token';
-  }
-
-  // ---- Toggle token visibility ----
-  toggleToken.addEventListener('click', () => {
-    accessToken.type = accessToken.type === 'password' ? 'text' : 'password';
-    toggleToken.textContent = accessToken.type === 'password' ? '👁' : '🙈';
-  });
-
-  // TTS rate display
-  const ttsRateValue = document.
-
-  // ---- Quick Action CRUD ----
-
-  qaAddBtn.addEventListener('click', () => {
-    quickActions.push({ label: '', prompt: '' });
-    renderQuickActions();
-    const inputs = qaList.querySelectorAll('.qa-label');
-    const last = inputs[inputs.length - 1];
-    if (last) setTimeout(() => last.focus(), 50);
-  });
-
-  function renderQuickActions() {
-    qaList.innerHTML = '';
-    if (quickActions.length === 0) {
-      qaList.innerHTML = '<div class="qa-empty">No quick actions defined. Add one to show chips in the sidepanel.</div>';
-      return;
-    }
-    for (let i = 0; i < quickActions.length; i++) {
-      const item = quickActions[i];
+  function renderQuickActionsEditor() {
+    quickActionsArea.innerHTML = '';
+    const actions = quickActions.length ? quickActions : [{ label: '', prompt: '' }];
+    actions.forEach((action, i) => {
       const row = document.createElement('div');
       row.className = 'qa-row';
-      row.dataset.index = i;
-
-      const grip = document.createElement('span');
-      grip.className = 'qa-grip';
-      grip.textContent = '⠿';
-
-      const labelInp = document.createElement('input');
-      labelInp.type = 'text';
-      labelInp.className = 'qa-label';
-      labelInp.placeholder = 'Button label (e.g. Summarize)';
-      labelInp.value = item.label;
-      labelInp.addEventListener('input', () => { quickActions[i].label = labelInp.value; markDirty(); });
-
-      const promptInp = document.createElement('input');
-      promptInp.type = 'text';
-      promptInp.className = 'qa-prompt';
-      promptInp.placeholder = 'Prompt sent to Zo when clicked';
-      promptInp.value = item.prompt;
-      promptInp.addEventListener('input', () => { quickActions[i].prompt = promptInp.value; markDirty(); });
-
-      const delBtn = document.createElement('button');
-      delBtn.type = 'button';
-      delBtn.className = 'qa-del';
-      delBtn.textContent = '✕';
-      delBtn.title = 'Remove this quick action';
-      delBtn.addEventListener('click', () => {
-        quickActions.splice(i, 1);
-        renderQuickActions();
-        markDirty();
-      });
-
-      row.appendChild(grip);
-      row.appendChild(labelInp);
-      row.appendChild(promptInp);
-      row.appendChild(delBtn);
-      qaList.appendChild(row);
-    }
-  }
-
-  // ---- Save ----
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    const token = accessToken.value.trim();
-    const valid = quickActions.filter(a => a.label.trim() && a.prompt.trim());
-
-    await chrome.storage.sync.set({
-      zoApiUrl: apiUrl.value.trim(),
-      zoAccessToken: token,
-      zoModel: model.value,
-      zoSpaceEndpoint: spaceEndpoint.value.trim(),
-      zoAutoRun: autoRun.checked,
-      zoCaptureScreenshots: captureScreenshots.checked,
-      zoConfirmNavigation: confirmNavigation.checked,
-      zoMaxTextLen: parseInt(maxTextLen.value, 10),
-      zoTtsAutoRead: autoTts.checked,
-      zoTtsRate: parseFloat(ttsRate.value) || 1.0,
-      [STORAGE_ACTIONS_KEY]: valid,
+      row.innerHTML = `
+        <input type="text" class="qa-label" placeholder="Label" value="${escapeHtml(action.label)}" data-index="${i}" />
+        <input type="text" class="qa-prompt" placeholder="Prompt" value="${escapeHtml(action.prompt)}" data-index="${i}" />
+        <button class="qa-remove" data-index="${i}" ${actions.length === 1 ? 'disabled' : ''}>✕</button>
+      `;
+      quickActionsArea.appendChild(row);
     });
-
-    showStatus('Settings saved.', 'success');
-    dirty = false;
-
-    await chrome.runtime.sendMessage({ type: 'CONFIG_UPDATED' });
-
-    // If token was just saved, load models now
-    if (token && !hasToken) {
-      modelStatus.textContent = 'loading...';
-      await populateModels(token, model.value);
-    }
-  });
-
-  // ---- Test connection ----
-  testBtn.addEventListener('click', async () => {
-    testResults.classList.remove('hidden');
-    testZoApi.textContent = '⏳ testing...';
-    testZoSpace.textContent = '⏳ testing...';
-
-    const token = accessToken.value.trim();
-    const url = apiUrl.value.trim();
-    const selectedModel = model.value || undefined;
-
-    if (!token) {
-      testZoApi.textContent = '✕ No token configured';
-    } else {
-      try {
-        const body = { input: 'Respond with just the word "connected" if you receive this message.' };
-        if (selectedModel) body.model_name = selectedModel;
-
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify(body),
-        });
-
-        if (!resp.ok) {
-          testZoApi.textContent = `✕ HTTP ${resp.status}`;
-          testZoApi.title = await resp.text();
-        } else {
-          const data = await resp.json();
-          testZoApi.textContent = `✓ ${String(data.output).trim().substring(0, 80)}`;
-        }
-      } catch (err) {
-        testZoApi.textContent = `✕ ${err.message}`;
-      }
-    }
-
-    const space = spaceEndpoint.value.trim();
-    if (space) {
-      try {
-        const resp = await fetch(space, { method: 'HEAD' });
-        testZoSpace.textContent = `✓ HTTP ${resp.status}`;
-      } catch (err) {
-        testZoSpace.textContent = `✕ ${err.message}`;
-      }
-    }
-  });
-
-  async function populateModels(token, selectedModel) {
-    try {
-      const r = await fetch('https://api.zo.computer/models/available', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok) {
-        modelStatus.textContent = '✕ failed to load';
-        return;
-      }
-      const data = await r.json();
-      const models = data.models || [];
-      // Clear existing, keep the default option
-      model.innerHTML = '<option value="">Default (let Zo choose)</option>';
-      for (const m of models) {
-        const opt = document.createElement('option');
-        opt.value = m.model_name || m.id || '';
-        opt.textContent = `${m.label || m.model_name || m.id}${m.vendor ? ` — ${m.vendor}` : ''}`;
-        if (opt.value === selectedModel) opt.selected = true;
-        model.appendChild(opt);
-      }
-      // If saved model not in list (e.g. custom ID), add it
-      if (selectedModel && !model.querySelector(`option[value="${selectedModel}"]`)) {
-        const opt = document.createElement('option');
-        opt.value = selectedModel;
-        opt.textContent = selectedModel;
-        opt.selected = true;
-        model.appendChild(opt);
-      }
-      modelStatus.textContent = `${models.length} models`;
-    } catch (err) {
-      modelStatus.textContent = '✕ error';
-    }
   }
 
-  let dirty = false;
-  function markDirty() { dirty = true; }
+  function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
 
-  function showStatus(msg, type) {
-    statusMsg.textContent = msg;
-    statusMsg.className = `status status-${type}`;
-    setTimeout(() => statusMsg.classList.add('hidden'), 4000);
+  // Support for the legacy fixed options
+  const legacyTab = document.querySelector('.legacy-options');
+  if (legacyTab) legacyTab.style.display = 'none';
+
+  // Load config
+  chrome.storage.sync.get([
+    'zoAccessToken', 'zoApiUrl', 'zoModel', 'zoSpaceEndpoint', 'zoPersonaId', 'zoQuickActions'
+  ], (result) => {
+    if (result.zoAccessToken) tokenInput.value = result.zoAccessToken;
+    if (result.zoApiUrl) apiUrlInput.value = result.zoApiUrl;
+    if (result.zoModel) modelInput.value = result.zoModel;
+    if (result.zoSpaceEndpoint) spaceEndpointInput.value = result.zoSpaceEndpoint;
+    if (result.zoPersonaId) personaSelect.value = result.zoPersonaId;
+    quickActions = result.zoQuickActions || [];
+    renderQuickActionsEditor();
+    if (result.zoAccessToken) populateModels(tokenInput.value, modelInput, modelStatus);
+    if (result.zoAccessToken) populatePersonas(tokenInput.value, personaSelect);
+  });
+
+  // Token change → fetch models
+  tokenInput.addEventListener('change', () => {
+    const token = tokenInput.value.trim();
+    if (token) populateModels(token, modelInput, modelStatus);
+  });
+
+  // Quick Actions live editing
+  quickActionsArea.addEventListener('input', (e) => {
+    const index = parseInt(e.target.dataset.index);
+    if (isNaN(index)) return;
+    const labels = quickActionsArea.querySelectorAll('.qa-label');
+    const prompts = quickActionsArea.querySelectorAll('.qa-prompt');
+    const actions = [];
+    labels.forEach((l, i) => {
+      const label = l.value.trim();
+      const prompt = prompts[i]?.value?.trim() || '';
+      if (label && prompt) actions.push({ label, prompt });
+    });
+    quickActions = actions;
+    chrome.storage.sync.set({ zoQuickActions: quickActions });
+  });
+
+  quickActionsArea.addEventListener('click', (e) => {
+    if (e.target.classList.contains('qa-remove')) {
+      const index = parseInt(e.target.dataset.index);
+      if (!isNaN(index)) {
+        quickActions.splice(index, 1);
+        chrome.storage.sync.set({ zoQuickActions: quickActions });
+        renderQuickActionsEditor();
+      }
+    }
+  });
+
+  // "Add row" button
+  const addRowBtn = document.getElementById('add-qa-row');
+  if (addRowBtn) {
+    addRowBtn.addEventListener('click', () => {
+      quickActions.push({ label: '', prompt: '' });
+      renderQuickActionsEditor();
+    });
+  }
+
+  // Save
+  saveBtn.addEventListener('click', () => {
+    const token = tokenInput.value.trim();
+    if (!token) {
+      statusMsg.textContent = 'Access token is required.';
+      statusMsg.className = 'status-message error';
+      return;
+    }
+    chrome.storage.sync.set({
+      zoAccessToken: token,
+      zoApiUrl: apiUrlInput.value.trim() || 'https://api.zo.computer/zo/ask',
+      zoModel: modelInput.value.trim(),
+      zoSpaceEndpoint: spaceEndpointInput.value.trim() || 'https://cashlessconsumer.zo.space',
+      zoPersonaId: personaSelect.value,
+      zoQuickActions: quickActions,
+    }, () => {
+      statusMsg.textContent = '✅ Saved!';
+      statusMsg.className = 'status-message success';
+      setTimeout(() => { statusMsg.textContent = ''; statusMsg.className = 'status-message'; }, 3000);
+    });
+  });
+
+  // Test connection
+  testBtn.addEventListener('click', async () => {
+    const token = tokenInput.value.trim();
+    if (!token) {
+      statusMsg.textContent = 'Enter an access token first.';
+      statusMsg.className = 'status-message error';
+      return;
+    }
+    testBtn.disabled = true;
+    testBtn.textContent = 'Testing…';
+    statusMsg.textContent = 'Testing…';
+    statusMsg.className = 'status-message';
+    try {
+      const r = await fetch(apiUrlInput.value.trim() || 'https://api.zo.computer/zo/ask', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ input: 'Reply with just: ZO_OK' }),
+      });
+      const text = await r.text();
+      if (r.ok && text.includes('ZO_OK')) {
+        statusMsg.textContent = '✅ Connection successful!';
+        statusMsg.className = 'status-message success';
+      } else {
+        statusMsg.textContent = `⚠️ API returned ${r.status}`;
+        statusMsg.className = 'status-message error';
+      }
+    } catch (err) {
+      statusMsg.textContent = `❌ ${err.message}`;
+      statusMsg.className = 'status-message error';
+    }
+    testBtn.disabled = false;
+    testBtn.textContent = 'Test Connection';
+  });
+
+  // Quick nav to Zo settings
+  const goToZoBtn = document.getElementById('go-to-zo-settings');
+  if (goToZoBtn) {
+    goToZoBtn.addEventListener('click', () => {
+      chrome.tabs.create({ url: 'https://cashlessconsumer.zo.computer/?t=settings&s=advanced' });
+    });
   }
 });
+
+async function populateModels(token, modelInput, modelStatus) {
+  modelStatus.textContent = 'Loading models…';
+  try {
+    const r = await fetch('https://api.zo.computer/models/available', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) { modelStatus.textContent = 'Could not fetch models'; return; }
+    const data = await r.json();
+    if (!data.models?.length) { modelStatus.textContent = 'No models returned'; return; }
+    const current = modelInput.value;
+    // Build datalist-like dropdown via <select>
+    const select = document.createElement('select');
+    select.id = 'model';
+    select.className = modelInput.className;
+    select.style.cssText = 'width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;';
+    select.innerHTML = '<option value="">Default model</option>';
+    for (const m of data.models) {
+      const opt = document.createElement('option');
+      opt.value = m.model_name || '';
+      opt.textContent = `${m.label || m.model_name || ''}${m.vendor ? ` (${m.vendor})` : ''}`;
+      if (opt.value === current) opt.selected = true;
+      select.appendChild(opt);
+    }
+    modelInput.replaceWith(select);
+    modelStatus.textContent = `${data.models.length} models loaded`;
+    select.addEventListener('change', () => {
+      chrome.storage.sync.set({ zoModel: select.value });
+    });
+  } catch {
+    modelStatus.textContent = 'Error loading models';
+  }
+}
+
+async function populatePersonas(token, personaSelect) {
+  try {
+    const r = await fetch('https://api.zo.computer/personas/available', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    if (!data.personas?.length) return;
+    personaSelect.innerHTML = '<option value="">Zo (default)</option>';
+    for (const p of data.personas) {
+      const opt = document.createElement('option');
+      opt.value = p.id || '';
+      opt.textContent = p.name || p.id || '';
+      personaSelect.appendChild(opt);
+    }
+  } catch { /* ignore */ }
+}

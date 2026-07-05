@@ -1,133 +1,99 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Zo-Cobrowse — Settings</title>
+  <title>Zo Co-browse — Settings</title>
   <link rel="stylesheet" href="styles.css" />
+  <style>
+    body { width: 540px; margin: 0 auto; padding: 28px 24px; }
+    h1 { font-family: var(--font-display); font-size: 22px; font-weight: 700; font-variation-settings: 'wght' 700, 'SOFT' 80; color: var(--text); margin: 0 0 4px; }
+    .subtitle { font-size: 13px; color: var(--text-muted); margin: 0 0 24px; }
+    .settings-section { margin-bottom: 20px; }
+    .settings-section h2 { font-family: var(--font-display); font-size: 15px; font-weight: 600; font-variation-settings: 'wght' 600, 'SOFT' 60; color: var(--text); margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+    label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px; }
+    .field-group { margin-bottom: 14px; }
+    input[type="text"], input[type="password"], input[type="url"] { width: 100%; box-sizing: border-box; }
+    .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+    .btn-row .btn { flex: 0 0 auto; }
+    .inline-status { font-size: 12px; margin-top: 4px; padding: 4px 8px; border-radius: 4px; }
+    .inline-status.ok { background: color-mix(in srgb, var(--amber) 15%, transparent); color: var(--amber); }
+    .inline-status.err { background: color-mix(in srgb, #ef4444 15%, transparent); color: #ef4444; }
+    .inline-status.pending { background: color-mix(in srgb, var(--indigo) 15%, transparent); color: var(--indigo); }
+    .quick-action-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+    .quick-action-row input[type="text"]:first-child { flex: 0 0 100px; }
+    .quick-action-row input[type="text"]:last-child { flex: 1; }
+    .quick-action-row .btn { flex: 0 0 auto; }
+    .add-action-btn { margin-top: 6px; }
+  </style>
 </head>
-<body class="settings">
-  <main class="settings-container">
-    <header class="settings-header">
-      <h1>⢕⣿ Zo Co-browse</h1>
-      <p class="subtitle">Connect your browser to your Zo Computer's AI backend.</p>
-    </header>
+<body>
+  <h1>✦ Zo Co-browse</h1>
+  <p class="subtitle">Configure your co-browsing connection to Zo Computer</p>
 
-    <form id="settings-form">
-      <!-- Connection -->
-      <fieldset>
-        <legend>🔌 Connection</legend>
-
-        <label for="api-url">Zo API URL</label>
-        <input type="url" id="api-url" value="https://api.zo.computer/zo/ask"
-               placeholder="https://api.zo.computer/zo/ask" />
-
-        <label for="access-token">Access Token</label>
-        <div class="input-with-toggle">
-          <input type="password" id="access-token" placeholder="zo_access_..." autocomplete="off" />
-          <button type="button" id="toggle-token" class="btn btn-sm" title="Show/hide token">👁</button>
-        </div>
-        <p class="hint">
-          Generate a token in your
-          <a href="https://cashlessconsumer.zo.computer/?t=settings&s=advanced" target="_blank">
-            Zo Settings → Advanced → Access Tokens
-          </a>
-        </p>
-
-        <label for="model">Model <span id="model-status" class="tag">needs token</span></label>
-        <select id="model">
-          <option value="">Default (let Zo choose)</option>
-        </select>
-        <p class="hint">Populated from your Zo account after saving an access token.</p>
-
+  <form id="settings-form">
+    <div class="settings-section">
+      <h2>Connection</h2>
+      <div class="field-group">
+        <label for="access-token">Zo Access Token</label>
+        <input type="password" id="access-token" placeholder="zo_…" />
+      </div>
+      <div class="field-group">
+        <label for="api-url">API URL</label>
+        <input type="url" id="api-url" placeholder="https://api.zo.computer/zo/ask" />
+      </div>
+      <div class="field-group">
         <label for="space-endpoint">Zo.space Endpoint</label>
-        <input type="url" id="space-endpoint" value="https://cashlessconsumer.zo.space"
-               placeholder="https://yourhandle.zo.space" />
-      </fieldset>
+        <input type="url" id="space-endpoint" placeholder="https://cashlessconsumer.zo.space" />
+      </div>
+      <div class="btn-row">
+        <button type="button" id="test-btn" class="btn btn-primary">Test Connection</button>
+        <button type="submit" class="btn">Save Settings</button>
+      </div>
+      <div id="status-message" class="inline-status"></div>
+    </div>
 
-      <!-- Co-browsing -->
-      <fieldset>
-        <legend>🖥️ Co-browsing</legend>
-
-        <label class="checkbox-row">
-          <input type="checkbox" id="auto-run" checked />
-          <span>Auto-execute actions from Zo (click, fill, scroll)</span>
-        </label>
-
-        <label class="checkbox-row">
-          <input type="checkbox" id="capture-screenshots" />
-          <span>Include page screenshots in context <span class="tag">uses more tokens</span></span>
-        </label>
-
-        <label class="checkbox-row">
-          <input type="checkbox" id="confirm-navigation" checked />
-          <span>Confirm before Zo navigates to a new page</span>
-        </label>
-
-        <label for="max-text-len">Max page text sent to Zo</label>
-        <select id="max-text-len">
-          <option value="2000">2,000 chars</option>
-          <option value="4000">4,000 chars</option>
-          <option value="8000" selected>8,000 chars</option>
-          <option value="16000">16,000 chars</option>
+    <div class="settings-section">
+      <h2>Model &amp; Persona</h2>
+      <div class="field-group">
+        <label for="model">Default Model</label>
+        <select id="model" style="width:100%">
+          <option value="">— needs token —</option>
         </select>
-      </fieldset>
-
-      <!-- Speech (STT / TTS) -->
-      <fieldset>
-        <legend>🎤 Speech</legend>
-
-        <label class="checkbox-row">
-          <input type="checkbox" id="auto-tts" />
-          <span>Auto-read assistant responses aloud</span>
-        </label>
-
-        <div id="tts-options" style="opacity:0.6;pointer-events:none;">
-          <label for="tts-rate">Speech rate</label>
-          <input type="range" id="tts-rate" min="0.5" max="2" step="0.1" value="1" />
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-top:2px;">
-            <span>Slow</span><span id="tts-rate-value">1.0</span><span>Fast</span>
-          </div>
-        </div>
-        <p class="hint">Microphone input uses your browser's built-in speech recognition (Chrome). TTS reads responses aloud.</p>
-      </fieldset>
-
-      <!-- Quick Actions (chips) -->
-      <fieldset id="quick-actions-fieldset">
-        <legend>⚡ Quick Actions</legend>
-        <p class="fieldset-desc">Manage the action chips that appear above the chat input. Each chip sends a custom prompt to Zo with one click.</p>
-        <div id="qa-list"></div>
-        <button type="button" id="qa-add-btn" class="btn btn-sm" style="margin-top:8px;">+ Add Action</button>
-      </fieldset>
-
-      <!-- Actions -->
-      <div class="form-actions">
-        <button type="submit" id="save-btn" class="btn btn-primary">Save Settings</button>
-        <button type="button" id="test-btn" class="btn">Test Connection</button>
+        <div id="model-status" class="inline-status" style="margin-top:4px;"></div>
       </div>
-
-      <div id="status-message" class="status hidden"></div>
-
-      <!-- Connection test results -->
-      <div id="test-results" class="test-results hidden">
-        <h3>Connection Test</h3>
-        <div class="test-row">
-          <span>Zo API</span>
-          <span id="test-zo-api" class="test-status">—</span>
-        </div>
-        <div class="test-row">
-          <span>Zo.space</span>
-          <span id="test-zo-space" class="test-status">—</span>
-        </div>
+      <div class="field-group">
+        <label for="persona">Default Persona</label>
+        <select id="persona-select" style="width:100%">
+          <option value="">Zo (default)</option>
+        </select>
       </div>
-    </form>
+    </div>
 
-    <!-- About -->
-    <section class="about">
-      <h3>About Zo-Cobrowse</h3>
-      <p>A Chrome extension that lets Zo see your browser page and execute actions — click, fill, scroll, extract. Built for research, data collection, and automation workflows.</p>
-    </section>
-  </main>
+    <div class="settings-section">
+      <h2>Quick Actions</h2>
+      <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px;">Chips shown above the input for one-click prompts.</p>
+      <div id="quick-actions-list"></div>
+      <button type="button" id="add-action-btn" class="btn btn-sm add-action-btn">+ Add Action</button>
+    </div>
+
+    <div class="settings-section">
+      <h2>Speech</h2>
+      <div class="field-group">
+        <label for="tts-lang">TTS Language</label>
+        <input type="text" id="tts-lang" placeholder="en-US" />
+      </div>
+      <div class="field-group">
+        <label for="tts-rate">TTS Rate (0.5 – 2.0)</label>
+        <input type="text" id="tts-rate" placeholder="1.0" />
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button type="submit" class="btn btn-primary">Save Settings</button>
+    </div>
+  </form>
+
   <script src="options.js"></script>
 </body>
 </html>
