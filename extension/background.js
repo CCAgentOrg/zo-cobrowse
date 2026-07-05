@@ -44,7 +44,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
     case 'ASK_ZO': {
-      askZo(request.pageContext, request.userQuery, request.modelName, request.personaId).then(sendResponse);
+      askZo(request.pageContext, request.userQuery, request.modelName, request.personaId, request.presetSystemPrompt, request.presetInstructions).then(sendResponse);
       return true;
     }
     case 'TEST_CONNECTION': {
@@ -87,6 +87,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         })
         .then(([result]) => sendResponse({ ok: true, result: result.result }))
         .catch((err) => sendResponse({ ok: false, error: err.message }));
+      return true;
+    }
+    case 'GENERATE_PRESET': {
+      generatePreset(request.description).then(sendResponse);
       return true;
     }
   }
@@ -160,12 +164,33 @@ async function getActiveTabContext(tabId) {
   }
 }
 
-async function askZo(pageContext, userQuery, modelName, personaId) {
+async function askZo(pageContext, userQuery, modelName, personaId, presetSystemPrompt, presetInstructions) {
   if (!config.zoAccessToken) {
     return { error: '❌ Zo access token not configured. Open extension settings to set it up.' };
   }
 
-  const prompt = `You are Zo — the user's AI co-browsing assistant. You see the page they're on and can control the browser.
+  // Use preset prompts or fall back to defaults
+  const systemPrompt = presetSystemPrompt || `You are Zo — the user's AI co-browsing assistant. You see the page they're on and can control the browser.`;
+  const instructions = presetInstructions || `## Instructions
+Think step by step about what actions to take, then respond with a valid JSON object.
+
+{
+  "reasoning": "your step-by-step thinking",
+  "actions": [
+    {
+      "type": "navigate" | "click" | "fill" | "extract" | "scroll" | "wait" | "done",
+      // For navigate: { "url": "..." }
+      // For click/extract: { "selector": "css-selector" }
+      // For fill: { "selector": "css-selector", "value": "text to type" }
+      // For extract: { "selector": "css-selector", "attribute": "textContent|href|src|..." }
+      // For scroll: { "direction": "up"|"down", "amount": 300 }
+      // For wait: { "ms": 1000 }
+      // For done: { "response": "summary of what happened / answer for user" }
+    }
+  ]
+}`;
+
+  const prompt = `${systemPrompt}
 
 ## Current Page
 - **URL:** ${pageContext.url}
@@ -183,23 +208,7 @@ ${JSON.stringify(pageContext.formFields || [], null, 2)}
 ## User Request
 ${userQuery}
 
-## Instructions
-Think step by step about what actions to take, then respond with a valid JSON object.
-{
-  "reasoning": "your step-by-step thinking",
-  "actions": [
-    {
-      "type": "navigate" | "click" | "fill" | "extract" | "scroll" | "wait" | "done",
-      // For navigate: { "url": "..." }
-      // For click/extract: { "selector": "css-selector" }
-      // For fill: { "selector": "css-selector", "value": "text to type" }
-      // For extract: { "selector": "css-selector", "attribute": "textContent|href|src|..." }
-      // For scroll: { "direction": "up"|"down", "amount": 300 }
-      // For wait: { "ms": 1000 }
-      // For done: { "response": "summary of what happened / answer for user" }
-    }
-  ]
-}`;
+  ${instructions}`;
 
   try {
     const response = await fetch(config.zoApiUrl, {
@@ -258,6 +267,51 @@ async function listPersonas() {
     if (!r.ok) return { error: `HTTP ${r.status}` };
     const data = await r.json();
     return { success: true, personas: data.personas || [] };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+
+async function generatePreset(description) {
+  if (!config.zoAccessToken) {
+    return { error: 'No token' };
+  }
+  try {
+    const r = await fetch(config.zoApiUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.zoAccessToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        input: `You are a preset designer for a browser co-browsing AI assistant. Based on this user description, generate a preset configuration.
+
+User description: ${description}
+
+Create a preset with:
+1. name: A short, catchy name (2-4 words)
+2. description: One sentence explaining what this preset does
+3. systemPrompt: A paragraph setting the AI's role and behavior for this task (write as if addressing the AI directly, starting with "You are Zo —")
+4. instructions: Detailed instructions for how the AI should respond, including output format guidance. Include the JSON schema for actions.
+
+Return ONLY valid JSON with these 4 fields. No markdown, no explanation.`,
+        model_name: config.zoModel,
+      }),
+    });
+    if (!r.ok) {
+      const body = await r.text().catch(() => '');
+      return { error: `HTTP ${r.status}: ${body.substring(0, 200)}` };
+    }
+    const data = await r.json();
+    const output = data.output;
+    try {
+      const preset = JSON.parse(output);
+      return { success: true, preset: { ...preset, isBuiltin: false, createdAt: Date.now() } };
+    } catch {
+      return { error: 'Failed to parse Zo response as JSON' };
+    }
   } catch (err) {
     return { error: err.message };
   }

@@ -421,6 +421,15 @@ body.sidepanel { display: flex; flex-direction: column; height: 100vh; overflow:
   font-size: 13px;
 }
 
+/* Persona row (hidden by default) */
+.persona-row {
+  border-bottom: 1px solid var(--border);
+  padding: 4px 12px;
+}
+.persona-row select {
+  width: 100%;
+}
+
 /* Active button state */
 .btn.active {
   background: var(--accent-muted);

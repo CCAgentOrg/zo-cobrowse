@@ -8,6 +8,7 @@ const MAX_HISTORY = 50;
 const OLD_STORAGE_KEY = 'cobrowse_history';
 const STORAGE_CONVERSATIONS_KEY = 'cobrowse_convos';
 const STORAGE_ACTIVE_KEY = 'cobrowse_active_id';
+const STORAGE_PRESETS_KEY = 'cobrowse_presets';
 
 // ---- State ----
 let config = { hasToken: false };
@@ -37,6 +38,79 @@ const chatView = $('#chat-view');
 const historyViewEl = $('#history-view');
 const historyList = $('#history-list');
 const backToChatBtn = $('#back-to-chat-btn');
+const presetSelect = $('#preset-select');
+const createPresetBtn = $('#create-preset-btn');
+
+// ---- Presets ----
+// Built-in presets
+const BUILTIN_PRESETS = {
+  research: {
+    name: 'Research Deep-dive',
+    description: 'Deep research on a topic — extract facts, data, and sources from the page',
+    systemPrompt: "You are Zo — the user's AI research assistant. Your job is to deeply analyze the current page, extract key facts, data points, sources, and insights. Be thorough and cite specific content from the page.",
+    instructions: `## Instructions
+Analyze the page content in depth. Extract: key claims, data/statistics, named entities, sources cited, dates, and any contradictions. Organize your response with clear headings.
+
+Respond with a valid JSON object:
+{
+  "reasoning": "your analysis process",
+  "actions": [
+    { "type": "extract", "selector": "body", "attribute": "textContent" },
+    { "type": "done", "response": "structured findings markdown" }
+  ]
+}`
+  },
+  summarize: {
+    name: 'Summarizer',
+    description: 'Condense the page into a concise, scannable summary',
+    systemPrompt: "You are Zo — the user's summarization assistant. Condense the page into its essential points. Be concise, objective, and organized.",
+    instructions: `## Instructions
+Produce a concise summary in 3-5 bullet points or a short paragraph. Capture the main argument, key evidence, and conclusion. No fluff.
+
+Respond with a valid JSON object:
+{
+  "reasoning": "what the page is about",
+  "actions": [
+    { "type": "done", "response": "your summary here" }
+  ]
+}`
+  },
+  qa: {
+    name: 'Q&A',
+    description: 'Answer specific questions about the page content',
+    systemPrompt: "You are Zo — answering questions about the current page. Base your answers strictly on page content. When the information is not on the page, say so clearly.",
+    instructions: `## Instructions
+Answer the user's question using only content visible on the current page. If the answer isn't on the page, state that clearly. Quote relevant passages when helpful.
+
+Respond with a valid JSON object:
+{
+  "reasoning": "how you found the answer",
+  "actions": [
+    { "type": "done", "response": "your answer here" }
+  ]
+}`
+  },
+  scrape: {
+    name: 'Data Extraction',
+    description: 'Extract structured data (tables, lists, contacts, prices) from the page',
+    systemPrompt: "You are Zo — the user's data extraction assistant. Extract structured data from the current page. Output clean, machine-readable data in tables or JSON format.",
+    instructions: `## Instructions
+Extract all structured data from the page: tables, lists, contact info, prices, dates, links. Format as markdown tables or JSON where appropriate. Be exhaustive — include everything.
+
+Respond with a valid JSON object:
+{
+  "reasoning": "what data was found",
+  "actions": [
+    { "type": "extract", "selector": "table, ul, ol, dl", "attribute": "textContent" },
+    { "type": "done", "response": "structured data output" }
+  ]
+}`
+  }
+};
+
+let customPresets = {};
+let activePreset = null;
+
 
 // ---- Init ----
 init();
@@ -49,6 +123,7 @@ async function init() {
   await migrateOldFormat();
   await loadConversations();
   await fetchModelsAndPersonas();
+  await loadPresets();
   renderView();
 }
 
@@ -86,6 +161,10 @@ function bindEvents() {
       sendQuery();
     });
   });
+
+  // Preset selection
+  presetSelect.addEventListener('change', applyPreset);
+  createPresetBtn.addEventListener('click', startPresetCreation);
 
   // Pending actions
   runAllBtn.addEventListener('click', runPendingActions);
@@ -495,12 +574,24 @@ async function sendQuery() {
   addMessage('user', query);
   addMessage('thinking', 'Zo is thinking...');
 
+  // Determine preset prompts
+  let presetSystemPrompt, presetInstructions;
+  if (activePreset) {
+    const preset = getPreset(activePreset);
+    if (preset) {
+      presetSystemPrompt = preset.systemPrompt;
+      presetInstructions = preset.instructions;
+    }
+  }
+
   const resp = await chrome.runtime.sendMessage({
     type: 'ASK_ZO',
     pageContext: currentContext,
     userQuery: query,
     modelName: config.selectedModel || undefined,
     personaId: config.selectedPersona || undefined,
+    presetSystemPrompt: presetSystemPrompt,
+    presetInstructions: presetInstructions,
   });
 
   // Remove thinking indicator
@@ -649,4 +740,151 @@ function addMessageDOM(role, text) {
   msgsEl.appendChild(div);
   msgsEl.scrollTop = msgsEl.scrollHeight;
   return div;
+}
+
+// ---- Presets ----
+
+async function loadPresets() {
+  const saved = await chrome.storage.local.get(STORAGE_PRESETS_KEY);
+  customPresets = saved[STORAGE_PRESETS_KEY] || {};
+
+  // Restore last used preset
+  const lastPreset = await chrome.storage.local.get('zoActivePreset');
+  if (lastPreset.zoActivePreset) {
+    activePreset = lastPreset.zoActivePreset;
+    presetSelect.value = lastPreset.zoActivePreset;
+  }
+}
+
+async function saveCustomPresets() {
+  await chrome.storage.local.set({ [STORAGE_PRESETS_KEY]: customPresets });
+}
+
+function getPreset(id) {
+  // Check custom presets first, then built-in
+  if (customPresets[id]) return customPresets[id];
+  if (BUILTIN_PRESETS[id]) return BUILTIN_PRESETS[id];
+  return null;
+}
+
+function applyPreset() {
+  const id = presetSelect.value;
+  if (!id) {
+    activePreset = null;
+    chrome.storage.local.remove('zoActivePreset');
+    addSystemMessage('Default co-browse mode. Zo will see your page and respond with actions.');
+    return;
+  }
+
+  // Reload options to include custom presets
+  rebuildPresetOptions();
+
+  const preset = getPreset(id);
+  if (!preset) return;
+
+  activePreset = id;
+  chrome.storage.local.set({ zoActivePreset: id });
+  addSystemMessage(`🔄 **${preset.name}** preset active. ${preset.description}`);
+}
+
+function rebuildPresetOptions() {
+  // Save current selection
+  const currentVal = presetSelect.value;
+
+  // Clear and rebuild
+  presetSelect.innerHTML = '<option value="">Default (co-browse)</option>';
+  for (const [id, p] of Object.entries(BUILTIN_PRESETS)) {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = `✨ ${p.name}`;
+    presetSelect.appendChild(opt);
+  }
+
+  // Separator for custom presets
+  const customIds = Object.keys(customPresets);
+  if (customIds.length > 0) {
+    const sep = document.createElement('option');
+    sep.disabled = true;
+    sep.textContent = '⎯ Custom ⎯';
+    presetSelect.appendChild(sep);
+
+    for (const [id, p] of Object.entries(customPresets)) {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = `👤 ${p.name}`;
+      opt.title = p.description;
+      presetSelect.appendChild(opt);
+    }
+  }
+
+  // Restore selection
+  if (currentVal) presetSelect.value = currentVal;
+}
+
+async function startPresetCreation() {
+  const input = document.createElement('div');
+  input.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:999;';
+  input.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:16px;width:280px;">
+      <h3 style="font-size:14px;margin:0 0 8px;color:var(--text);">Create Preset with Zo</h3>
+      <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px;">Describe what you want this preset to do:</p>
+      <textarea id="preset-desc-input" style="width:100%;height:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px;font-size:13px;resize:none;font-family:var(--font);" placeholder="e.g. Extract all product prices and availability from shopping pages"></textarea>
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <button id="generate-preset-confirm" class="btn btn-primary btn-sm" style="flex:1;">Generate ✨</button>
+        <button id="generate-preset-cancel" class="btn btn-sm">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(input);
+
+  const descInput = input.querySelector('#preset-desc-input');
+  descInput.focus();
+
+  input.querySelector('#generate-preset-cancel').addEventListener('click', () => input.remove());
+  input.querySelector('#generate-preset-confirm').addEventListener('click', async () => {
+    const desc = descInput.value.trim();
+    if (!desc) return;
+    input.remove();
+
+    addSystemMessage(`🤖 Generating preset for: "${desc}"...`);
+    const resp = await chrome.runtime.sendMessage({
+      type: 'GENERATE_PRESET',
+      description: desc,
+    });
+
+    // Remove the generating message
+    const msgs = msgsEl.querySelectorAll('.msg-system');
+    if (msgs.length > 0) msgs[msgs.length - 1].remove();
+
+    if (resp.error) {
+      addSystemMessage(`❌ Failed to create preset: ${resp.error}`);
+      return;
+    }
+
+    const preset = resp.preset;
+    if (!preset.name || !preset.systemPrompt) {
+      addSystemMessage('❌ Zo returned an incomplete preset. Try again with a more specific description.');
+      return;
+    }
+
+    // Generate a unique id
+    const id = 'custom_' + Date.now();
+    customPresets[id] = {
+      ...preset,
+      isBuiltin: false,
+      id,
+      createdAt: Date.now(),
+    };
+    await saveCustomPresets();
+    rebuildPresetOptions();
+
+    // Select the new preset
+    presetSelect.value = id;
+    applyPreset();
+    addSystemMessage(`✅ Custom preset **${preset.name}** created and activated.`);
+  });
+}
+
+function addSystemMessage(text) {
+  msgsEl.innerHTML += `<div class="msg msg-system"><div class="msg-body">${text}</div></div>`;
+  msgsEl.scrollTop = msgsEl.scrollHeight;
 }
