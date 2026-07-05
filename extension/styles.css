@@ -247,35 +247,6 @@ body.sidepanel { display: flex; flex-direction: column; height: 100vh; overflow:
 #send-btn { flex-shrink: 0; }
 
 
-/* Model/Persona selector row */
-.selector-row {
-  display: flex;
-  gap: 4px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-alt);
-  flex-shrink: 0;
-}
-.selector-select {
-  flex: 1;
-  padding: 3px 6px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-  font-size: 11px;
-  font-family: var(--font);
-  outline: none;
-  cursor: pointer;
-  transition: border-color 0.2s;
-  max-width: 50%;
-}
-.selector-select:focus { border-color: var(--accent); }
-.selector-select option {
-  background: var(--bg-alt);
-  color: var(--text);
-}
-
 /* Action chips */
 .chips {
   display: flex;
@@ -421,21 +392,46 @@ body.sidepanel { display: flex; flex-direction: column; height: 100vh; overflow:
   font-size: 13px;
 }
 
-/* Persona row (hidden by default) */
-.persona-row {
-  border-bottom: 1px solid var(--border);
-  padding: 4px 12px;
-}
-.persona-row select {
-  width: 100%;
-}
-
 /* Active button state */
 .btn.active {
   background: var(--accent-muted);
   color: #fff;
   border-color: var(--accent-muted);
 }
+
+/* ---- Toolbar (model/persona/preset near input) ---- */
+#toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--bg-alt);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  align-items: center;
+}
+.tb-select {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.tb-select:focus { border-color: var(--accent); }
+.tb-select option {
+  background: var(--bg-alt);
+  color: var(--text);
+}
+.tb-btn {
+  flex-shrink: 0;
+}
+
 
 /* ---- Settings page ---- */
 body.settings {
@@ -478,6 +474,29 @@ legend {
   letter-spacing: 0.05em;
   color: var(--text-muted);
   padding: 0 6px;
+}
+
+.fieldset-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
+.tag {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  border-radius: 3px;
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--accent);
+  vertical-align: middle;
+}
+
+/* Settings header with optional description link */
+.settings-header {
+  margin-bottom: 0;
 }
 
 label {
@@ -578,6 +597,62 @@ select { cursor: pointer; }
 }
 .test-row + .test-row { border-top: 1px solid var(--border); }
 .test-status { font-family: var(--font-mono); font-size: 12px; }
+
+/* Quick Actions management */
+.qa-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+  padding: 0;
+}
+.qa-grip {
+  cursor: grab;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  user-select: none;
+  flex-shrink: 0;
+}
+.qa-label {
+  flex: 0 0 160px;
+  min-width: 0;
+}
+.qa-prompt {
+  flex: 1;
+  min-width: 0;
+}
+.qa-del {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+.qa-del:hover {
+  color: var(--error);
+  background: rgba(248, 113, 113, 0.1);
+}
+.qa-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  margin: 8px 0;
+}
+
+/* Override inset inputs inside QA rows to be compact */
+.qa-row input {
+  padding: 5px 8px;
+  font-size: 12px;
+}
 
 /* About */
 .about {

@@ -363,7 +363,7 @@ async function executeActions(actions, tabId) {
   if (!tabId) {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     tabId = tabs[0]?.id;
-    if (!tabId) return { error: 'No active tab' };
+    if (!tabId) return { ok: false, error: 'No active tab' };
   }
 
   const results = [];
@@ -399,9 +399,15 @@ async function executeActions(actions, tabId) {
       }
     }
     results.push(result);
+    if (!result?.ok) break; // stop on first failure
     if (action.type !== 'wait') await sleep(500);
   }
-  return results;
+  // Wrap in object so callers can check result.ok
+  const allOk = results.every(r => r?.ok);
+  const failed = results.find(r => !r?.ok);
+  return allOk
+    ? { ok: true, results }
+    : { ok: false, results, error: failed?.error || 'Action failed' };
 }
 
 function executeDomAction(action) {

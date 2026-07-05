@@ -8,13 +8,15 @@
 </head>
 <body class="settings">
   <main class="settings-container">
-    <h1>⢕⣿ Zo Co-browse</h1>
-    <p class="subtitle">Connect your browser to your Zo Computer's AI backend.</p>
+    <header class="settings-header">
+      <h1>⢕⣿ Zo Co-browse</h1>
+      <p class="subtitle">Connect your browser to your Zo Computer's AI backend.</p>
+    </header>
 
     <form id="settings-form">
       <!-- Connection -->
       <fieldset>
-        <legend>Connection</legend>
+        <legend>🔌 Connection</legend>
 
         <label for="api-url">Zo API URL</label>
         <input type="url" id="api-url" value="https://api.zo.computer/zo/ask"
@@ -43,7 +45,7 @@
 
       <!-- Co-browsing -->
       <fieldset>
-        <legend>Co-browsing</legend>
+        <legend>🖥️ Co-browsing</legend>
 
         <label class="checkbox-row">
           <input type="checkbox" id="auto-run" checked />
@@ -52,7 +54,7 @@
 
         <label class="checkbox-row">
           <input type="checkbox" id="capture-screenshots" />
-          <span>Include page screenshots in context (more accurate, uses more tokens)</span>
+          <span>Include page screenshots in context <span class="tag">uses more tokens</span></span>
         </label>
 
         <label class="checkbox-row">
@@ -67,6 +69,14 @@
           <option value="8000" selected>8,000 chars</option>
           <option value="16000">16,000 chars</option>
         </select>
+      </fieldset>
+
+      <!-- Quick Actions (chips) -->
+      <fieldset id="quick-actions-fieldset">
+        <legend>⚡ Quick Actions</legend>
+        <p class="fieldset-desc">Manage the action chips that appear above the chat input. Each chip sends a custom prompt to Zo with one click.</p>
+        <div id="qa-list"></div>
+        <button type="button" id="qa-add-btn" class="btn btn-sm" style="margin-top:8px;">+ Add Action</button>
       </fieldset>
 
       <!-- Actions -->
@@ -93,8 +103,8 @@
 
     <!-- About -->
     <section class="about">
-      <h3>Zo-Cobrowse</h3>
-      <p>A Chrome extension that lets Zo s</p>
+      <h3>About Zo-Cobrowse</h3>
+      <p>A Chrome extension that lets Zo see your browser page and execute actions — click, fill, scroll, extract. Built for research, data collection, and automation workflows.</p>
     </section>
   </main>
   <script src="options.js"></script>

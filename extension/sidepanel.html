@@ -24,26 +24,6 @@
       </div>
     </header>
 
-    <!-- Model / Persona / Preset selectors -->
-    <div id="selector-row" class="selector-row">
-      <select id="model-select" class="selector-select" title="AI Model">
-        <option value="">Default model</option>
-      </select>
-      <select id="preset-select" class="selector-select" title="Preset">
-        <option value="">Default (co-browse)</option>
-        <option value="research">🔬 Research Deep-dive</option>
-        <option value="scrape">📥 Data Extraction</option>
-        <option value="summarize">📝 Summarizer</option>
-        <option value="qa">❓ Q&A</option>
-      </select>
-      <button id="create-preset-btn" class="btn btn-sm" title="Create a custom preset with Zo">+</button>
-    </div>
-    <div id="persona-row" class="selector-row persona-row hidden">
-      <select id="persona-select" class="selector-select" title="Persona">
-        <option value="">Zo (default)</option>
-      </select>
-    </div>
-
     <!-- Chat view -->
     <div id="chat-view">
       <!-- Messages -->
@@ -62,6 +42,24 @@
         </div>
       </div>
 
+      <!-- Toolbar: model, persona, preset near the input -->
+      <div id="toolbar" class="toolbar">
+        <select id="model-select" class="tb-select" title="AI Model">
+          <option value="">Default model</option>
+        </select>
+        <select id="persona-select" class="tb-select" title="Persona">
+          <option value="">Zo (default)</option>
+        </select>
+        <select id="preset-select" class="tb-select" title="Preset">
+          <option value="">Default (co-browse)</option>
+          <option value="research">🔬 Research Deep-dive</option>
+          <option value="scrape">📥 Data Extraction</option>
+          <option value="summarize">📝 Summarizer</option>
+          <option value="qa">❓ Q&A</option>
+        </select>
+        <button id="create-preset-btn" class="btn btn-sm tb-btn" title="Create a custom preset with Zo">+</button>
+      </div>
+
       <!-- Input area -->
       <div id="input-area">
         <div class="input-row">
@@ -73,11 +71,8 @@
           />
           <button id="send-btn" class="btn btn-primary" title="Send">→</button>
         </div>
-        <div class="input-row action-chips">
-          <button class="chip" data-action="summarize">Summarize</button>
-          <button class="chip" data-action="extract-links">Extract links</button>
-          <button class="chip" data-action="fill-form">Fill forms</button>
-          <button class="chip" data-action="page-data">Page data</button>
+        <div class="input-row action-chips" id="action-chips">
+          <!-- Chips rendered dynamically from storage -->
         </div>
       </div>
     </div>

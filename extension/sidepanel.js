@@ -9,6 +9,15 @@ const OLD_STORAGE_KEY = 'cobrowse_history';
 const STORAGE_CONVERSATIONS_KEY = 'cobrowse_convos';
 const STORAGE_ACTIVE_KEY = 'cobrowse_active_id';
 const STORAGE_PRESETS_KEY = 'cobrowse_presets';
+const STORAGE_ACTIONS_KEY = 'zoQuickActions';
+
+// ---- Quick Actions (user-manageable chips) ----
+const DEFAULT_QUICK_ACTIONS = [
+  { label: 'Summarize', prompt: 'Summarize this page in 3-5 bullet points.' },
+  { label: 'Extract links', prompt: 'Extract all links from this page.' },
+  { label: 'Fill forms', prompt: 'Identify all form fields on this page and fill them with relevant test data.' },
+  { label: 'Page data', prompt: 'Extract all structured data (tables, lists, prices, dates, contacts) from this page.' },
+];
 
 // ---- State ----
 let config = { hasToken: false };
@@ -124,6 +133,14 @@ async function init() {
   await loadConversations();
   await fetchModelsAndPersonas();
   await loadPresets();
+  await loadQuickActions();
+  // Re-render quick actions when they change in another view (e.g. Options)
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes[STORAGE_ACTIONS_KEY]) {
+      const actions = changes[STORAGE_ACTIONS_KEY].newValue;
+      renderQuickActions(actions || []);
+    }
+  });
   renderView();
 }
 
@@ -154,13 +171,17 @@ function bindEvents() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(); }
   });
 
-  // Chips
-  $$('.chip').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      input.value = chip.dataset.action;
-      sendQuery();
+  // Chips (event delegation for dynamically rendered chips)
+  const chipsContainer = $('#action-chips');
+  if (chipsContainer) {
+    chipsContainer.addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (chip) {
+        input.value = chip.textContent.trim();
+        sendQuery();
+      }
     });
-  });
+  }
 
   // Preset selection
   presetSelect.addEventListener('change', applyPreset);
@@ -925,4 +946,29 @@ async function startPresetCreation() {
 function addSystemMessage(text) {
   msgsEl.innerHTML += `<div class="msg msg-system"><div class="msg-body">${text}</div></div>`;
   msgsEl.scrollTop = msgsEl.scrollHeight;
+}
+
+async function loadQuickActions() {
+  const result = await chrome.storage.sync.get(STORAGE_ACTIONS_KEY);
+  const actions = result[STORAGE_ACTIONS_KEY];
+  if (!actions || !Array.isArray(actions) || actions.length === 0) {
+    // First run — seed defaults
+    await chrome.storage.sync.set({ [STORAGE_ACTIONS_KEY]: DEFAULT_QUICK_ACTIONS });
+    renderQuickActions(DEFAULT_QUICK_ACTIONS);
+  } else {
+    renderQuickActions(actions);
+  }
+}
+
+function renderQuickActions(actions) {
+  const container = $('#action-chips');
+  if (!container) return;
+  container.innerHTML = '';
+  for (const a of actions) {
+    const chip = document.createElement('button');
+    chip.className = 'chip';
+    chip.textContent = a.label;
+    chip.title = a.prompt;
+    container.appendChild(chip);
+  }
 }

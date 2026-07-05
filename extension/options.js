@@ -1,5 +1,7 @@
 // Zo Co-browse — Settings Page Logic
 
+const STORAGE_ACTIONS_KEY = 'zoQuickActions';
+
 document.addEventListener('DOMContentLoaded', async () => {
   const form = document.getElementById('settings-form');
   const apiUrl = document.getElementById('api-url');
@@ -17,11 +19,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   const testZoApi = document.getElementById('test-zo-api');
   const testZoSpace = document.getElementById('test-zo-space');
   const toggleToken = document.getElementById('toggle-token');
+  const qaList = document.getElementById('qa-list');
+  const qaAddBtn = document.getElementById('qa-add-btn');
+
+  // ---- Quick Actions state ----
+  let quickActions = [];
 
   // ---- Load saved settings ----
   const saved = await chrome.storage.sync.get([
     'zoApiUrl', 'zoAccessToken', 'zoModel', 'zoSpaceEndpoint',
     'zoAutoRun', 'zoCaptureScreenshots', 'zoConfirmNavigation', 'zoMaxTextLen',
+    STORAGE_ACTIONS_KEY,
   ]);
 
   if (saved.zoApiUrl) apiUrl.value = saved.zoApiUrl;
@@ -33,15 +41,87 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (saved.zoConfirmNavigation !== undefined) confirmNavigation.checked = saved.zoConfirmNavigation;
   if (saved.zoMaxTextLen) maxTextLen.value = String(saved.zoMaxTextLen);
 
+  // Load quick actions (with defaults)
+  quickActions = saved[STORAGE_ACTIONS_KEY] || [
+    { label: 'Summarize', prompt: 'Summarize this page in 3-5 bullet points.' },
+    { label: 'Extract links', prompt: 'Extract all links from this page.' },
+    { label: 'Fill forms', prompt: 'Identify all form fields on this page and fill them with relevant test data.' },
+    { label: 'Page data', prompt: 'Extract all structured data (tables, lists, prices, dates, contacts) from this page.' },
+  ];
+  renderQuickActions();
+
   // ---- Toggle token visibility ----
   toggleToken.addEventListener('click', () => {
     accessToken.type = accessToken.type === 'password' ? 'text' : 'password';
     toggleToken.textContent = accessToken.type === 'password' ? '👁' : '🙈';
   });
 
+  // ---- Quick Action CRUD ----
+
+  qaAddBtn.addEventListener('click', () => {
+    quickActions.push({ label: '', prompt: '' });
+    renderQuickActions();
+    // Focus the last label input
+    const inputs = qaList.querySelectorAll('.qa-label');
+    const last = inputs[inputs.length - 1];
+    if (last) setTimeout(() => last.focus(), 50);
+  });
+
+  function renderQuickActions() {
+    qaList.innerHTML = '';
+    if (quickActions.length === 0) {
+      qaList.innerHTML = '<div class="qa-empty">No quick actions defined. Add one to show chips in the sidepanel.</div>';
+      return;
+    }
+    for (let i = 0; i < quickActions.length; i++) {
+      const item = quickActions[i];
+      const row = document.createElement('div');
+      row.className = 'qa-row';
+      row.dataset.index = i;
+
+      const grip = document.createElement('span');
+      grip.className = 'qa-grip';
+      grip.textContent = '⠿';
+
+      const labelInp = document.createElement('input');
+      labelInp.type = 'text';
+      labelInp.className = 'qa-label';
+      labelInp.placeholder = 'Button label (e.g. Summarize)';
+      labelInp.value = item.label;
+      labelInp.addEventListener('input', () => { quickActions[i].label = labelInp.value; markDirty(); });
+
+      const promptInp = document.createElement('input');
+      promptInp.type = 'text';
+      promptInp.className = 'qa-prompt';
+      promptInp.placeholder = 'Prompt sent to Zo when clicked';
+      promptInp.value = item.prompt;
+      promptInp.addEventListener('input', () => { quickActions[i].prompt = promptInp.value; markDirty(); });
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'qa-del';
+      delBtn.textContent = '✕';
+      delBtn.title = 'Remove this quick action';
+      delBtn.addEventListener('click', () => {
+        quickActions.splice(i, 1);
+        renderQuickActions();
+        markDirty();
+      });
+
+      row.appendChild(grip);
+      row.appendChild(labelInp);
+      row.appendChild(promptInp);
+      row.appendChild(delBtn);
+      qaList.appendChild(row);
+    }
+  }
+
   // ---- Save ----
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+
+    // Filter out empty rows
+    const valid = quickActions.filter(a => a.label.trim() && a.prompt.trim());
 
     await chrome.storage.sync.set({
       zoApiUrl: apiUrl.value.trim(),
@@ -52,9 +132,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       zoCaptureScreenshots: captureScreenshots.checked,
       zoConfirmNavigation: confirmNavigation.checked,
       zoMaxTextLen: parseInt(maxTextLen.value, 10),
+      [STORAGE_ACTIONS_KEY]: valid,
     });
 
     showStatus('Settings saved.', 'success');
+    dirty = false;
     // Broadcast to background script
     await chrome.runtime.sendMessage({ type: 'CONFIG_UPDATED' });
   });
@@ -65,7 +147,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     testZoApi.textContent = '⏳ testing...';
     testZoSpace.textContent = '⏳ testing...';
 
-    // Test Zo API
     const token = accessToken.value.trim();
     const url = apiUrl.value.trim();
     const mdl = model.value.trim() || 'byok:b5700bd6-fca9-4aa2-9d31-bc9f5bb33bbc';
@@ -99,7 +180,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    // Test Zo.space
     const space = spaceEndpoint.value.trim();
     if (space) {
       try {
@@ -110,6 +190,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
   });
+
+  let dirty = false;
+  function markDirty() { dirty = true; }
 
   function showStatus(msg, type) {
     statusMsg.textContent = msg;
