@@ -2,7 +2,7 @@
 
 ## State machine
 
-- `conversation` array in sidepanel.js — local chat history, persisted to `chrome.storage.local` under key `zo_cobrowse_history`
+- `conversation` array in sidepanel.js — local chat history, persisted to `chrome.storage.local` under key `cobrowse_convos`
 - `zoConversationId` in background.js — tracks Zo's conversation thread across the session
 - `config` (background.js) — loaded from `chrome.storage.sync`, watched for changes
 - `pendingActions` (sidepanel.js) — actions queued for auto-execution after Zo responds

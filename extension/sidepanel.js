@@ -5,14 +5,18 @@ const $$ = (sel) => document.querySelectorAll(sel);
 
 // ---- Constants ----
 const MAX_HISTORY = 50;
-const STORAGE_KEY = 'cobrowse_history';
+const OLD_STORAGE_KEY = 'cobrowse_history';
+const STORAGE_CONVERSATIONS_KEY = 'cobrowse_convos';
+const STORAGE_ACTIVE_KEY = 'cobrowse_active_id';
 
 // ---- State ----
 let config = { hasToken: false };
-let conversation = [];
+let conversations = {};     // all conversations keyed by id
+let activeId = null;        // current conversation id
 let pendingActions = null;
 let currentContext = null;
 let actionRunning = false;
+let isHistoryView = false;
 
 // ---- DOM refs ----
 const msgsEl = $('#messages');
@@ -27,6 +31,12 @@ const actionsReasoning = $('#actions-reasoning');
 const runAllBtn = $('#run-all-btn');
 const skipBtn = $('#skip-btn');
 const newChatBtn = $('#new-chat-btn');
+const historyBtn = $('#history-btn');
+const helpBtn = $('#help-btn');
+const chatView = $('#chat-view');
+const historyViewEl = $('#history-view');
+const historyList = $('#history-list');
+const backToChatBtn = $('#back-to-chat-btn');
 
 // ---- Init ----
 init();
@@ -36,7 +46,10 @@ async function init() {
   updateStatus(config.hasToken);
   bindEvents();
   await refreshPageContext();
-  await loadHistory();
+  await migrateOldFormat();
+  await loadConversations();
+  await fetchModelsAndPersonas();
+  renderView();
 }
 
 async function loadConfig() {
@@ -50,15 +63,16 @@ function updateStatus(connected) {
 }
 
 function bindEvents() {
-  // Model/Persona selection
+  // Model/Persona selection — save to chrome.storage.sync so background picks it up
   modelSelect.addEventListener('change', () => {
     config.selectedModel = modelSelect.value;
-    chrome.storage.local.set({ zoSelectedModel: modelSelect.value });
+    chrome.storage.sync.set({ zoModel: modelSelect.value });
   });
   personaSelect.addEventListener('change', () => {
     config.selectedPersona = personaSelect.value;
-    chrome.storage.local.set({ zoSelectedPersona: personaSelect.value });
+    chrome.storage.sync.set({ zoPersonaId: personaSelect.value });
   });
+
   // Send
   sendBtn.addEventListener('click', sendQuery);
   input.addEventListener('keydown', (e) => {
@@ -80,59 +94,325 @@ function bindEvents() {
   // New conversation
   newChatBtn.addEventListener('click', startNewConversation);
 
+  // History toggle
+  historyBtn.addEventListener('click', toggleHistoryView);
+  backToChatBtn.addEventListener('click', toggleHistoryView);
+  helpBtn.addEventListener('click', () => chrome.tabs.create({ url: 'ht' }));
+
   // Open settings on status dot double-click
   statusDot.addEventListener('dblclick', () => chrome.runtime.openOptionsPage());
 }
 
-// ---- Conversation History ----
+// ---- View switching ----
 
-async function loadHistory() {
-  const result = await chrome.storage.local.get(STORAGE_KEY);
-  const saved = result[STORAGE_KEY] || [];
-  conversation = saved;
+function renderView() {
+  if (isHistoryView) {
+    renderHistoryView();
+  } else {
+    renderChatView();
+  }
+}
 
-  // Clear default system message if we have history
-  const systemMsg = msgsEl.querySelector('.msg-system');
-  if (systemMsg) systemMsg.remove();
+function renderChatView() {
+  isHistoryView = false;
+  historyViewEl.classList.add('hidden');
+  chatView.classList.remove('hidden');
+  historyBtn.classList.remove('active');
+  historyBtn.title = 'History';
+}
 
-  // Replay saved messages
-  for (const msg of conversation) {
+function toggleHistoryView() {
+  // If switching to history, save current conversation first
+  if (!isHistoryView) {
+    saveCurrentConversation();
+  }
+  isHistoryView = !isHistoryView;
+  renderView();
+}
+
+// ---- Multi-conversation storage ----
+
+async function migrateOldFormat() {
+  const result = await chrome.storage.local.get(OLD_STORAGE_KEY);
+  const oldMessages = result[OLD_STORAGE_KEY];
+  if (!oldMessages || !Array.isArray(oldMessages) || oldMessages.length === 0) return;
+
+  // Create a conversation from the old flat history
+  const id = generateId();
+  const firstUserMsg = oldMessages.find(m => m.role === 'user');
+  conversations[id] = {
+    id,
+    title: firstUserMsg ? firstUserMsg.text.substring(0, 60) : 'Previous session',
+    createdAt: oldMessages[0]?.timestamp || Date.now(),
+    updatedAt: Date.now(),
+    messages: oldMessages,
+  };
+  activeId = id;
+
+  await saveConversations();
+  await chrome.storage.local.remove(OLD_STORAGE_KEY);
+}
+
+function generateId() {
+  return 'conv_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+async function loadConversations() {
+  const result = await chrome.storage.local.get([STORAGE_CONVERSATIONS_KEY, STORAGE_ACTIVE_KEY]);
+  conversations = result[STORAGE_CONVERSATIONS_KEY] || {};
+  activeId = result[STORAGE_ACTIVE_KEY] || null;
+
+  // If no active conversation, create one
+  if (!activeId || !conversations[activeId]) {
+    createNewConversation();
+  } else {
+    renderCurrentConversation();
+  }
+
+  // Update history button badge
+  updateHistoryBadge();
+}
+
+async function saveConversations() {
+  await chrome.storage.local.set({
+    [STORAGE_CONVERSATIONS_KEY]: conversations,
+    [STORAGE_ACTIVE_KEY]: activeId,
+  });
+}
+
+function getActiveConversation() {
+  return conversations[activeId] || null;
+}
+
+function createNewConversation() {
+  const id = generateId();
+  conversations[id] = {
+    id,
+    title: 'New Chat',
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    messages: [],
+  };
+  activeId = id;
+  saveConversations();
+}
+
+async function saveCurrentConversation() {
+  const conv = getActiveConversation();
+  if (conv) {
+    conv.updatedAt = Date.now();
+    // Auto-title from first user message
+    const firstUserMsg = conv.messages.find(m => m.role === 'user');
+    if (firstUserMsg && conv.title === 'New Chat') {
+      conv.title = firstUserMsg.text.substring(0, 60);
+    }
+    saveConversations();
+  }
+}
+
+async function ensureActiveConversation() {
+  const conv = getActiveConversation();
+  if (!conv) {
+    createNewConversation();
+  }
+}
+
+function renderCurrentConversation() {
+  msgsEl.innerHTML = '';
+  const conv = getActiveConversation();
+  if (!conv || !conv.messages.length) {
+    addMessageDOM('system', 'Connected to Zo. Ask me about this page, or tell me what to do.');
+    return;
+  }
+  for (const msg of conv.messages) {
     addMessageDOM(msg.role, msg.text);
   }
+}
 
-  // If no history, show default
-  if (!conversation.length) {
-    addMessage('system', 'Connected to Zo. Ask me about this page, or tell me what to do.');
+async function startNewConversation() {
+  // Save current if it has messages
+  const current = getActiveConversation();
+  if (current && current.messages.length > 0) {
+    saveCurrentConversation();
   }
-}
 
-async function saveHistory() {
-  // Trim to max
-  if (conversation.length > MAX_HISTORY) {
-    conversation = conversation.slice(-MAX_HISTORY);
-  }
-  await chrome.storage.local.set({ [STORAGE_KEY]: conversation });
-}
-
-function addHistoryEntry(role, text) {
-  conversation.push({ role, text, timestamp: Date.now() });
-  saveHistory();
-}
-
-async function clearHistory() {
-  conversation = [];
-  await chrome.storage.local.remove(STORAGE_KEY);
-}
-
-function startNewConversation() {
-  // Clear UI
-  msgsEl.innerHTML = '';
-  // Clear saved history
-  clearHistory();
   // Reset Zo conversation on the backend
   chrome.runtime.sendMessage({ type: 'NEW_CONVERSATION' });
-  // Show welcome
-  addMessage('system', 'Connected to Zo. Ask me about this page, or tell me what to do.');
+
+  // Create new conversation
+  createNewConversation();
+
+  // Clear UI
+  msgsEl.innerHTML = '';
+  addMessageDOM('system', 'Connected to Zo. Ask me about this page, or tell me what to do.');
+
+  // If in history view, switch back
+  if (isHistoryView) {
+    isHistoryView = false;
+    renderView();
+  }
+
+  updateHistoryBadge();
+}
+
+async function switchToConversation(id) {
+  if (id === activeId) return;
+
+  // Save current conversation first
+  saveCurrentConversation();
+
+  // Switch
+  activeId = id;
+  await saveConversations();
+
+  // Render
+  msgsEl.innerHTML = '';
+  const conv = getActiveConversation();
+  if (conv && conv.messages.length > 0) {
+    for (const msg of conv.messages) {
+      addMessageDOM(msg.role, msg.text);
+    }
+  } else {
+    addMessageDOM('system', 'Connected to Zo. Ask me about this page, or tell me what to do.');
+  }
+
+  // If in history view, switch back to chat
+  if (isHistoryView) {
+    isHistoryView = false;
+    renderView();
+  }
+}
+
+async function deleteConversation(id) {
+  delete conversations[id];
+  if (activeId === id) {
+    // If deleting active, find another or create new
+    const ids = Object.keys(conversations);
+    if (ids.length > 0) {
+      activeId = ids[0];
+    } else {
+      createNewConversation();
+    }
+  }
+  await saveConversations();
+  updateHistoryBadge();
+  if (isHistoryView) {
+    renderHistoryView();
+  }
+}
+
+function listConversationSummaries() {
+  return Object.values(conversations)
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .map(c => ({
+      id: c.id,
+      title: c.title,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+      messageCount: c.messages.length,
+      isActive: c.id === activeId,
+    }));
+}
+
+function updateHistoryBadge() {
+  const count = Object.keys(conversations).length;
+  historyBtn.textContent = count > 1 ? `☰ ${count}` : '☰';
+  historyBtn.title = count > 1 ? `History (${count} conversations)` : 'History';
+}
+
+// ---- History view ----
+
+function renderHistoryView() {
+  historyViewEl.classList.remove('hidden');
+  chatView.classList.add('hidden');
+  historyBtn.classList.add('active');
+
+  const summaries = listConversationSummaries();
+  historyList.innerHTML = '';
+
+  if (summaries.length === 0) {
+    historyList.innerHTML = '<div class="history-empty">No past conversations yet.</div>';
+    return;
+  }
+
+  // Group by date
+  const groups = groupByDate(summaries);
+  for (const [label, items] of Object.entries(groups)) {
+    const groupEl = document.createElement('div');
+    groupEl.className = 'history-group';
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'history-group-label';
+    labelEl.textContent = label;
+    groupEl.appendChild(labelEl);
+
+    for (const item of items) {
+      const card = document.createElement('div');
+      card.className = `history-card${item.isActive ? ' history-card-active' : ''}`;
+      card.dataset.convId = item.id;
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'history-card-title';
+      titleEl.textContent = item.title;
+
+      const metaEl = document.createElement('div');
+      metaEl.className = 'history-card-meta';
+      const timeStr = formatTime(item.updatedAt);
+      metaEl.textContent = `${item.messageCount} msg · ${timeStr}`;
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'history-card-delete';
+      deleteBtn.textContent = '✕';
+      deleteBtn.title = 'Delete conversation';
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (confirm('Delete this conversation?')) {
+          deleteConversation(item.id);
+        }
+      });
+
+      card.appendChild(titleEl);
+      card.appendChild(metaEl);
+      card.appendChild(deleteBtn);
+
+      card.addEventListener('click', () => switchToConversation(item.id));
+
+      groupEl.appendChild(card);
+    }
+
+    historyList.appendChild(groupEl);
+  }
+}
+
+function groupByDate(summaries) {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterday = today - 86400000;
+  const thisWeek = today - now.getDay() * 86400000;
+  const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+  const groups = {};
+  for (const item of summaries) {
+    let label;
+    if (item.updatedAt >= today) label = 'Today';
+    else if (item.updatedAt >= yesterday) label = 'Yesterday';
+    else if (item.updatedAt >= thisWeek) label = 'This Week';
+    else if (item.updatedAt >= thisMonth) label = 'This Month';
+    else label = 'Older';
+    if (!groups[label]) groups[label] = [];
+    groups[label].push(item);
+  }
+  return groups;
+}
+
+function formatTime(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  if (isToday) {
+    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
 // ---- Page Context ----
@@ -150,23 +430,24 @@ async function refreshPageContext() {
 
 // ---- Fetch models and personas ----
 async function fetchModelsAndPersonas() {
-  // Restore saved selections
-  const saved = await chrome.storage.local.get(['zoSelectedModel', 'zoSelectedPersona']);
-  if (saved.zoSelectedModel) config.selectedModel = saved.zoSelectedModel;
-  if (saved.zoSelectedPersona) config.selectedPersona = saved.zoSelectedPersona;
+  // Restore saved selections from chrome.storage.sync
+  const saved = await chrome.storage.sync.get(['zoModel', 'zoPersonaId']);
+  if (saved.zoModel) config.selectedModel = saved.zoModel;
+  if (saved.zoPersonaId) config.selectedPersona = saved.zoPersonaId;
 
   const modelsResp = await chrome.runtime.sendMessage({ type: 'LIST_MODELS' });
   if (modelsResp?.success && Array.isArray(modelsResp.models)) {
     modelSelect.innerHTML = '<option value="">Default model</option>';
     for (const m of modelsResp.models) {
       const opt = document.createElement('option');
-      opt.value = m.id || m.name;
-      opt.textContent = m.name || m.id;
+      // API returns { model_name, label, vendor, type, ... }
+      opt.value = m.model_name || m.id || '';
+      opt.textContent = m.label || m.name || m.model_name || m.id;
       if (opt.value === config.selectedModel) opt.selected = true;
       modelSelect.appendChild(opt);
     }
   } else {
-    modelSelect.innerHTML = '<option value="">Model (unavailable)</option>';
+    modelSelect.innerHTML = '<option value="">Models unavailable</option>';
   }
 
   const personasResp = await chrome.runtime.sendMessage({ type: 'LIST_PERSONAS' });
@@ -174,8 +455,8 @@ async function fetchModelsAndPersonas() {
     personaSelect.innerHTML = '<option value="">Zo (default)</option>';
     for (const p of personasResp.personas) {
       const opt = document.createElement('option');
-      opt.value = p.id || p.name;
-      opt.textContent = p.name || p.id;
+      opt.value = p.id || p.name || '';
+      opt.textContent = p.name || p.id || '';
       if (opt.value === config.selectedPersona) opt.selected = true;
       personaSelect.appendChild(opt);
     }
@@ -189,6 +470,9 @@ async function sendQuery() {
   input.value = '';
   input.disabled = true;
   sendBtn.disabled = true;
+
+  // Ensure we have an active conversation
+  await ensureActiveConversation();
 
   // If no page context, try again
   await refreshPageContext();
@@ -341,9 +625,17 @@ async function runPendingActions() {
 // ---- Messages ----
 function addMessage(role, text) {
   addMessageDOM(role, text);
-  // Persist non-system, non-thinking messages
+  // Persist non-system, non-thinking messages to current conversation
   if (role !== 'system' && role !== 'thinking') {
-    addHistoryEntry(role, text);
+    const conv = getActiveConversation();
+    if (conv) {
+      conv.messages.push({ role, text, timestamp: Date.now() });
+      // Trim to MAX_HISTORY per conversation
+      if (conv.messages.length > MAX_HISTORY) {
+        conv.messages = conv.messages.slice(-MAX_HISTORY);
+      }
+      saveCurrentConversation();
+    }
   }
 }
 

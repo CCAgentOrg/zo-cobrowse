@@ -241,7 +241,9 @@ async function listModels() {
       headers: { Authorization: `Bearer ${config.zoAccessToken}` }
     });
     if (!r.ok) return { error: `HTTP ${r.status}` };
-    return { success: true, models: await r.json() };
+    const data = await r.json();
+    // API returns { models: [{ model_name, label, vendor, ... }], featured_models_are_free }
+    return { success: true, models: data.models || [] };
   } catch (err) {
     return { error: err.message };
   }
@@ -254,7 +256,8 @@ async function listPersonas() {
       headers: { Authorization: `Bearer ${config.zoAccessToken}` }
     });
     if (!r.ok) return { error: `HTTP ${r.status}` };
-    return { success: true, personas: await r.json() };
+    const data = await r.json();
+    return { success: true, personas: data.personas || [] };
   } catch (err) {
     return { error: err.message };
   }

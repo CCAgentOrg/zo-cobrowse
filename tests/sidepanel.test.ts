@@ -3,31 +3,33 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 
 const SIDEPANEL_PATH = resolve(import.meta.dir, "../extension/sidepanel.js");
+const code = readFileSync(SIDEPANEL_PATH, "utf-8");
 
 describe("sidepanel.js", () => {
-  const code = readFileSync(SIDEPANEL_PATH, "utf-8");
-
   it("is valid JavaScript", () => {
     expect(() => new Function(code)).not.toThrow();
   });
 
-  it("has history persistence (MAX_HISTORY, loadHistory, saveHistory)", () => {
+  it("has history persistence (MAX_HISTORY, loadConversations, saveConversations)", () => {
     expect(code).toContain("MAX_HISTORY");
-    expect(code).toContain("loadHistory");
-    expect(code).toContain("saveHistory");
+    expect(code).toContain("loadConversations");
+    expect(code).toContain("saveConversations");
+    expect(code).toContain("STORAGE_CONVERSATIONS_KEY");
     expect(code).toContain("chrome.storage.local");
   });
 
-  it("has new chat button and clearHistory", () => {
+  it("has new chat button and startNewConversation", () => {
     expect(code).toContain("newChatBtn");
-    expect(code).toContain("clearHistory");
+    expect(code).toContain("startNewConversation");
     expect(code).toContain("NEW_CONVERSATION");
   });
 
-  it("restores history on init", () => {
-    expect(code).toContain("loadHistory()");
-    expect(code).toContain("msg-system");
+  it("restores conversations on init", () => {
+    expect(code).toContain("loadConversations()");
+    expect(code).toContain("migrateOldFormat()");
+    expect(code).toContain("fetchModelsAndPersonas()");
   });
+});
 
 describe("sidepanel model/persona selectors", () => {
   it("has model-select and persona-select elements in HTML", () => {
@@ -49,10 +51,43 @@ describe("sidepanel model/persona selectors", () => {
     expect(code).toContain('personaId:');
   });
 
-  it("persists selections to chrome.storage.local", () => {
-    expect(code).toContain('zoSelectedModel');
-    expect(code).toContain('zoSelectedPersona');
+  it("persists selections to chrome.storage.sync", () => {
+    expect(code).toContain('zoModel');
+    expect(code).toContain('zoPersonaId');
+    expect(code).toContain('chrome.storage.sync');
+  });
+
+  it("maps model_name/label from API response", () => {
+    expect(code).toContain('m.model_name');
+    expect(code).toContain('m.label');
   });
 });
 
+describe("sidepanel history view", () => {
+  it("has history button and view elements in HTML", () => {
+    const htmlPath = resolve(import.meta.dir, "../extension/sidepanel.html");
+    const html = readFileSync(htmlPath, "utf-8");
+    expect(html).toContain('id="history-btn"');
+    expect(html).toContain('id="chat-view"');
+    expect(html).toContain('id="history-view"');
+    expect(html).toContain('id="history-list"');
+    expect(html).toContain('id="back-to-chat-btn"');
+  });
+
+  it("has multi-conversation storage functions", () => {
+    expect(code).toContain("switchToConversation");
+    expect(code).toContain("deleteConversation");
+    expect(code).toContain("renderHistoryView");
+    expect(code).toContain("listConversationSummaries");
+    expect(code).toContain("createNewConversation");
+    expect(code).toContain("migrateOldFormat");
+    expect(code).toContain("OLD_STORAGE_KEY");
+  });
+
+  it("has conversation grouping by date", () => {
+    expect(code).toContain("groupByDate");
+    expect(code).toContain("formatTime");
+    expect(code).toContain("'Today'");
+    expect(code).toContain("'Yesterday'");
+  });
 });
