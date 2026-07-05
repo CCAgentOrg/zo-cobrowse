@@ -29,7 +29,19 @@ chrome.storage.local.get(
   }
 );
 
-chrome.storage.onChanged.addListener((changes) => {
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'sync') {
+    if (changes.zoApiUrl?.newValue) config.zoApiUrl = changes.zoApiUrl.newValue;
+    if (changes.zoModel?.newValue) config.zoModel = changes.zoModel.newValue;
+    if (changes.zoPersonaId?.newValue) config.zoPersonaId = changes.zoPersonaId.newValue;
+    return;
+  }
+  if (areaName === 'local') {
+    if (changes.zoApiUrl?.newValue) config.zoApiUrl = changes.zoApiUrl.newValue;
+    if (changes.zoModel?.newValue) config.zoModel = changes.zoModel.newValue;
+    if (changes.zoPersonaId?.newValue) config.zoPersonaId = changes.zoPersonaId.newValue;
+    return;
+  }
   if (changes.zoApiUrl?.newValue) config.zoApiUrl = changes.zoApiUrl.newValue;
   if (changes.zoAccessToken?.newValue) config.zoAccessToken = changes.zoAccessToken.newValue;
   else if (changes.zoAccessToken?.oldValue && !changes.zoAccessToken?.newValue) config.zoAccessToken = undefined;

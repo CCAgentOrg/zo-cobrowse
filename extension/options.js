@@ -196,15 +196,18 @@ document.addEventListener('DOMContentLoaded', () => {
     statusMsg.textContent = 'Testing…';
     statusMsg.className = 'inline-status pending';
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
       const r = await fetch('https://api.zo.computer/zo/ask', {
+        signal: controller.signal,
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
-          Accept: 'application/json',
         },
         body: JSON.stringify({ input: 'Reply with just: ZO_OK' }),
       });
+      clearTimeout(timeout);
       const text = await r.text();
       if (r.ok && text.includes('ZO_OK')) {
         statusMsg.textContent = '✅ Connection successful!';
@@ -214,7 +217,11 @@ document.addEventListener('DOMContentLoaded', () => {
         statusMsg.className = 'inline-status err';
       }
     } catch (err) {
-      statusMsg.textContent = `❌ ${err.message}`;
+      if (err.name === 'AbortError') {
+        statusMsg.textContent = '❌ Request timed out after 15s. Check your token and internet.';
+      } else {
+        statusMsg.textContent = `❌ ${err.message}`;
+      }
       statusMsg.className = 'inline-status err';
     }
     testBtn.disabled = false;
