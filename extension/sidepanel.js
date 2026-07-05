@@ -97,7 +97,7 @@ function bindEvents() {
   // History toggle
   historyBtn.addEventListener('click', toggleHistoryView);
   backToChatBtn.addEventListener('click', toggleHistoryView);
-  helpBtn.addEventListener('click', () => chrome.tabs.create({ url: 'ht' }));
+  helpBtn.addEventListener('click', () => chrome.tabs.create({ url: 'https://cashlessconsumer.zo.space/co-browse' }));
 
   // Open settings on status dot double-click
   statusDot.addEventListener('dblclick', () => chrome.runtime.openOptionsPage());
