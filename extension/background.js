@@ -86,11 +86,28 @@ function sanitizedConfig() {
   };
 }
 
+// ---- Route context capture and action execution through content script ----
+
 async function getActiveTabContext(tabId) {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  const tab = tabId ? { id: tabId } : tabs[0];
+  // Step 1: find the active tab
+  let tab;
+  if (tabId) {
+    tab = { id: tabId };
+  } else {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    tab = tabs[0];
+  }
   if (!tab?.id) return { error: 'No active tab' };
 
+  // Step 2: try content script first (more reliable, no host_permission needed)
+  try {
+    const resp = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_CONTEXT' });
+    if (resp && !resp.error) return resp;
+  } catch {
+    // content script not injected — fall through to executeScript
+  }
+
+  // Step 3: fallback — inject inline via scripting API
   try {
     const [context] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
@@ -277,18 +294,29 @@ async function executeActions(actions, tabId) {
       results.push({ ok: true, type: 'done', response: action.response });
       continue;
     }
+    // Try content script first
+    let result;
     try {
-      const [r] = await chrome.scripting.executeScript({
-        target: { tabId },
-        func: executeDomAction,
-        args: [action],
+      const resp = await chrome.tabs.sendMessage(tabId, {
+        type: 'EXECUTE_ACTION',
+        action,
       });
-      results.push(r.result);
-      // Wait briefly between actions for page to settle
-      if (action.type !== 'wait') await sleep(500);
-    } catch (err) {
-      results.push({ ok: false, error: err.message });
+      result = resp || { ok: false, error: 'no response' };
+    } catch {
+      // Content script not loaded — fallback to executeScript
+      try {
+        const [r] = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: executeDomAction,
+          args: [action],
+        });
+        result = r.result;
+      } catch (err) {
+        result = { ok: false, error: err.message };
+      }
     }
+    results.push(result);
+    if (action.type !== 'wait') await sleep(500);
   }
   return results;
 }
