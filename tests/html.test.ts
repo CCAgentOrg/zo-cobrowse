@@ -47,6 +47,8 @@ describe("options.html", () => {
     expect(html).toContain("id=\"access-token\"");
     expect(html).toContain("id=\"api-url\"");
     expect(html).toContain("id=\"model\"");
+    expect(html).toContain("id=\"model-status\"");
+    expect(html).toContain("needs token");
     expect(html).toContain("id=\"settings-form\"");
   });
 

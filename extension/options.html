@@ -34,9 +34,11 @@
           </a>
         </p>
 
-        <label for="model">Model (optional)</label>
-        <input type="text" id="model" value="byok:b5700bd6-fca9-4aa2-9d31-bc9f5bb33bbc"
-               placeholder="Model ID or leave default" />
+        <label for="model">Model <span id="model-status" class="tag">needs token</span></label>
+        <select id="model">
+          <option value="">Default (let Zo choose)</option>
+        </select>
+        <p class="hint">Populated from your Zo account after saving an access token.</p>
 
         <label for="space-endpoint">Zo.space Endpoint</label>
         <input type="url" id="space-endpoint" value="https://cashlessconsumer.zo.space"

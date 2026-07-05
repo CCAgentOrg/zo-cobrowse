@@ -3,7 +3,7 @@
 
 const DEFAULTS = {
   zoApiUrl: 'https://api.zo.computer/zo/ask',
-  zoModel: 'byok:b5700bd6-fca9-4aa2-9d31-bc9f5bb33bbc',
+  zoModel: '',
   zoSpaceEndpoint: 'https://cashlessconsumer.zo.space',
 };
 
@@ -220,7 +220,7 @@ ${userQuery}
       },
       body: JSON.stringify({
         input: prompt,
-        model_name: modelName || config.zoModel,
+        model_name: (modelName || config.zoModel) || undefined,
         conversation_id: zoConversationId || undefined,
         ...((personaId || config.zoPersonaId) ? { persona_id: personaId || config.zoPersonaId } : {}),
       }),
@@ -286,18 +286,8 @@ async function generatePreset(description) {
         Accept: 'application/json',
       },
       body: JSON.stringify({
-        input: `You are a preset designer for a browser co-browsing AI assistant. Based on this user description, generate a preset configuration.
-
-User description: ${description}
-
-Create a preset with:
-1. name: A short, catchy name (2-4 words)
-2. description: One sentence explaining what this preset does
-3. systemPrompt: A paragraph setting the AI's role and behavior for this task (write as if addressing the AI directly, starting with "You are Zo —")
-4. instructions: Detailed instructions for how the AI should respond, including output format guidance. Include the JSON schema for actions.
-
-Return ONLY valid JSON with these 4 fields. No markdown, no explanation.`,
-        model_name: config.zoModel,
+        input: `You are a preset designer for a browser co-browsing AI assistant. Based on this user description, generate a preset configuration.\n\nUser description: ${description}\n\nCreate a preset with:\n1. name: A short, catchy name (2-4 words)\n2. description: One sentence explaining what this preset does\n3. systemPrompt: A paragraph setting the AI's role and behavior for this task (write as if addressing the AI directly, starting with \"You are Zo —\")\n4. instructions: Detailed instructions for how the AI should respond, including output format guidance. Include the JSON schema for actions.\n\nReturn ONLY valid JSON with these 4 fields. No markdown, no explanation.`,
+        model_name: config.zoModel || undefined,
       }),
     });
     if (!r.ok) {
@@ -334,7 +324,7 @@ async function testConnection() {
       },
       body: JSON.stringify({
         input: 'Reply with just: ZO_OK',
-        model_name: config.zoModel,
+        model_name: config.zoModel || undefined,
         conversation_id: zoConversationId || undefined,
       }),
     });

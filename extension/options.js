@@ -7,13 +7,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   const apiUrl = document.getElementById('api-url');
   const accessToken = document.getElementById('access-token');
   const model = document.getElementById('model');
+  const modelStatus = document.getElementById('model-status');
   const spaceEndpoint = document.getElementById('space-endpoint');
   const autoRun = document.getElementById('auto-run');
   const captureScreenshots = document.getElementById('capture-screenshots');
   const confirmNavigation = document.getElementById('confirm-navigation');
   const maxTextLen = document.getElementById('max-text-len');
-  const saveBtn = document.getElementById('save-btn');
   const testBtn = document.getElementById('test-btn');
+  const saveBtn = document.getElementById('save-btn');
   const statusMsg = document.getElementById('status-message');
   const testResults = document.getElementById('test-results');
   const testZoApi = document.getElementById('test-zo-api');
@@ -34,7 +35,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (saved.zoApiUrl) apiUrl.value = saved.zoApiUrl;
   if (saved.zoAccessToken) accessToken.value = saved.zoAccessToken;
-  if (saved.zoModel) model.value = saved.zoModel;
   if (saved.zoSpaceEndpoint) spaceEndpoint.value = saved.zoSpaceEndpoint;
   if (saved.zoAutoRun !== undefined) autoRun.checked = saved.zoAutoRun;
   if (saved.zoCaptureScreenshots !== undefined) captureScreenshots.checked = saved.zoCaptureScreenshots;
@@ -50,6 +50,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   ];
   renderQuickActions();
 
+  // ---- Load models from API ----
+  const hasToken = !!saved.zoAccessToken;
+  if (hasToken) {
+    modelStatus.textContent = 'loading...';
+    await populateModels(saved.zoAccessToken, saved.zoModel);
+  } else {
+    modelStatus.textContent = '⏳ needs token';
+  }
+
   // ---- Toggle token visibility ----
   toggleToken.addEventListener('click', () => {
     accessToken.type = accessToken.type === 'password' ? 'text' : 'password';
@@ -61,7 +70,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   qaAddBtn.addEventListener('click', () => {
     quickActions.push({ label: '', prompt: '' });
     renderQuickActions();
-    // Focus the last label input
     const inputs = qaList.querySelectorAll('.qa-label');
     const last = inputs[inputs.length - 1];
     if (last) setTimeout(() => last.focus(), 50);
@@ -120,13 +128,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    // Filter out empty rows
+    const token = accessToken.value.trim();
     const valid = quickActions.filter(a => a.label.trim() && a.prompt.trim());
 
     await chrome.storage.sync.set({
       zoApiUrl: apiUrl.value.trim(),
-      zoAccessToken: accessToken.value.trim(),
-      zoModel: model.value.trim() || 'byok:b5700bd6-fca9-4aa2-9d31-bc9f5bb33bbc',
+      zoAccessToken: token,
+      zoModel: model.value,
       zoSpaceEndpoint: spaceEndpoint.value.trim(),
       zoAutoRun: autoRun.checked,
       zoCaptureScreenshots: captureScreenshots.checked,
@@ -137,8 +145,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     showStatus('Settings saved.', 'success');
     dirty = false;
-    // Broadcast to background script
+
     await chrome.runtime.sendMessage({ type: 'CONFIG_UPDATED' });
+
+    // If token was just saved, load models now
+    if (token && !hasToken) {
+      modelStatus.textContent = 'loading...';
+      await populateModels(token, model.value);
+    }
   });
 
   // ---- Test connection ----
@@ -149,12 +163,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const token = accessToken.value.trim();
     const url = apiUrl.value.trim();
-    const mdl = model.value.trim() || 'byok:b5700bd6-fca9-4aa2-9d31-bc9f5bb33bbc';
+    const selectedModel = model.value || undefined;
 
     if (!token) {
       testZoApi.textContent = '✕ No token configured';
     } else {
       try {
+        const body = { input: 'Respond with just the word "connected" if you receive this message.' };
+        if (selectedModel) body.model_name = selectedModel;
+
         const resp = await fetch(url, {
           method: 'POST',
           headers: {
@@ -162,10 +179,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
           },
-          body: JSON.stringify({
-            input: 'Respond with just the word "connected" if you receive this message.',
-            model_name: mdl,
-          }),
+          body: JSON.stringify(body),
         });
 
         if (!resp.ok) {
@@ -190,6 +204,40 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
   });
+
+  async function populateModels(token, selectedModel) {
+    try {
+      const r = await fetch('https://api.zo.computer/models/available', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok) {
+        modelStatus.textContent = '✕ failed to load';
+        return;
+      }
+      const data = await r.json();
+      const models = data.models || [];
+      // Clear existing, keep the default option
+      model.innerHTML = '<option value="">Default (let Zo choose)</option>';
+      for (const m of models) {
+        const opt = document.createElement('option');
+        opt.value = m.model_name || m.id || '';
+        opt.textContent = `${m.label || m.model_name || m.id}${m.vendor ? ` — ${m.vendor}` : ''}`;
+        if (opt.value === selectedModel) opt.selected = true;
+        model.appendChild(opt);
+      }
+      // If saved model not in list (e.g. custom ID), add it
+      if (selectedModel && !model.querySelector(`option[value="${selectedModel}"]`)) {
+        const opt = document.createElement('option');
+        opt.value = selectedModel;
+        opt.textContent = selectedModel;
+        opt.selected = true;
+        model.appendChild(opt);
+      }
+      modelStatus.textContent = `${models.length} models`;
+    } catch (err) {
+      modelStatus.textContent = '✕ error';
+    }
+  }
 
   let dirty = false;
   function markDirty() { dirty = true; }

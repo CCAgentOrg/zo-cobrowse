@@ -21,7 +21,12 @@ describe("options.js", () => {
     expect(code).toContain("chrome.storage.sync.set");
     expect(code).toContain("access-token");
     expect(code).toContain("api-url");
-    expect(code).toContain("model");
+    expect(code).toContain("model.value");
+  });
+
+  it("fetches models from API when token is saved", () => {
+    expect(code).toContain("populateModels");
+    expect(code).toContain("models/available");
   });
 
   it("has a test connection button", () => {
