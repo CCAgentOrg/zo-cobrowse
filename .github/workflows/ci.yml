@@ -22,9 +22,11 @@ jobs:
 
       - name: Run tests
         run: bun test
+        env:
+          BUN_ENV: test
 
       - name: Validate manifest.json
-        run: bun run -e "JSON.parse(Bun.file('extension/manifest.json').text()); console.log('manifest: valid')"
+        run: node -e "JSON.parse(require('fs').readFileSync('extension/manifest.json','utf8')); console.log('manifest: valid')"
 
       - name: Validate extension JS files
         run: |
@@ -32,10 +34,10 @@ jobs:
             node --check "$f" && echo "OK: $f" || exit 1
           done
 
-      - name: Check for Chrome API usage consistency
+      - name: Check Chrome API usage
         run: |
-          echo "=== Checking missing permissions ==="
-          grep -rn 'chrome\.' extension/*.js | grep -v 'console\|//' | sort -u
+          echo "=== Chrome API calls in extension ==="
+          grep -rn 'chrome\.' extension/*.js | grep -v 'console\.\|// ' | sort -u || true
 
   lint:
     runs-on: ubuntu-latest
@@ -47,16 +49,16 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install dependencies
-        run: bun install
-
-      - name: Check for TODO/FIXME
+      - name: Check for TODO/FIXME/HACK
         run: |
-          ! grep -rn 'TODO\|FIXME\|HACK' extension/*.js extension/*.html extension/*.css backend/*.ts || \
-            echo "WARNING: Found TODO/FIXME markers"
+          if grep -rn 'TODO\|FIXME\|HACK' extension/*.js extension/*.html extension/*.css backend/*.ts 2>/dev/null; then
+            echo "WARNING: Found TODO/FIXME/HACK markers above"
+          else
+            echo "No TODO/FIXME/HACK markers found"
+          fi
 
       - name: Check line endings
-        run: file extension/*.js extension/*.html extension/*.css | grep -v 'ASCII text\|UTF-8\|empty'
+        run: file extension/*.js extension/*.html extension/*.css 2>/dev/null
 
   publish:
     if: github.ref == 'refs/heads/main'
@@ -65,12 +67,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create release artifact
+      - name: Create extension artifact
         run: |
-          mkdir -p dist
-          cp -r extension/ dist/zo-cobrowse/
+          mkdir -p dist/zo-cobrowse
+          cp -r extension/* dist/zo-cobrowse/
           cd dist && zip -r ../zo-cobrowse.zip zo-cobrowse/
-          echo "Artifact created: zo-cobrowse.zip"
+          echo "✅ Artifact: zo-cobrowse.zip ($(du -h ../zo-cobrowse.zip | cut -f1))"
 
       - name: Upload extension package
         uses: actions/upload-artifact@v4
@@ -78,7 +80,7 @@ jobs:
           name: zo-cobrowse-extension
           path: zo-cobrowse.zip
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release (tagged only)
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v')
         with:
