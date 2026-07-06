@@ -234,6 +234,41 @@ async function init() {
 async function loadConfig() {
   const resp = await chrome.runtime.sendMessage({ type: 'GET_CONFIG' });
   if (resp) config = resp;
+  // Also load personaMode directly from storage for sync
+  const saved = await chrome.storage.sync.get(['personaMode', 'zoPersonaId']);
+  if (saved.personaMode) config.personaMode = saved.personaMode;
+  if (saved.zoPersonaId) config.selectedPersona = saved.zoPersonaId;
+  updateRoutingBadge();
+}
+
+const MODE_LABELS = {
+  auto: '◐ Auto',
+  lite: '☾ Lite',
+  full: '⚡ Full',
+};
+
+const MODE_CYCLE = ['auto', 'lite', 'full'];
+
+function updateRoutingBadge() {
+  const badge = document.getElementById('routing-badge');
+  if (!badge) return;
+  const mode = config.personaMode || 'auto';
+  badge.textContent = MODE_LABELS[mode] || '◐ Auto';
+  badge.className = 'routing-badge ' + mode;
+}
+
+function cyclePersonaMode() {
+  const current = config.personaMode || 'auto';
+  const idx = MODE_CYCLE.indexOf(current);
+  const next = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
+  config.personaMode = next;
+  chrome.storage.sync.set({ personaMode: next });
+  updateRoutingBadge();
+  // Show system message
+  const msg = next === 'auto' ? '◐ Auto mode — Zo classifies each query as Lite or Full'
+    : next === 'lite' ? '☾ Lite mode — page-only, no tool access'
+    : '⚡ Full mode — Zo has full access to files, data, skills';
+  addSystemMessage(`🔄 Persona: ${msg}`);
 }
 
 function updateStatus(connected) {
@@ -261,6 +296,15 @@ function bindEvents() {
   // Mic button — STT
   if (micBtn) {
     micBtn.addEventListener('click', () => { warmupTts(); startRecording(); });
+  }
+
+  // Routing badge — click to cycle persona mode
+  const routingBadge = document.getElementById('routing-badge');
+  if (routingBadge) {
+    routingBadge.addEventListener('click', () => {
+      warmupTts();
+      cyclePersonaMode();
+    });
   }
 
   // Chips (event delegation for dynamically rendered chips)

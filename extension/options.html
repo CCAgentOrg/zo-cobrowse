@@ -247,21 +247,45 @@
 
     <!-- ── Model & Persona ── -->
     <div class="card">
-      <h2>🧠 Model &amp; Persona</h2>
+      <h2>🧠 Persona Routing</h2>
+      <p class="desc">Personas let Zo switch between a lightweight page companion and full tool access. The lite persona has no file/tool access — perfect for quick page tasks.</p>
+
+      <div class="field-group">
+        <label for="persona-mode">Routing Mode</label>
+        <select id="persona-mode">
+          <option value="auto">◐ Auto — classify automatically</option>
+          <option value="lite">☾ Lite — always use lite persona</option>
+          <option value="full">☀ Full — always use full persona</option>
+        </select>
+      </div>
+
       <div class="field-group-double">
         <div class="field-group">
-          <label for="model">Default Model</label>
-          <select id="model">
-            <option value="">— needs token —</option>
+          <label for="lite-persona-select">🧘 Lite Persona</label>
+          <select id="lite-persona-select">
+            <option value="">— none (Zo default) —</option>
           </select>
-          <div id="model-status" class="inline-status"></div>
+          <p class="desc" style="margin-top:4px;font-size:11px;">Page-only: summarize, extract, answer questions. No tool access.</p>
         </div>
         <div class="field-group">
-          <label for="persona-select">Default Persona</label>
-          <select id="persona-select">
-            <option value="">Zo (default)</option>
+          <label for="full-persona-select">⚡ Full Persona</label>
+          <select id="full-persona-select">
+            <option value="">— Zo (default) —</option>
           </select>
+          <p class="desc" style="margin-top:4px;font-size:11px;">Full access: files, data, skills, automations, browser actions.</p>
         </div>
+      </div>
+    </div>
+
+    <!-- ── Model ── -->
+    <div class="card">
+      <h2>🧠 Model</h2>
+      <div class="field-group">
+        <label for="model">Default Model</label>
+        <select id="model">
+          <option value="">— needs token —</option>
+        </select>
+        <div id="model-status" class="inline-status"></div>
       </div>
     </div>
 

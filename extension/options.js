@@ -43,9 +43,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const statusMsg = document.getElementById('status-message');
   const tokenInput = document.getElementById('access-token');
   const spaceEndpointInput = document.getElementById('space-endpoint');
-  const personaSelect = document.getElementById('persona-select');
   const modelStatus = document.getElementById('model-status');
   const themeSelect = document.getElementById(OPTIONS_THEME_SELECTOR);
+
+  // Persona routing fields
+  const litePersonaSelect = document.getElementById('lite-persona-select');
+  const fullPersonaSelect = document.getElementById('full-persona-select');
+  const personaModeSelect = document.getElementById('persona-mode');
 
   // Theme selector
   if (themeSelect) {
@@ -88,18 +92,26 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load config — sensitive fields from storage.local, rest from storage.sync
   chrome.storage.local.get(['zoAccessToken', 'zoSpaceEndpoint'], (localResult) => {
     chrome.storage.sync.get([
-      'zoModel', 'zoPersonaId', 'zoQuickActions',
+      'zoModel', 'zoPersonaId', 'zoLitePersonaId', 'zoFullPersonaId', 'personaMode',
+      'zoQuickActions',
       'zoTtsLang', 'zoTtsRate', 'zoTtsAutoRead'
     ], (syncResult) => {
       const token = localResult.zoAccessToken;
       const spaceEndpoint = localResult.zoSpaceEndpoint;
       if (token) tokenInput.value = token;
       if (spaceEndpoint) spaceEndpointInput.value = spaceEndpoint;
-      if (syncResult.zoPersonaId) personaSelect.value = syncResult.zoPersonaId;
+
+      // Persona routing — load both personas with backward compat
+      const liteId = syncResult.zoLitePersonaId || syncResult.zoPersonaId || '';
+      const fullId = syncResult.zoFullPersonaId || syncResult.zoPersonaId || '';
+      litePersonaSelect.value = liteId;
+      fullPersonaSelect.value = fullId;
+      if (syncResult.personaMode) personaModeSelect.value = syncResult.personaMode;
+
       quickActions = syncResult.zoQuickActions || [];
       renderQuickActionsEditor();
       if (token) populateModels(token, syncResult.zoModel);
-      if (token) populatePersonas(token, personaSelect);
+      if (token) populatePersonas(token, litePersonaSelect, fullPersonaSelect, liteId, fullId);
 
       // Restore TTS fields
       const langInput = document.getElementById('tts-lang');
@@ -170,7 +182,10 @@ document.addEventListener('DOMContentLoaded', () => {
       // Non-sensitive config stays in storage.sync
       chrome.storage.sync.set({
         zoModel: getModelValue(),
-        zoPersonaId: personaSelect.value,
+        zoPersonaId: litePersonaSelect.value,
+        zoLitePersonaId: litePersonaSelect.value,
+        zoFullPersonaId: fullPersonaSelect.value,
+        personaMode: personaModeSelect.value,
         zoQuickActions: quickActions,
         zoTtsLang: (document.getElementById('tts-lang')?.value || 'en-US').trim(),
         zoTtsRate: (document.getElementById('tts-rate')?.value || '1.0').trim(),
@@ -268,7 +283,7 @@ async function populateModels(token, currentValue) {
   }
 }
 
-async function populatePersonas(token, personaSelect) {
+async function populatePersonas(token, liteSelect, fullSelect, liteId, fullId) {
   try {
     const r = await fetch('https://api.zo.computer/personas/available', {
       headers: { Authorization: `Bearer ${token}` },
@@ -276,12 +291,16 @@ async function populatePersonas(token, personaSelect) {
     if (!r.ok) return;
     const data = await r.json();
     if (!data.personas?.length) return;
-    personaSelect.innerHTML = '<option value="">Zo (default)</option>';
+    liteSelect.innerHTML = '<option value="">Zo (default)</option>';
+    fullSelect.innerHTML = '<option value="">Zo (default)</option>';
     for (const p of data.personas) {
       const opt = document.createElement('option');
       opt.value = p.id || '';
       opt.textContent = p.name || p.id || '';
-      personaSelect.appendChild(opt);
+      liteSelect.appendChild(opt);
+      fullSelect.appendChild(opt);
     }
+    liteSelect.value = liteId;
+    fullSelect.value = fullId;
   } catch { /* ignore */ }
 }

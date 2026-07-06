@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { resolve } from "path";
+import { readFileSync } from "fs";
 
 // ---- Mock Chrome API ----
 const storage: Record<string, any> = {};
@@ -79,5 +80,44 @@ describe("background.js defaults", () => {
     await chrome.storage.sync.set(config);
     const result = await chrome.storage.sync.get(Object.keys(config));
     expect(result).toEqual(config);
+  });
+});
+
+const code = readFileSync(resolve(import.meta.dir, "../extension/background.js"), "utf-8");
+
+describe("background persona routing", () => {
+  it("has intent classification keywords", () => {
+    expect(code).toContain("LITE_KEYWORDS");
+    expect(code).toContain("FULL_KEYWORDS");
+    expect(code).toContain("classifyIntent");
+    expect(code).toContain("resolvePersona");
+  });
+
+  it("classifies lite intents", () => {
+    expect(code).toContain("summarize");
+    expect(code).toContain("extract");
+    expect(code).toContain("tl;dr");
+  });
+
+  it("classifies full intents", () => {
+    expect(code).toContain("duckdb");
+    expect(code).toContain("skill");
+    expect(code).toContain("automati");
+  });
+
+  it("supports persona routing config", () => {
+    expect(code).toContain("zoLitePersonaId");
+    expect(code).toContain("zoFullPersonaId");
+    expect(code).toContain("personaMode");
+  });
+
+  it("reduces context size for lite mode", () => {
+    expect(code).toContain("isLite");
+    expect(code).toContain("2000");
+  });
+
+  it("returns intent in response", () => {
+    expect(code).toContain("intent:");
+    expect(code).toContain("resolvedIntent");
   });
 });

@@ -58,3 +58,19 @@ describe("options.html", () => {
     expect(html).toContain("options.js");
   });
 });
+
+describe("options.html persona routing", () => {
+  const html = readHTML("options.html");
+
+  it("has persona routing fields", () => {
+    expect(html).toContain("id=\"persona-mode\"");
+    expect(html).toContain("id=\"lite-persona-select\"");
+    expect(html).toContain("id=\"full-persona-select\"");
+  });
+
+  it("has routing mode options", () => {
+    expect(html).toContain("value=\"auto\"");
+    expect(html).toContain("value=\"lite\"");
+    expect(html).toContain("value=\"full\"");
+  });
+});

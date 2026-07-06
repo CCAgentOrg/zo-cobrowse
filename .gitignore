@@ -11,3 +11,6 @@ coverage/
 
 # Design docs, brainstorming, and planning (not production code)
 brainstorming/
+
+# Skill runtime symlink (created by install)
+skill/installed

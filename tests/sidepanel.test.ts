@@ -91,3 +91,37 @@ describe("sidepanel history view", () => {
     expect(code).toContain("'Yesterday'");
   });
 });
+describe("sidepanel persona routing", () => {
+  it("has routing badge element in HTML", () => {
+    const htmlPath = resolve(import.meta.dir, "../extension/sidepanel.html");
+    const html = readFileSync(htmlPath, "utf-8");
+    expect(html).toContain('id="routing-badge"');
+  });
+
+  it("has persona routing functions", () => {
+    expect(code).toContain("updateRoutingBadge");
+    expect(code).toContain("cyclePersonaMode");
+    expect(code).toContain("personaMode");
+    expect(code).toContain("MODE_LABELS");
+    expect(code).toContain("MODE_CYCLE");
+  });
+
+  it("loads personaMode from storage on init", () => {
+    expect(code).toContain("loadConfig");
+    expect(code).toContain("personaMode");
+    expect(code).toContain("chrome.storage.sync.get");
+  });
+
+  it("displays mode labels", () => {
+    expect(code).toContain("◐ Auto");
+    expect(code).toContain("☾ Lite");
+    expect(code).toContain("⚡ Full");
+  });
+
+  it("adds system message on mode change", () => {
+    expect(code).toContain("addSystemMessage");
+    expect(code).toContain("Lite mode");
+    expect(code).toContain("Full mode");
+    expect(code).toContain("Auto mode");
+  });
+});
