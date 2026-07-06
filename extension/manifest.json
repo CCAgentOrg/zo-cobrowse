@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Zo Co-browse",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Co-browsing extension powered by Zo — AI backend that sees your page and takes actions through it.",
   "permissions": ["sidePanel", "storage", "activeTab", "tabs", "scripting", "audioCapture"],
   "host_permissions": ["https://api.zo.computer/*", "https://*.zo.space/*", "https://*.zocomputer.io/*", "http://*/*", "https://*/*"],
