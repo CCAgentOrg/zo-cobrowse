@@ -278,6 +278,169 @@ function resolvePersona(userQuery, pageContext) {
   return { personaId: config.zoPersonaId || '', intent };
 }
 
+// ---- Streaming port handler ----
+
+/** Persistent port connections from sidepanel for streaming Zo responses. */
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'cobrowse-stream') return;
+
+  port.onMessage.addListener(async (msg) => {
+    switch (msg.type) {
+      case 'ASK_ZO': {
+        await askZoStream(port, msg);
+        break;
+      }
+      case 'NEW_CONVERSATION': {
+        zoConversationId = null;
+        break;
+      }
+    }
+  });
+});
+
+async function askZoStream(port, msg) {
+  const { pageContext, userQuery, modelName, personaId, presetSystemPrompt, presetInstructions, intent } = msg;
+
+  if (!config.zoAccessToken) {
+    port.postMessage({ type: 'STREAM_ERROR', error: '❌ Zo access token not configured. Open extension settings to set it up.' });
+    return;
+  }
+
+  // Resolve persona
+  let resolvedPersonaId = personaId;
+  let resolvedIntent = intent;
+  if (!resolvedPersonaId) {
+    const routing = resolvePersona(userQuery, pageContext);
+    resolvedPersonaId = routing.personaId;
+    resolvedIntent = routing.intent;
+  }
+
+  const isLite = resolvedIntent === 'lite';
+
+  const systemPrompt = presetSystemPrompt || (
+    isLite
+      ? `You are Zo — the user's browser companion. You see the page they're on. Keep responses concise and scannable.`
+      : `You are Zo — the user's AI co-browsing assistant. You see the page they're on and can control the browser.`
+  );
+  const instructions = presetInstructions || (
+    isLite
+      ? `## Instructions\nRespond conversationally and concisely. Answer based on the page content provided below. No actions needed — just respond with helpful text formatted as plain markdown.`
+      : `## Instructions\nThink step by step about what actions to take, then respond with a valid JSON object.\n\n{\n  "reasoning": "your step-by-step thinking",\n  "actions": [\n    {\n      "type": "navigate" | "click" | "fill" | "extract" | "scroll" | "wait" | "done",\n      // For navigate: { "url": "..." }\n      // For click/extract: { "selector": "css-selector" }\n      // For fill: { "selector": "css-selector", "value": "text to type" }\n      // For extract: { "selector": "css-selector", "attribute": "textContent|href|src|..." }\n      // For scroll: { "direction": "up"|"down", "amount": 300 }\n      // For wait: { "ms": 1000 }\n      // For done: { "response": "summary of what happened / answer for user" }\n    }\n  ]\n}`
+  );
+
+  const prompt = `${systemPrompt}\n\n## Current Page\n- **URL:** ${pageContext.url}\n- **Title:** ${pageContext.title}\n- **Viewport:** ${pageContext.viewport?.w || '?'}x${pageContext.viewport?.h || '?'}\n\n## Page Content (visible text)\n\`\`\`\n${(pageContext.visibleText || '—empty—').substring(0, isLite ? 2000 : 4000)}\n\`\`\`\n${pageContext.formFields ? `\n## Interactive Elements\n${JSON.stringify(pageContext.formFields || [], null, 2)}\n` : ''}\n\n## User Request\n${userQuery}\n\n  ${instructions}`;
+
+  try {
+    const response = await fetch(config.zoApiUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${config.zoAccessToken}`,
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
+      },
+      body: JSON.stringify({
+        input: prompt,
+        model_name: (modelName || config.zoModel) || undefined,
+        conversation_id: zoConversationId || undefined,
+        stream: true,
+        ...(resolvedPersonaId ? { persona_id: resolvedPersonaId } : {}),
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      port.postMessage({
+        type: 'STREAM_ERROR',
+        error: `Zo API error: ${response.status}${body ? ' — ' + body.substring(0, 200) : ''}`,
+      });
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullText = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(':')) continue;
+
+        if (trimmed.startsWith('data: ')) {
+          // Capture conversation_id from any event
+          const convMatch = trimmed.match(/"conversation_id"\s*:\s*"([^"]+)"/);
+          if (convMatch) zoConversationId = convMatch[1];
+
+          const data = trimmed.slice(6).trim();
+          if (!data) continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.content || parsed.text || parsed.delta || parsed.response || '';
+            if (content) {
+              fullText += content;
+              port.postMessage({ type: 'STREAM_CHUNK', text: fullText });
+            }
+            if (parsed.done || parsed.finish_reason || parsed.type === 'final' || parsed.type === 'complete') {
+              if (parsed.output) fullText = parsed.output;
+              if (parsed.conversation_id) zoConversationId = parsed.conversation_id;
+              finishStream(port, fullText, resolvedIntent);
+              return;
+            }
+          } catch {
+            // Plain text SSE
+            if (data === '[DONE]') {
+              finishStream(port, fullText, resolvedIntent);
+              return;
+            }
+            fullText += data;
+            port.postMessage({ type: 'STREAM_CHUNK', text: fullText });
+          }
+        }
+      }
+    }
+
+    // Stream ended
+    finishStream(port, fullText, resolvedIntent);
+  } catch (err) {
+    port.postMessage({ type: 'STREAM_ERROR', error: `Connection failed: ${err.message}` });
+  }
+}
+
+function finishStream(port, output, intent) {
+  let reasoning = '';
+  let actions = [];
+
+  if (typeof output === 'object' && output !== null) {
+    reasoning = output.reasoning || '';
+    actions = output.actions || [];
+  } else if (typeof output === 'string') {
+    try {
+      const parsed = JSON.parse(output);
+      if (parsed && typeof parsed === 'object') {
+        reasoning = parsed.reasoning || '';
+        actions = parsed.actions || [];
+      }
+    } catch {
+      reasoning = output;
+    }
+  }
+
+  port.postMessage({
+    type: 'STREAM_DONE',
+    reasoning,
+    actions,
+    fullText: typeof output === 'string' ? output : JSON.stringify(output),
+  });
+}
+
 async function askZo(pageContext, userQuery, modelName, personaId, presetSystemPrompt, presetInstructions, intent) {
   if (!config.zoAccessToken) {
     return { error: '❌ Zo access token not configured. Open extension settings to set it up.' };

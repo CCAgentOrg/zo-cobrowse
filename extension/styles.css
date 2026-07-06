@@ -993,6 +993,11 @@ input, textarea, select {
 .tts-btn:hover {
   opacity: 1;
 }
+.tts-btn.speaking {
+  opacity: 1;
+  color: var(--amber);
+  animation: pulse 1.2s ease-in-out infinite;
+}
 
 /* ── Auto-scroll anchor ── */
 .scroll-anchor { height: 1px; }

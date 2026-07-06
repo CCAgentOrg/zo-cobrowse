@@ -97,19 +97,26 @@ let currentContext = null;
 let actionRunning = false;
 let isHistoryView = false;
 
+// ---- Streaming state ----
+let zoPort = null;
+let streamSessionId = 0;
+let streamActive = false;
+let streamMsgEl = null;
+let streamAccumulated = '';
+
 // ---- STT state ----
 let recognition = null;
 let isRecording = false;
 let sttInterim = '';
+let sttLang = 'en-US';
 
 // ---- TTS state ----
 let ttsAutoRead = false;
 let ttsRate = 1.0;
 let ttsVoice = '';
 let ttsLang = 'en-US';
-let currentUtterance = null;
-let ttsWarmedUp = false;
-let voicesCache = [];
+let isSpeaking = false;
+let currentTtsBtnEl = null;
 
 // ---- DOM refs ----
 const msgsEl = $('#messages');
@@ -221,6 +228,8 @@ async function init() {
   await loadPresets();
   await loadQuickActions();
   await loadTtsConfig();
+  // Open streaming port to background — enables streaming Zo responses
+  connectStreamingPort();
   // Re-render quick actions when they change in another view (e.g. Options)
   chrome.storage.onChanged.addListener((changes) => {
     if (changes[STORAGE_ACTIONS_KEY]) {
@@ -288,21 +297,20 @@ function bindEvents() {
   });
 
   // Send
-  sendBtn.addEventListener('click', () => { warmupTts(); sendQuery(); });
+  sendBtn.addEventListener('click', () => { sendQuery(); });
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); warmupTts(); sendQuery(); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(); }
   });
 
   // Mic button — STT
   if (micBtn) {
-    micBtn.addEventListener('click', () => { warmupTts(); startRecording(); });
+    micBtn.addEventListener('click', () => { startRecording(); });
   }
 
   // Routing badge — click to cycle persona mode
   const routingBadge = document.getElementById('routing-badge');
   if (routingBadge) {
     routingBadge.addEventListener('click', () => {
-      warmupTts();
       cyclePersonaMode();
     });
   }
@@ -470,6 +478,8 @@ function renderCurrentConversation() {
 }
 
 async function startNewConversation() {
+  // Cancel any active stream
+  cancelStream();
   // Save current if it has messages
   const current = getActiveConversation();
   if (current && current.messages.length > 0) {
@@ -496,6 +506,8 @@ async function startNewConversation() {
 }
 
 async function switchToConversation(id) {
+  // Cancel any active stream
+  cancelStream();
   if (id === activeId) return;
 
   // Save current conversation first
@@ -877,8 +889,8 @@ async function runPendingActions() {
 // ---- Messages ----
 function addMessage(role, text) {
   addMessageDOM(role, text);
-  // Auto-read assistant messages via TTS (only after user gesture has primed the API)
-  if (role === 'assistant' && ttsAutoRead && ttsWarmedUp) {
+  // Auto-read assistant messages via TTS
+  if (role === 'assistant' && ttsAutoRead) {
     speakText(text);
   }
   // Persist non-system, non-thinking messages to current conversation
@@ -1009,7 +1021,7 @@ function addMessageDOM(role, text) {
     ttsBtn.title = 'Read aloud';
     ttsBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      speakText(text);
+      speakText(text, ttsBtn);
     });
     div.appendChild(ttsBtn);
   }
@@ -1213,7 +1225,7 @@ function startRecording() {
         recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
-        recognition.lang = ttsLang || 'en-US';
+        recognition.lang = sttLang;
 
         recognition.onresult = (event) => {
           let final = '';
@@ -1283,51 +1295,327 @@ async function loadTtsConfig() {
   ttsLang = saved.zoTtsLang || 'en-US';
   ttsRate = parseFloat(saved.zoTtsRate) || 1.0;
   ttsVoice = saved.zoTtsVoice || '';
-
-  // Populate voice cache & listen for async voice loading
-  voicesCache = window.speechSynthesis.getVoices();
-  window.speechSynthesis.onvoiceschanged = () => {
-    voicesCache = window.speechSynthesis.getVoices();
-  };
 }
 
-/** Resolve a voice name/URI to a SpeechSynthesisVoice from cache. */
-function _resolveVoice(nameOrUri) {
-  return voicesCache.find(v => v.name === nameOrUri || v.voiceURI === nameOrUri) || null;
-}
-
-/** Warm up speech synthesis — speak a silent utterance so Chrome grants autoplay privilege for the session. */
-function warmupTts() {
-  if (ttsWarmedUp) return;
-  try {
-    const u = new SpeechSynthesisUtterance('.');
-    u.volume = 0;
-    window.speechSynthesis.speak(u);
-    ttsWarmedUp = true;
-  } catch {
-    // swallow — non-critical
-  }
-}
-
-function speakText(text) {
+/** Speak text using chrome.tts (extension-native API — no autoplay restrictions). */
+function speakText(text, triggerEl) {
   if (!text || !text.trim()) return;
-  warmupTts();
-  window.speechSynthesis.cancel();
+
+  // If the same button is clicked while speaking, stop and return
+  if (isSpeaking && triggerEl && triggerEl === currentTtsBtnEl) {
+    stopSpeaking();
+    return;
+  }
+
+  // If something else is speaking (e.g. auto-read), stop it and continue to speak new text
+  if (isSpeaking) {
+    chrome.tts.stop();
+    isSpeaking = false;
+    if (currentTtsBtnEl) {
+      currentTtsBtnEl.textContent = '🔊';
+      currentTtsBtnEl.title = 'Read aloud';
+      currentTtsBtnEl.classList.remove('speaking');
+      currentTtsBtnEl = null;
+    }
+  }
+
   const plain = text
     .replace(/[*_#`\[\]]/g, '')
     .replace(/\n{2,}/g, '. ')
     .trim();
   if (!plain) return;
-  const utterance = new SpeechSynthesisUtterance(plain);
-  utterance.lang = ttsLang;
-  utterance.rate = ttsRate;
-  if (ttsVoice) {
-    const match = _resolveVoice(ttsVoice);
-    if (match) utterance.voice = match;
+
+  isSpeaking = true;
+  if (triggerEl) {
+    currentTtsBtnEl = triggerEl;
+    triggerEl.textContent = '⏹';
+    triggerEl.title = 'Stop';
+    triggerEl.classList.add('speaking');
   }
-  window.speechSynthesis.speak(utterance);
+
+  chrome.tts.speak(plain, {
+    lang: ttsLang,
+    rate: ttsRate,
+    voiceName: ttsVoice || undefined,
+    onEvent: (event) => {
+      if (event.type === 'end' || event.type === 'interrupted' || event.type === 'cancelled' || event.type === 'error') {
+        isSpeaking = false;
+        if (currentTtsBtnEl) {
+          currentTtsBtnEl.textContent = '🔊';
+          currentTtsBtnEl.title = 'Read aloud';
+          currentTtsBtnEl.classList.remove('speaking');
+          currentTtsBtnEl = null;
+        }
+      }
+    },
+  });
 }
 
 function stopSpeaking() {
-  window.speechSynthesis.cancel();
+  chrome.tts.stop();
+  isSpeaking = false;
+  if (currentTtsBtnEl) {
+    currentTtsBtnEl.textContent = '🔊';
+    currentTtsBtnEl.title = 'Read aloud';
+    currentTtsBtnEl.classList.remove('speaking');
+    currentTtsBtnEl = null;
+  }
+}
+
+// ---- Streaming (port-based) ----
+
+let streamPort = null;
+let streamSession = { active: false, sessionId: 0, msgEl: null, fullText: '', remainingActions: null };
+
+function connectStreamingPort() {
+  try {
+    streamPort = chrome.runtime.connect({ name: 'cobrowse-stream' });
+    streamPort.onMessage.addListener(handleStreamMessage);
+    streamPort.onDisconnect.addListener(() => {
+      streamPort = null;
+      // Reconnect on next sendQuery
+    });
+  } catch {
+    streamPort = null;
+  }
+}
+
+function handleStreamMessage(msg) {
+  switch (msg.type) {
+    case 'STREAM_CHUNK': {
+      // First chunk — remove thinking indicator, create assistant message
+      if (!streamSession.active) return;
+      if (!streamSession.msgEl) {
+        const thinking = msgsEl.querySelector('.msg-thinking');
+        if (thinking) thinking.remove();
+        streamSession.msgEl = addMessageDOM('assistant', msg.text);
+        streamSession.fullText = msg.text;
+      } else {
+        streamSession.fullText = msg.text;
+        const body = streamSession.msgEl.querySelector('.msg-body');
+        if (body) {
+          body.innerHTML = markdownToHtml(msg.text);
+        }
+      }
+      break;
+    }
+    case 'STREAM_DONE': {
+      if (!streamSession.active) return;
+      streamSession.active = false;
+      // Finalize message
+      if (streamSession.msgEl) {
+        const body = streamSession.msgEl.querySelector('.msg-body');
+        if (body) {
+          body.innerHTML = markdownToHtml(msg.fullText || streamSession.fullText || msg.reasoning || '');
+        }
+        // Add TTS button if not already present
+        if (!streamSession.msgEl.querySelector('.tts-btn')) {
+          const text = msg.fullText || streamSession.fullText || msg.reasoning || '';
+          const ttsBtn = document.createElement('button');
+          ttsBtn.className = 'tts-btn msg-tts-btn';
+          ttsBtn.textContent = '🔊';
+          ttsBtn.title = 'Read aloud';
+          ttsBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            speakText(text, ttsBtn);
+          });
+          streamSession.msgEl.appendChild(ttsBtn);
+        }
+      } else {
+        // No streaming chunks — fallback to addMessage
+        if (msg.fullText || msg.reasoning) {
+          addMessage('assistant', msg.fullText || msg.reasoning);
+        }
+      }
+
+      // Persist to conversation
+      const displayText = msg.fullText || streamSession.fullText || msg.reasoning || '';
+      if (displayText) {
+        const conv = getActiveConversation();
+        if (conv) {
+          conv.messages.push({ role: 'assistant', text: displayText, timestamp: Date.now() });
+          if (conv.messages.length > 50) {
+            conv.messages = conv.messages.slice(-50);
+          }
+          saveCurrentConversation();
+        }
+      }
+
+      // Handle actions
+      const actions = msg.actions || [];
+      if (actions.length > 0) {
+        handleStreamActions(actions, msg.reasoning);
+      }
+
+      // Re-enable input
+      input.disabled = false;
+      sendBtn.disabled = false;
+      input.focus();
+      streamSession.msgEl = null;
+      streamSession.fullText = '';
+      break;
+    }
+    case 'STREAM_ERROR': {
+      if (!streamSession.active) return;
+      streamSession.active = false;
+      const thinking = msgsEl.querySelector('.msg-thinking');
+      if (thinking) thinking.remove();
+      addMessage('error', msg.error);
+      input.disabled = false;
+      sendBtn.disabled = false;
+      input.focus();
+      streamSession.msgEl = null;
+      streamSession.fullText = '';
+      break;
+    }
+  }
+}
+
+function handleStreamActions(actions, reasoning) {
+  const navigateActions = actions.filter((a) => a.type === 'navigate');
+  const domActions = actions.filter((a) => a.type !== 'navigate' && a.type !== 'done');
+  const doneResponse = actions.find((a) => a.type === 'done')?.response;
+
+  if (navigateActions.length) {
+    addMessage('assistant', `📍 Navigating to: ${navigateActions[0].url}`);
+    chrome.runtime.sendMessage({
+      type: 'NAVIGATE',
+      url: navigateActions[0].url,
+    }).catch(() => {});
+    setTimeout(async () => {
+      await refreshPageContext();
+      if (doneResponse) addMessage('assistant', doneResponse);
+    }, 2000);
+    return;
+  }
+
+  if (domActions.length) {
+    pendingActions = domActions;
+    actionsReasoning.textContent = `🧠 ${reasoning?.substring(0, 200) || ''}`;
+    actionsBar.classList.remove('hidden');
+    runPendingActions();
+  }
+
+  // No actions or already handled — input state is managed by STREAM_DONE
+}
+
+// Override sendQuery for streaming
+sendQuery = async function() {
+  const query = input.value.trim();
+  if (!query || actionRunning) return;
+  input.value = '';
+  input.disabled = true;
+  sendBtn.disabled = true;
+
+  await ensureActiveConversation();
+  await refreshPageContext();
+  if (!currentContext) {
+    addMessage('error', 'Could not capture page context. Try loading a webpage first.');
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+    return;
+  }
+
+  if (!config.hasToken) {
+    addMessage('error', 'Zo not configured. Open extension settings to add your access token.');
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+    return;
+  }
+
+  addMessage('user', query);
+  addMessage('thinking', 'Zo is thinking...');
+
+  // Determine preset prompts
+  let presetSystemPrompt, presetInstructions;
+  if (activePreset) {
+    const preset = getPreset(activePreset);
+    if (preset) {
+      presetSystemPrompt = preset.systemPrompt;
+      presetInstructions = preset.instructions;
+    }
+  }
+
+  // Start streaming session
+  streamSession.sessionId++;
+  streamSession.active = true;
+  streamSession.msgEl = null;
+  streamSession.fullText = '';
+  const thisSession = streamSession.sessionId;
+
+  if (streamPort) {
+    streamPort.postMessage({
+      type: 'ASK_ZO',
+      pageContext: currentContext,
+      userQuery: query,
+      modelName: config.selectedModel || undefined,
+      personaId: config.selectedPersona || undefined,
+      presetSystemPrompt: presetSystemPrompt,
+      presetInstructions: presetInstructions,
+    });
+  } else {
+    // Fallback to one-shot if no port
+    const resp = await chrome.runtime.sendMessage({
+      type: 'ASK_ZO',
+      pageContext: currentContext,
+      userQuery: query,
+      modelName: config.selectedModel || undefined,
+      personaId: config.selectedPersona || undefined,
+      presetSystemPrompt: presetSystemPrompt,
+      presetInstructions: presetInstructions,
+    });
+
+    const thinking = msgsEl.querySelector('.msg-thinking');
+    if (thinking) thinking.remove();
+    streamSession.active = false;
+
+    if (resp.error) {
+      addMessage('error', resp.error);
+      input.disabled = false;
+      sendBtn.disabled = false;
+      input.focus();
+      return;
+    }
+
+    const output = resp.output;
+    let reasoning = '';
+    let actions = [];
+
+    if (typeof output === 'object' && output !== null) {
+      reasoning = output.reasoning || '';
+      actions = output.actions || [];
+    } else if (typeof output === 'string') {
+      try {
+        const parsed = JSON.parse(output);
+        reasoning = parsed.reasoning || '';
+        actions = parsed.actions || [];
+      } catch {
+        reasoning = output;
+      }
+    }
+
+    if (!actions.length) {
+      addMessage('assistant', reasoning || 'Done.');
+    } else {
+      handleStreamActions(actions, reasoning);
+      if (actions.some(a => a.type === 'done')) {
+        addMessage('assistant', reasoning || 'Done.');
+      }
+    }
+
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+  }
+};
+function cancelStream() {
+  if (streamSession.active) {
+    streamSession.active = false;
+    streamSession.msgEl = null;
+    streamSession.fullText = '';
+    input.disabled = false;
+    sendBtn.disabled = false;
+  }
 }
