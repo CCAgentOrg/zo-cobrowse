@@ -5,10 +5,18 @@ const DEFAULTS = {
   zoApiUrl: 'https://api.zo.computer/zo/ask',
   zoModel: '',
   zoSpaceEndpoint: 'https://cashlessconsumer.zo.space',
-  zoPersonaId: '',          // backward compat — overrides routing if set
-  zoLitePersonaId: '',      // persona for lite (page-only) tasks
-  zoFullPersonaId: '',      // persona for full (tool-enabled) tasks
+  zoPersonaId: '',          // backward compat — overrides routing when set alone
+  zoLitePersonaId: '',
+  zoFullPersonaId: '',
   personaMode: 'auto',      // 'auto' | 'lite' | 'full'
+  zoAccessToken: '',
+  enableScreenshots: true,  // capture page screenshots for visual context
+  enabledMenus: {        // which context menu items are active
+    page: true,
+    selection: true,
+    link: true,
+    fillField: true,
+  },
 };
 
 let config = { ...DEFAULTS };
@@ -72,7 +80,7 @@ function classifyIntent(userQuery, pageContext) {
 
 // ---- Init ----
 chrome.storage.sync.get(
-  ['zoApiUrl', 'zoModel', 'zoPersonaId', 'zoLitePersonaId', 'zoFullPersonaId', 'personaMode'],
+  ['zoApiUrl', 'zoModel', 'zoPersonaId', 'zoLitePersonaId', 'zoFullPersonaId', 'personaMode', 'enableScreenshots'],
   (result) => {
     if (result.zoApiUrl) config.zoApiUrl = result.zoApiUrl;
     if (result.zoModel) config.zoModel = result.zoModel;
@@ -80,6 +88,8 @@ chrome.storage.sync.get(
     if (result.zoLitePersonaId) config.zoLitePersonaId = result.zoLitePersonaId;
     if (result.zoFullPersonaId) config.zoFullPersonaId = result.zoFullPersonaId;
     if (result.personaMode) config.personaMode = result.personaMode;
+    if (result.enableScreenshots !== undefined) config.enableScreenshots = result.enableScreenshots;
+      if (result.enabledMenus) config.enabledMenus = { ...config.enabledMenus, ...result.enabledMenus };
   }
 );
 // Sensitive config from storage.local (not synced)
@@ -102,6 +112,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   else if (changes.zoAccessToken?.oldValue && !changes.zoAccessToken?.newValue) config.zoAccessToken = undefined;
   if (changes.zoSpaceEndpoint?.newValue) config.zoSpaceEndpoint = changes.zoSpaceEndpoint.newValue;
   else if (changes.zoSpaceEndpoint?.oldValue && !changes.zoSpaceEndpoint?.newValue) config.zoSpaceEndpoint = undefined;
+    if (changes.enabledMenus?.newValue) { config.enabledMenus = { ...config.enabledMenus, ...changes.enabledMenus.newValue }; recreateContextMenus(); }
+  if (changes.enableScreenshots?.newValue !== undefined) config.enableScreenshots = changes.enableScreenshots.newValue;
 });
 
 // Open side panel on toolbar icon click
@@ -120,6 +132,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       askZo(request.pageContext, request.userQuery, request.modelName, request.personaId, request.presetSystemPrompt, request.presetInstructions, request.intent).then(sendResponse);
       return true;
     }
+    case 'RECREATE_CONTEXT_MENUS':
+      recreateContextMenus();
+      sendResponse({ ok: true });
+      return true;
     case 'TEST_CONNECTION': {
       testConnection().then(sendResponse);
       return true;
@@ -179,6 +195,8 @@ function sanitizedConfig() {
     zoLitePersonaId: config.zoLitePersonaId,
     zoFullPersonaId: config.zoFullPersonaId,
     personaMode: config.personaMode,
+    enableScreenshots: config.enableScreenshots,
+    enabledMenus: config.enabledMenus,
     zoSpaceEndpoint: config.zoSpaceEndpoint,
     hasToken: !!config.zoAccessToken,
     zoConversationId: zoConversationId,
@@ -197,57 +215,74 @@ async function getActiveTabContext(tabId, liteMode) {
   }
   if (!tab?.id) return { error: 'No active tab' };
 
+  let context;
+
   // Try content script first
   try {
     const resp = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_CONTEXT', liteMode });
-    if (resp && !resp.error) return resp;
+    if (resp && !resp.error) context = resp;
   } catch {
     // content script not injected — fall through
   }
 
   // Fallback — inject inline
-  try {
-    const captureFn = liteMode
-      ? () => {
-          const text = document.body?.innerText || '';
-          return {
-            url: location.href,
-            title: document.title,
-            visibleText: text.substring(0, 2000), // lighter capture
-            viewport: { w: window.innerWidth, h: window.innerHeight },
-          };
-        }
-      : () => {
-          const main = document.querySelector('main, article, [role="main"], #content, .content');
-          const body = document.body;
-          const text = (main || body)?.innerText || '';
-          const formFields = [];
-          document.querySelectorAll('input:not([type="hidden"]), textarea, select').forEach((el) => {
-            const r = el.getBoundingClientRect();
-            if (r.width === 0 || r.height === 0) return;
-            formFields.push({
-              tag: el.tagName.toLowerCase(),
-              type: el.type || 'text',
-              name: el.name || el.id || '',
-              placeholder: el.placeholder || '',
+  if (!context) {
+    try {
+      const captureFn = liteMode
+        ? () => {
+            const text = document.body?.innerText || '';
+            return {
+              url: location.href,
+              title: document.title,
+              visibleText: text.substring(0, 2000), // lighter capture
+              viewport: { w: window.innerWidth, h: window.innerHeight },
+            };
+          }
+        : () => {
+            const main = document.querySelector('main, article, [role="main"], #content, .content');
+            const body = document.body;
+            const text = (main || body)?.innerText || '';
+            const formFields = [];
+            document.querySelectorAll('input:not([type="hidden"]), textarea, select').forEach((el) => {
+              const r = el.getBoundingClientRect();
+              if (r.width === 0 || r.height === 0) return;
+              formFields.push({
+                tag: el.tagName.toLowerCase(),
+                type: el.type || 'text',
+                name: el.name || el.id || '',
+                placeholder: el.placeholder || '',
+              });
             });
-          });
-          return {
-            url: location.href,
-            title: document.title,
-            visibleText: text.substring(0, 8000),
-            formFields: formFields.slice(0, 30),
-            viewport: { w: window.innerWidth, h: window.innerHeight },
+            return {
+              url: location.href,
+              title: document.title,
+              visibleText: text.substring(0, 8000),
+              formFields: formFields.slice(0, 30),
+              viewport: { w: window.innerWidth, h: window.innerHeight },
+            };
           };
-        };
-    const [context] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: captureFn,
-    });
-    return context?.result || { error: 'Could not capture context' };
-  } catch (err) {
-    return { error: err.message };
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: captureFn,
+      });
+      context = result?.result || { error: 'Could not capture context' };
+    } catch (err) {
+      context = { error: err.message };
+    }
   }
+
+  // Capture screenshot if enabled and context is valid
+  if (context && !context.error && config.enableScreenshots !== false) {
+    try {
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+      context.screenshotDataUrl = dataUrl;
+    } catch (e) {
+      // Screenshot not available — continue without it
+      console.log('Screenshot capture skipped:', e.message);
+    }
+  }
+
+  return context;
 }
 
 // ---- Resolve which persona to use ----
@@ -298,6 +333,68 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
+// ---- Context Menu ----
+
+const CONTEXT_MENU_ITEMS = [
+  { id: 'cobrowse-page',      title: 'Ask Zo about this page',      contexts: ['page'] },
+  { id: 'cobrowse-selection', title: 'Ask Zo about this selection', contexts: ['selection'] },
+  { id: 'cobrowse-link',      title: 'Ask Zo about this link',      contexts: ['link'] },
+  { id: 'cobrowse-fill',      title: 'Ask Zo to fill this field',   contexts: ['editable'] },
+];
+
+function recreateContextMenus() {
+  chrome.contextMenus.removeAll(() => {
+    const menus = config.enabledMenus || DEFAULTS.enabledMenus;
+    for (const item of CONTEXT_MENU_ITEMS) {
+      if (menus[item.contexts[0]]) {
+        chrome.contextMenus.create({
+          id: item.id,
+          title: item.title,
+          contexts: item.contexts,
+        });
+      }
+    }
+  });
+}
+
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  let query = '';
+  let contextType = info.menuItemId;
+
+  switch (info.menuItemId) {
+    case 'cobrowse-page':
+      query = 'Analyze this page and give me a summary of what it contains.';
+      break;
+    case 'cobrowse-selection':
+      query = info.selectionText
+        ? `Explain or act on this selection: ${info.selectionText.substring(0, 2000)}`
+        : 'Analyze this page.';
+      break;
+    case 'cobrowse-link':
+      query = info.linkUrl
+        ? `Visit and analyze this link: ${info.linkUrl}`
+        : 'Analyze this link.';
+      break;
+    case 'cobrowse-fill':
+      query = 'Fill this form field based on the page context.';
+      break;
+  }
+
+  try {
+    await chrome.sidePanel.open({ windowId: tab.windowId });
+    // Small delay for sidepanel to initialize
+    await new Promise(r => setTimeout(r, 500));
+    // Store pending query for sidepanel to pick up
+    await chrome.storage.session.set({ pendingZoQuery: { text: query, source: contextType } });
+  } catch (e) {
+    console.error('Context menu: failed to open sidepanel:', e);
+  }
+});
+
+// Re-create menus on install and browser start
+chrome.runtime.onInstalled.addListener(() => recreateContextMenus());
+chrome.runtime.onStartup.addListener(() => recreateContextMenus());
+
 async function askZoStream(port, msg) {
   const { pageContext, userQuery, modelName, personaId, presetSystemPrompt, presetInstructions, intent } = msg;
 
@@ -328,7 +425,7 @@ async function askZoStream(port, msg) {
       : `## Instructions\nThink step by step about what actions to take, then respond with a valid JSON object.\n\n{\n  "reasoning": "your step-by-step thinking",\n  "actions": [\n    {\n      "type": "navigate" | "click" | "fill" | "extract" | "scroll" | "wait" | "done",\n      // For navigate: { "url": "..." }\n      // For click/extract: { "selector": "css-selector" }\n      // For fill: { "selector": "css-selector", "value": "text to type" }\n      // For extract: { "selector": "css-selector", "attribute": "textContent|href|src|..." }\n      // For scroll: { "direction": "up"|"down", "amount": 300 }\n      // For wait: { "ms": 1000 }\n      // For done: { "response": "summary of what happened / answer for user" }\n    }\n  ]\n}`
   );
 
-  const prompt = `${systemPrompt}\n\n## Current Page\n- **URL:** ${pageContext.url}\n- **Title:** ${pageContext.title}\n- **Viewport:** ${pageContext.viewport?.w || '?'}x${pageContext.viewport?.h || '?'}\n\n## Page Content (visible text)\n\`\`\`\n${(pageContext.visibleText || '—empty—').substring(0, isLite ? 2000 : 4000)}\n\`\`\`\n${pageContext.formFields ? `\n## Interactive Elements\n${JSON.stringify(pageContext.formFields || [], null, 2)}\n` : ''}\n\n## User Request\n${userQuery}\n\n  ${instructions}`;
+  const prompt = `${systemPrompt}\n\n## Current Page\n- **URL:** ${pageContext.url}\n- **Title:** ${pageContext.title}\n- **Viewport:** ${pageContext.viewport?.w || '?'}x${pageContext.viewport?.h || '?'}\n\n## Page Content (visible text)\n\`\`\`\n${(pageContext.visibleText || '—empty—').substring(0, isLite ? 2000 : 4000)}\n\`\`\`\n${pageContext.formFields ? `\n## Interactive Elements\n${JSON.stringify(pageContext.formFields || [], null, 2)}\n` : ''}${pageContext.screenshotDataUrl ? `\n\n## Page Screenshot\n![Current page](${pageContext.screenshotDataUrl})` : ''}\n\n## User Request\n${userQuery}\n\n  ${instructions}`;
 
   try {
     const response = await fetch(config.zoApiUrl, {
@@ -469,7 +566,7 @@ async function askZo(pageContext, userQuery, modelName, personaId, presetSystemP
       : `## Instructions\nThink step by step about what actions to take, then respond with a valid JSON object.\n\n{\n  "reasoning": "your step-by-step thinking",\n  "actions": [\n    {\n      "type": "navigate" | "click" | "fill" | "extract" | "scroll" | "wait" | "done",\n      // For navigate: { "url": "..." }\n      // For click/extract: { "selector": "css-selector" }\n      // For fill: { "selector": "css-selector", "value": "text to type" }\n      // For extract: { "selector": "css-selector", "attribute": "textContent|href|src|..." }\n      // For scroll: { "direction": "up"|"down", "amount": 300 }\n      // For wait: { "ms": 1000 }\n      // For done: { "response": "summary of what happened / answer for user" }\n    }\n  ]\n}`
   );
 
-  const prompt = `${systemPrompt}\n\n## Current Page\n- **URL:** ${pageContext.url}\n- **Title:** ${pageContext.title}\n- **Viewport:** ${pageContext.viewport?.w || '?'}x${pageContext.viewport?.h || '?'}\n\n## Page Content (visible text)\n\`\`\`\n${(pageContext.visibleText || '—empty—').substring(0, isLite ? 2000 : 4000)}\n\`\`\`\n${pageContext.formFields ? `\n## Interactive Elements\n${JSON.stringify(pageContext.formFields || [], null, 2)}\n` : ''}\n\n## User Request\n${userQuery}\n\n  ${instructions}`;
+  const prompt = `${systemPrompt}\n\n## Current Page\n- **URL:** ${pageContext.url}\n- **Title:** ${pageContext.title}\n- **Viewport:** ${pageContext.viewport?.w || '?'}x${pageContext.viewport?.h || '?'}\n\n## Page Content (visible text)\n\`\`\`\n${(pageContext.visibleText || '—empty—').substring(0, isLite ? 2000 : 4000)}\n\`\`\`\n${pageContext.formFields ? `\n## Interactive Elements\n${JSON.stringify(pageContext.formFields || [], null, 2)}\n` : ''}${pageContext.screenshotDataUrl ? `\n\n## Page Screenshot\n![Current page](${pageContext.screenshotDataUrl})` : ''}\n\n## User Request\n${userQuery}\n\n  ${instructions}`;
 
   try {
     const response = await fetch(config.zoApiUrl, {

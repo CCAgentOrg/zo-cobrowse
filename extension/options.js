@@ -94,7 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.sync.get([
       'zoModel', 'zoPersonaId', 'zoLitePersonaId', 'zoFullPersonaId', 'personaMode',
       'zoQuickActions',
-      'zoTtsLang', 'zoTtsRate', 'zoTtsAutoRead'
+      'zoTtsLang', 'zoTtsRate', 'zoTtsAutoRead', 'enabledMenus', 'enableScreenshots'
     ], (syncResult) => {
       const token = localResult.zoAccessToken;
       const spaceEndpoint = localResult.zoSpaceEndpoint;
@@ -120,6 +120,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (langInput) langInput.value = syncResult.zoTtsLang || 'en-US';
       if (rateInput) rateInput.value = syncResult.zoTtsRate || '1.0';
       if (autoReadCheck) autoReadCheck.checked = syncResult.zoTtsAutoRead || false;
+
+      // Restore screenshot toggle
+      const screenshotsCheck = document.getElementById('enable-screenshots');
+      if (screenshotsCheck) screenshotsCheck.checked = syncResult.enableScreenshots !== false;
     });
   });
 
@@ -190,6 +194,13 @@ document.addEventListener('DOMContentLoaded', () => {
         zoTtsLang: (document.getElementById('tts-lang')?.value || 'en-US').trim(),
         zoTtsRate: (document.getElementById('tts-rate')?.value || '1.0').trim(),
         zoTtsAutoRead: !!(document.getElementById('tts-auto-read')?.checked),
+        enableScreenshots: !!(document.getElementById('enable-screenshots')?.checked),
+      enabledMenus: {
+        page: document.getElementById('menu-ask-page')?.checked ?? true,
+        selection: document.getElementById('menu-ask-selection')?.checked ?? true,
+        link: document.getElementById('menu-ask-link')?.checked ?? true,
+        editable: document.getElementById('menu-fill-field')?.checked ?? false,
+      },
       }, () => {
         statusMsg.textContent = '✅ Saved!';
         statusMsg.className = 'inline-status ok';

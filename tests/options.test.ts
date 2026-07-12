@@ -34,6 +34,12 @@ describe("options.js", () => {
     expect(code).toContain("fetch");
   });
 
+it("has screenshot toggle in UI", () => {
+    expect(code).toContain("enable-screenshots");
+    expect(code).toContain("Screenshot");
+    expect(code).toContain("enableScreenshots");
+  });
+
   it("shows status messages", () => {
     expect(code).toContain("statusMsg");
     expect(code).toContain("status-message");

@@ -38,6 +38,18 @@ const storage: Record<string, any> = {};
   runtime: {
     lastError: null,
     onMessage: { addListener: () => {} },
+    onConnect: { addListener: () => {} },
+    onInstalled: { addListener: () => {} },
+    onStartup: { addListener: () => {} },
+    onInstalled: { addListener: () => {} },
+    onStartup: { addListener: () => {} },
+  },
+  contextMenus: {
+    create: () => {},
+    removeAll: (cb) => { if (cb) cb(); },
+    onClicked: {
+      addListener: () => {},
+    },
   },
 };
 
@@ -120,4 +132,24 @@ describe("background persona routing", () => {
     expect(code).toContain("intent:");
     expect(code).toContain("resolvedIntent");
   });
+
+  it("has context menu creation in onInstalled", () => {
+    expect(code).toContain("onInstalled");
+    expect(code).toContain("contextMenus.create");
+    expect(code).toContain("contextMenus.onClicked");
+  });
+
+  it("has context menu handlers for page/selection/link", () => {
+    expect(code).toContain("cobrowse-page");
+    expect(code).toContain("cobrowse-selection");
+    expect(code).toContain("cobrowse-link");
+    expect(code).toContain("cobrowse-fill");
+  });
+
+  it("has enabledMenus config", () => {
+    expect(code).toContain("enabledMenus");
+    expect(code).toContain("storage.session.set");
+    expect(code).toContain("sidePanel.open");
+  });
+
 });
