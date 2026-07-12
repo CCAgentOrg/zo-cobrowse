@@ -222,6 +222,7 @@ async function init() {
   updateStatus(config.hasToken);
   bindEvents();
   await refreshPageContext();
+  await checkPendingQuery(); // ← NEW: pick up query from context menu click
   await migrateOldFormat();
   await loadConversations();
   await fetchModelsAndPersonas();
@@ -237,7 +238,36 @@ async function init() {
       renderQuickActions(actions || []);
     }
   });
+  // Listen for context menu broadcasts when sidepanel is already open
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'PENDING_ZO_QUERY' && msg.text) {
+      input.value = msg.text;
+      sendQuery();
+    }
+  });
   renderView();
+}
+
+/** Check if a context menu click stored a pending query */
+async function checkPendingQuery() {
+  try {
+    // Retry a few times to handle race with background writing storage
+    let pending = null;
+    for (let i = 0; i < 5; i++) {
+      const result = await chrome.storage.session.get('pendingZoQuery');
+      pending = result.pendingZoQuery;
+      if (pending) break;
+      await new Promise(r => setTimeout(r, 300));
+    }
+    if (!pending) return;
+    await chrome.storage.session.remove('pendingZoQuery');
+    input.value = pending.text;
+    currentContext = pending.context;
+    // Automatically fire the query
+    await sendQuery();
+  } catch (e) {
+    console.warn('checkPendingQuery failed:', e);
+  }
 }
 
 async function loadConfig() {
