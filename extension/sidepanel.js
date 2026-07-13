@@ -1709,38 +1709,45 @@ function handleStreamMessage(msg) {
     case 'STREAM_DONE': {
       if (!streamSession.active) return;
       streamSession.active = false;
-      // Finalize message
+
+      // Extract response text for non-action plain-text streaming
+      const doneAction = (msg.actions || []).find(a => a.type === 'done');
+      const responseText = doneAction?.response || msg.fullText || streamSession.fullText || msg.reasoning || '';
+
+      // Finalize streaming message body only for plain-text responses
+      // (structured actions are displayed by handleStreamActions below)
       if (streamSession.msgEl) {
         const body = streamSession.msgEl.querySelector('.msg-body');
-        if (body) {
-          body.innerHTML = markdownToHtml(msg.fullText || streamSession.fullText || msg.reasoning || '');
+        if (body && msg.actions?.length) {
+          // Replace streaming body with the clean response
+          body.innerHTML = markdownToHtml(responseText);
+        } else if (body) {
+          body.innerHTML = markdownToHtml(responseText);
         }
         // Add TTS button if not already present
-        if (!streamSession.msgEl.querySelector('.tts-btn')) {
-          const text = msg.fullText || streamSession.fullText || msg.reasoning || '';
+        if (!streamSession.msgEl.querySelector('.tts-btn') && responseText) {
           const ttsBtn = document.createElement('button');
           ttsBtn.className = 'tts-btn msg-tts-btn';
           ttsBtn.textContent = '🔊';
           ttsBtn.title = 'Read aloud';
           ttsBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            speakText(text, ttsBtn);
+            speakText(responseText, ttsBtn);
           });
           streamSession.msgEl.appendChild(ttsBtn);
         }
       } else {
         // No streaming chunks — fallback to addMessage
-        if (msg.fullText || msg.reasoning) {
-          addMessage('assistant', msg.fullText || msg.reasoning);
+        if (responseText) {
+          addMessage('assistant', responseText);
         }
       }
 
       // Persist to conversation
-      const displayText = msg.fullText || streamSession.fullText || msg.reasoning || '';
-      if (displayText) {
+      if (responseText) {
         const conv = getActiveConversation();
         if (conv) {
-          conv.messages.push({ role: 'assistant', text: displayText, timestamp: Date.now() });
+          conv.messages.push({ role: 'assistant', text: responseText, timestamp: Date.now() });
           if (conv.messages.length > 50) {
             conv.messages = conv.messages.slice(-50);
           }
@@ -1748,7 +1755,8 @@ function handleStreamMessage(msg) {
         }
       }
 
-      // Handle actions
+      // Handle structured actions (navigate, dom, done)
+      // handleStreamActions adds its own message for done actions
       const actions = msg.actions || [];
       if (actions.length > 0) {
         handleStreamActions(actions, msg.reasoning);

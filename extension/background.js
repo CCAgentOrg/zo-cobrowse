@@ -720,11 +720,17 @@ function finishStream(port, output, intent) {
     }
   }
 
+  // Build a user-facing fullText from the resolved response.
+  // If actions contain a 'done' action, prefer its response text.
+  // Otherwise fall back to reasoning or the raw output.
+  const doneAction = actions.find(a => a.type === 'done');
+  const fullText = doneAction?.response || reasoning || (typeof output === 'string' ? output : JSON.stringify(output));
+
   port.postMessage({
     type: 'STREAM_DONE',
     reasoning,
     actions,
-    fullText: typeof output === 'string' ? output : JSON.stringify(output),
+    fullText,
   });
 }
 
