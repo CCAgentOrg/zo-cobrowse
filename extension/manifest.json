@@ -10,8 +10,6 @@
     "activeTab",
     "tabs",
     "scripting",
-    "omnibox",
-    "audioCapture",
     "tts"
   ],
   "host_permissions": ["https://api.zo.computer/*", "https://*.zo.space/*", "https://*.zocomputer.io/*", "http://*/*", "https://*/*"],

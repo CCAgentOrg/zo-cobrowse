@@ -199,7 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
         page: document.getElementById('menu-ask-page')?.checked ?? true,
         selection: document.getElementById('menu-ask-selection')?.checked ?? true,
         link: document.getElementById('menu-ask-link')?.checked ?? true,
-        editable: document.getElementById('menu-fill-field')?.checked ?? false,
+        editable: document.getElementById('menu-fill-editable')?.checked ?? false,
       },
       }, () => {
         statusMsg.textContent = '✅ Saved!';
