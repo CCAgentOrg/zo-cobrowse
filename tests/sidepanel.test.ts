@@ -118,6 +118,21 @@ describe("sidepanel persona routing", () => {
     expect(code).toContain("⚡ Full");
   });
 
+
+  it("has bang command parser (#07)", () => {
+    expect(code).toContain("parseBangCommand");
+    expect(code).toContain("BANG_COMMANDS");
+    // Commands registered without ! prefix; help text prepends it dynamically
+    expect(code).toContain("summarize:");
+    expect(code).toContain("extract:");
+    expect(code).toContain("research:");
+    // !help and unknown-command handling
+    expect(code).toContain("=== 'help'");
+    expect(code).toContain("Unknown command");
+    // Wired into both sendQuery paths
+    expect(code).toContain("effectiveQuery");
+    expect(code).toContain("tempPreset");
+  });
   it("adds system message on mode change", () => {
     expect(code).toContain("addSystemMessage");
     expect(code).toContain("Lite mode");

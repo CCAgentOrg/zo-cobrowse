@@ -746,6 +746,89 @@ async function fetchModelsAndPersonas() {
 }
 
 // ---- Send ----
+// ---- Bang Commands (!) — Quick Command Templates (#07) ----
+const BANG_COMMANDS = {
+  summarize: {
+    preset: 'summarize',
+    label: 'Summarize',
+    desc: 'Condense the page into a concise summary',
+    buildQuery: () => 'Summarize this page concisely.',
+  },
+  extract: {
+    preset: 'scrape',
+    label: 'Extract',
+    desc: 'Extract structured data (tables, lists, contacts, prices)',
+    buildQuery: (args) => args ? `Extract ${args} from this page as structured data.` : 'Extract all structured data from this page.',
+  },
+  research: {
+    preset: 'research',
+    label: 'Research',
+    desc: 'Deep research on the page topic',
+    buildQuery: (args) => args ? `Do deep research on: ${args}` : 'Do deep research on this page topic.',
+  },
+  qa: {
+    preset: 'qa',
+    label: 'Q&A',
+    desc: 'Answer a specific question about the page',
+    buildQuery: (args) => args || 'What is this page about?',
+  },
+  ask: {
+    preset: 'qa',
+    label: 'Ask',
+    desc: 'Alias for !qa',
+    buildQuery: (args) => args || 'What is this page about?',
+  },
+  fill: {
+    preset: null,
+    label: 'Fill',
+    desc: 'Ask Zo to fill editable fields on the page',
+    buildQuery: (args) => args ? `Fill the form on this page: ${args}` : 'Fill the editable form fields on this page with reasonable test data.',
+  },
+};
+
+// Returns { handled, query, preset } or { handled: false }
+// If handled is true but query is null, the command produced an inline reply
+// (e.g. !help) and sendQuery should abort after showing it.
+function parseBangCommand(rawQuery) {
+  if (!rawQuery || rawQuery[0] !== '!') return { handled: false };
+
+  const trimmed = rawQuery.slice(1).trim();
+  const spaceIdx = trimmed.indexOf(' ');
+  const name = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx).toLowerCase();
+  const args = spaceIdx === -1 ? '' : trimmed.slice(spaceIdx + 1).trim();
+
+  // !help — list commands inline
+  if (name === 'help' || name === 'commands' || name === '?') {
+    const lines = ['**Quick Commands** (type these in the chat):'];
+    for (const [cmd, def] of Object.entries(BANG_COMMANDS)) {
+      lines.push(`• \`!${cmd}\` — ${def.desc}`);
+    }
+    lines.push('• `!save` — Save this page to your Zo workspace as markdown');
+    lines.push('• `!help` — Show this list');
+    return { handled: true, inlineReply: lines.join('\n') };
+  }
+
+  // !save — deferred to ticket #09, show a friendly note for now
+  if (name === 'save') {
+    return { handled: true, inlineReply: '💾 Save-to-workspace is coming soon (ticket #09). For now, ask Zo directly: "Save this page to my workspace."' };
+  }
+
+  // Look up the command
+  const cmd = BANG_COMMANDS[name];
+  if (!cmd) {
+    return {
+      handled: true,
+      inlineReply: `Unknown command: \`!${name}\`. Type \`!help\` to see available commands.`,
+    };
+  }
+
+  return {
+    handled: true,
+    query: cmd.buildQuery(args),
+    preset: cmd.preset, // may be null for non-preset commands like !fill
+  };
+}
+
 async function sendQuery() {
   const query = input.value.trim();
   if (!query || actionRunning) return;
@@ -774,13 +857,32 @@ async function sendQuery() {
     return;
   }
 
-  addMessage('user', query);
+// Parse bang commands (!) — #07 Quick Command Templates
+const bang = parseBangCommand(query);
+let effectiveQuery = query;
+let tempPreset = null;
+if (bang.handled) {
+  if (bang.inlineReply) {
+    // Inline reply (e.g. !help, !save, unknown) — no Zo call
+    addMessage('user', query);
+    addMessage('bot', bang.inlineReply);
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+    return;
+  }
+  effectiveQuery = bang.query;
+  tempPreset = bang.preset;
+}
+
+addMessage('user', query);  addMessage('user', query);
   addMessage('thinking', 'Zo is thinking...');
 
   // Determine preset prompts
   let presetSystemPrompt, presetInstructions;
-  if (activePreset) {
-    const preset = getPreset(activePreset);
+  const effectivePreset = tempPreset || activePreset;
+  if (effectivePreset) {
+    const preset = getPreset(effectivePreset);
     if (preset) {
       presetSystemPrompt = preset.systemPrompt;
       presetInstructions = preset.instructions;
@@ -790,7 +892,7 @@ async function sendQuery() {
   const resp = await chrome.runtime.sendMessage({
     type: 'ASK_ZO',
     pageContext: currentContext,
-    userQuery: query,
+    userQuery: effectiveQuery,
     modelName: config.selectedModel || undefined,
     personaId: config.selectedPersona || undefined,
     presetSystemPrompt: presetSystemPrompt,
@@ -1555,13 +1657,31 @@ sendQuery = async function() {
     return;
   }
 
+  // ---- Quick Commands (!) ----
+  let effectiveQuery = query;
+  let tempPreset = null;
+  if (query.startsWith('!')) {
+    const bang = parseBangCommand(query);
+    if (bang.inlineReply) {
+      addMessage('user', query);
+      addMessage('bot', bang.inlineReply);
+      input.disabled = false;
+      sendBtn.disabled = false;
+      input.focus();
+      return;
+    }
+    effectiveQuery = bang.query;
+    tempPreset = bang.preset;
+  }
+
   addMessage('user', query);
   addMessage('thinking', 'Zo is thinking...');
 
   // Determine preset prompts
   let presetSystemPrompt, presetInstructions;
-  if (activePreset) {
-    const preset = getPreset(activePreset);
+  const activePresetResolved = tempPreset || activePreset;
+  if (activePresetResolved) {
+    const preset = getPreset(activePresetResolved);
     if (preset) {
       presetSystemPrompt = preset.systemPrompt;
       presetInstructions = preset.instructions;
@@ -1579,7 +1699,7 @@ sendQuery = async function() {
     streamPort.postMessage({
       type: 'ASK_ZO',
       pageContext: currentContext,
-      userQuery: query,
+      userQuery: effectiveQuery,
       modelName: config.selectedModel || undefined,
       personaId: config.selectedPersona || undefined,
       presetSystemPrompt: presetSystemPrompt,
@@ -1590,7 +1710,7 @@ sendQuery = async function() {
     const resp = await chrome.runtime.sendMessage({
       type: 'ASK_ZO',
       pageContext: currentContext,
-      userQuery: query,
+      userQuery: effectiveQuery,
       modelName: config.selectedModel || undefined,
       personaId: config.selectedPersona || undefined,
       presetSystemPrompt: presetSystemPrompt,
