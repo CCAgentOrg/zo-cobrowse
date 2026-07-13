@@ -420,9 +420,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     // Small delay for sidepanel to initialize
     await new Promise(r => setTimeout(r, 500));
     // Store pending query for sidepanel to pick up
-    await chrome.storage.session.set({ pendingZoQuery: { text: query, source: contextType, personaId, context: pageContext } });
+    await chrome.storage.session.set({ pendingZoQuery: { text: query, source: contextType, context: pageContext } });
     // Broadcast to sidepanel if already open — also clear so subsequent init checks don't re-fire
-    chrome.runtime.sendMessage({ type: 'PENDING_ZO_QUERY', text: query, source: contextType, personaId }).catch(() => {});
+    chrome.runtime.sendMessage({ type: 'PENDING_ZO_QUERY', text: query, source: contextType }).catch(() => {});
   } catch (err) {
     console.error('Context menu error:', err);
   }
