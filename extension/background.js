@@ -457,6 +457,72 @@ async function getActiveTab() {
   return tab;
 }
 
+// ── Omnibox Commands (chrome.omnibox) ──
+// Users type "zo <query>" in the address bar. We provide suggestions for
+// known !commands and route everything else to the side panel as a query.
+const OMNIBOX_COMMANDS = {
+  'summarize': 'Summarize this page',
+  'extract': 'Extract structured data from this page',
+  'research': 'Deep research on the current page topic',
+  'help': 'Show available Zo commands',
+};
+
+chrome.omnibox.onInputStarted.addListener(() => {
+  chrome.omnibox.setDefaultSuggestion({
+    description: 'zo — Ask Zo about this page (type a question or command)',
+  });
+});
+
+chrome.omnibox.onInputChanged.addListener((text, suggest) => {
+  const trimmed = text.trim().toLowerCase();
+  if (!trimmed) {
+    chrome.omnibox.setDefaultSuggestion({
+      description: 'zo — Type a question or !command (try: summarize, extract, research)',
+    });
+    return;
+  }
+
+  // Check if user is typing a known command
+  const matching = Object.entries(OMNIBOX_COMMANDS)
+    .filter(([cmd]) => cmd.startsWith(trimmed));
+
+  if (matching.length) {
+    const suggestions = matching.map(([cmd, desc]) => ({
+      content: cmd,
+      description: `zo ${cmd} — ${desc}`,
+    }));
+    suggest(suggestions);
+    chrome.omnibox.setDefaultSuggestion({
+      description: `zo ${trimmed} — ${matching[0][1]}`,
+    });
+  } else {
+    chrome.omnibox.setDefaultSuggestion({
+      description: `zo ${text} — Ask Zo: "${text}"`,
+    });
+  }
+});
+
+chrome.omnibox.onInputEntered.addListener(async (text, disposition) => {
+  const query = text.trim();
+  if (!query) return;
+
+  // Normalize !commands typed without the bang
+  let normalizedQuery = query;
+  if (OMNIBOX_COMMANDS[query.toLowerCase()]) {
+    normalizedQuery = `!${query.toLowerCase()}`;
+  }
+
+  // Open side panel and push the query
+  const tab = await getActiveTab();
+  if (tab) {
+    await chrome.sidePanel.open({ windowId: tab.windowId });
+    await sleep(300);
+    await chrome.storage.session.set({
+      pendingZoQuery: { text: normalizedQuery, source: 'omnibox', ts: Date.now() },
+    });
+  }
+});
+
 async function askZoStream(port, msg) {
   const { pageContext, userQuery, modelName, personaId, presetSystemPrompt, presetInstructions, intent } = msg;
 

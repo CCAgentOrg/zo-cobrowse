@@ -72,6 +72,11 @@ describe("manifest.json", () => {
     expect(cmd.description).toContain("ummar");
   });
 
+  it("has omnibox keyword for address bar (#13)", () => {
+    expect(manifest.omnibox).toBeObject();
+    expect(manifest.omnibox.keyword).toBe("zo");
+  });
+
   it("every command has a description and suggested key", () => {
     for (const [name, cmd] of Object.entries(manifest.commands)) {
       expect((cmd as any).description).toBeTruthy();

@@ -56,12 +56,24 @@ const storage: Record<string, any> = {};
       addListener: () => {},
     },
   },
+  omnibox: {
+    onInputStarted: { addListener: () => {} },
+    onInputChanged: { addListener: () => {} },
+    onInputEntered: { addListener: () => {} },
+    setDefaultSuggestion: () => {},
+  },
 };
 
 describe("background.js defaults", () => {
   beforeEach(() => {
     Object.keys(storage).forEach((k) => delete storage[k]);
+  
+  it("has omnibox listeners (#13)", () => {
+    expect(code).toContain("chrome.omnibox.onInputEntered");
+    expect(code).toContain("chrome.omnibox.onInputChanged");
+    expect(code).toContain("setDefaultSuggestion");
   });
+});
 
   it("loads without errors", async () => {
     const mod = await import(resolve(import.meta.dir, "../extension/background.js"));
