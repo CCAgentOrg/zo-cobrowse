@@ -218,11 +218,11 @@ let activePreset = null;
 init();
 
 async function init() {
+  bindEvents(); // bind FIRST so events always work even if async setup fails
   await loadConfig();
   await loadTheme();
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => loadTheme());
   updateStatus(config.hasToken);
-  bindEvents(); // bind first so onboarding buttons always work
   const { [OB_KEY]: obDone = false } = await chrome.storage.sync.get(OB_KEY);
   if (!obDone) { showOnboarding(); return; }
   await finishInit();
@@ -230,28 +230,33 @@ async function init() {
 
 /** Remaining init — called on normal start and from completeOnboarding() */
 async function finishInit() {
-  await refreshPageContext();
-  await checkPendingQuery();
-  await migrateOldFormat();
-  await loadConversations();
-  await fetchModelsAndPersonas();
-  await loadPresets();
-  await loadQuickActions();
-  await loadTtsConfig();
-  connectStreamingPort();
-  chrome.storage.onChanged.addListener((changes) => {
-    if (changes[STORAGE_ACTIONS_KEY]) {
-      const actions = changes[STORAGE_ACTIONS_KEY].newValue;
-      renderQuickActions(actions || []);
-    }
-  });
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === 'PENDING_ZO_QUERY' && msg.text) {
-      input.value = msg.text;
-      sendQuery();
-    }
-  });
-  renderView();
+  try {
+    await refreshPageContext();
+    await checkPendingQuery();
+    await migrateOldFormat();
+    await loadConversations();
+    await fetchModelsAndPersonas();
+    await loadPresets();
+    await loadQuickActions();
+    await loadTtsConfig();
+    connectStreamingPort();
+    chrome.storage.onChanged.addListener((changes) => {
+      if (changes[STORAGE_ACTIONS_KEY]) {
+        const actions = changes[STORAGE_ACTIONS_KEY].newValue;
+        renderQuickActions(actions || []);
+      }
+    });
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg.type === 'PENDING_ZO_QUERY' && msg.text) {
+        input.value = msg.text;
+        sendQuery();
+      }
+    });
+  } catch (e) {
+    console.error('finishInit error:', e);
+  } finally {
+    renderView();
+  }
 }
 
 /** Check if a context menu click stored a pending query */
@@ -367,8 +372,10 @@ async function completeOnboarding() {
   await chrome.storage.sync.set({ [OB_KEY]: true, [OB_STEP_KEY]: 0 });
   const obView = document.getElementById('onboarding-view');
   if (obView) obView.classList.add('hidden');
-  addSystemMessage('🎉 Onboarding complete! Try asking Zo something about this page.');
   await finishInit();
+  // Welcome message — added after finishInit so it survives loadConversations() DOM reset
+  const msg = '🎉 **Onboarding complete!** Try asking Zo something about this page.';
+  addMessage('assistant', msg);
 }
 const MODE_LABELS = {
   auto: '◐ Auto',
