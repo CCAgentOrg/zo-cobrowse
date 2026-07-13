@@ -50,4 +50,32 @@ describe("manifest.json", () => {
     expect(manifest.icons["48"]).toMatch(/\.png$/);
     expect(manifest.icons["128"]).toMatch(/\.png$/);
   });
+
+  // ── Ticket #06: Keyboard Shortcuts ──
+  it("has commands section for keyboard shortcuts", () => {
+    expect(manifest.commands).toBeObject();
+    expect(manifest.commands).toHaveProperty("_execute_action");
+    expect(manifest.commands).toHaveProperty("summarize-page");
+    expect(manifest.commands).toHaveProperty("new-chat");
+    expect(manifest.commands).toHaveProperty("extract-page");
+  });
+
+  it("_execute_action opens the side panel", () => {
+    expect(manifest.commands["_execute_action"]).toHaveProperty("description");
+    expect(manifest.commands["_execute_action"].suggested_key).toBeDefined();
+    expect(manifest.commands["_execute_action"].suggested_key.default).toMatch(/Ctrl|Cmd/);
+  });
+
+  it("summarize-page has a valid key combination", () => {
+    const cmd = manifest.commands["summarize-page"];
+    expect(cmd.suggested_key.default).toMatch(/Ctrl|Cmd/);
+    expect(cmd.description).toContain("ummar");
+  });
+
+  it("every command has a description and suggested key", () => {
+    for (const [name, cmd] of Object.entries(manifest.commands)) {
+      expect((cmd as any).description).toBeTruthy();
+      expect((cmd as any).suggested_key.default).toBeTruthy();
+    }
+  });
 });

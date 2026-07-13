@@ -51,6 +51,11 @@ const storage: Record<string, any> = {};
       addListener: () => {},
     },
   },
+  commands: {
+    onCommand: {
+      addListener: () => {},
+    },
+  },
 };
 
 describe("background.js defaults", () => {
@@ -149,6 +154,15 @@ describe("background persona routing", () => {
   it("has enabledMenus config", () => {
     expect(code).toContain("enabledMenus");
     expect(code).toContain("storage.session.set");
+    expect(code).toContain("sidePanel.open");
+  });
+
+  it("has commands listener for keyboard shortcuts (#06)", () => {
+    expect(code).toContain("chrome.commands.onCommand");
+    expect(code).toContain("summarize-page");
+    expect(code).toContain("new-chat");
+    expect(code).toContain("extract-page");
+    expect(code).toContain("pendingZoQuery");
     expect(code).toContain("sidePanel.open");
   });
 

@@ -397,6 +397,66 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 chrome.runtime.onInstalled.addListener(() => recreateContextMenus());
 chrome.runtime.onStartup.addListener(() => recreateContextMenus());
 
+// ── Keyboard Shortcuts (chrome.commands) ──
+// Commands are registered in manifest.json. MV3 does not support dynamic
+// registration; users remap them at chrome://extensions/shortcuts
+chrome.commands.onCommand.addListener(async (command, tab) => {
+  const activeTab = tab || (await getActiveTab());
+  if (!activeTab) return;
+  const windowId = activeTab.windowId;
+
+  // Every shortcut opens the side panel first
+  try {
+    await chrome.sidePanel.open({ windowId });
+  } catch (err) {
+    console.error('Keyboard shortcut: could not open side panel:', err);
+    return;
+  }
+
+  // Default: just open the panel (no query). Used by _execute_action.
+  let query = '';
+  let source = command;
+
+  switch (command) {
+    case 'summarize-page':
+      query = 'Summarize this page in 3-5 bullet points and highlight anything actionable.';
+      source = 'shortcut-summarize';
+      break;
+    case 'new-chat':
+      // Signal sidepanel to start a fresh conversation, then open
+      query = '';
+      source = 'shortcut-new-chat';
+      break;
+    case 'extract-page':
+      query = 'Extract the key data from this page into a structured table.';
+      source = 'shortcut-extract';
+      break;
+    case '_execute_action':
+      // Plain toolbar button / open-panel shortcut — no query
+      return;
+  }
+
+  // Small delay for sidepanel to initialize before we hand off the query
+  await new Promise(r => setTimeout(r, 400));
+
+  if (source === 'shortcut-new-chat') {
+    chrome.runtime
+      .sendMessage({ type: 'NEW_CONVERSATION', source: 'shortcut' })
+      .catch(() => {});
+    return;
+  }
+
+  await chrome.storage.session.set({ pendingZoQuery: { text: query, source } });
+  chrome.runtime
+    .sendMessage({ type: 'PENDING_ZO_QUERY', text: query, source })
+    .catch(() => {});
+});
+
+async function getActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab;
+}
+
 async function askZoStream(port, msg) {
   const { pageContext, userQuery, modelName, personaId, presetSystemPrompt, presetInstructions, intent } = msg;
 
