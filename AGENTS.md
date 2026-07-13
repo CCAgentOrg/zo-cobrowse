@@ -57,6 +57,15 @@ bun test
 | #14 Page Monitoring | ⏳ Backlog | ticket-14-page-monitoring.md — not implemented |
 | #15 Shared Sessions | 🟡 Scratch | backend/relay.ts (WebSocket backend exists), extension integration not done |
 
+| #16 Web Monitoring & Page Change Detection | ⏳ New gap | Track page changes, price drops — see `brainstorming/GAP_ANALYSIS.md` |
+| #17 Scheduled AI Commands | ⏳ New gap | Cron-like periodic AI runs — see `brainstorming/GAP_ANALYSIS.md` |
+| #18 Tab Compare / Side-by-Side | ⏳ New gap | Multi-tab diff/summary — see `brainstorming/GAP_ANALYSIS.md` |
+| #19 Console & Network Logs Integration | ⏳ New gap | Debug assistance from console/network tab — see `brainstorming/GAP_ANALYSIS.md` |
+| #20 Site-Level Permission Controls | ⏳ New gap | Granular allow/block per domain — see `brainstorming/GAP_ANALYSIS.md` |
+| #21 Page Context Export (PDF/MD) | ⏳ New gap | One-click page download as PDF or Markdown — see `brainstorming/GAP_ANALYSIS.md` |
+| #22 Multi-Model Selection UI | ⏳ New gap | Choose between Claude/Gemini/Zo models per task — see `brainstorming/GAP_ANALYSIS.md` |
+| #23 Workflow Recording | ⏳ New gap | Record browser actions as replayable workflow — see `brainstorming/GAP_ANALYSIS.md` |
+
 ## Verification layer (Zod schemas) — read before adding features
 
 Contracts are defined as **Zod schemas** in `tests/schemas/` and used by the tests as the single source of truth. Prefer schema validation over scattered `.toContain()` string checks.

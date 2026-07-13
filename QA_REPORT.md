@@ -51,3 +51,21 @@
 | Missing test for DuckDB query execution | Low | runDuckdbQuery tested via pattern checks |
 | Missing test for automation creation | Low | code pattern checks exist |
 | Store assets | Low | No screenshots, descriptions, store icons — not needed until Chrome Web Store submission |
+
+
+## Remaining Gaps (Competitive)
+
+The following gaps vs. competitors were identified in the feature-gap analysis. These are tracked as tickets in AGENTS.md:
+
+| Gap | Competitor Baseline | Priority |
+|-----|-------------------|----------|
+| Vision/screenshots | Every competitor has it | 🔴 Critical (#20) |
+| Right-click menu | Claude, Gemini, HARPA | 🔴 High (#21) |
+| Streaming responses | Claude, Google, HARPA | 🔴 Critical (#22) |
+| Multi-tab orchestration | Claude (groups), Parchi (subagents), Comet (research) | 🔴 High (#23) |
+| Page change monitoring | HARPA (web monitoring), Claude (scheduled tasks) | 🔴 High (#24) |
+| Omnibox commands | HARPA, Parchi | 🟡 Medium (#25) |
+| Image/file upload | HARPA, Claude, Gemini | 🟡 Medium (#26) |
+| Action templates library | HARPA (100+), Parchi (profiles) | 🟡 Medium (#27) |
+
+For the full competitive analysis, see `brainstorming/FEATURE_COMPARISON.md` (includes HARPA AI, Parchi, OpenDia, Comet, Gemini Chrome, BrowserOS) and `brainstorming/CLAUDE_VS_ZOCOBROWSE.md` (Claude deep-dive).
