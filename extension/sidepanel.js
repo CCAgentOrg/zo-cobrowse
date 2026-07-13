@@ -989,47 +989,108 @@ addMessage('user', query);  addMessage('user', query);
   input.focus();
 }
 
+// ---- Action Timeline (#03) ----
+const ACTION_META = {
+  click:    { icon: '👆', label: 'Click' },
+  fill:     { icon: '✏️', label: 'Fill' },
+  scroll:   { icon: '📜', label: 'Scroll' },
+  navigate: { icon: '🔗', label: 'Navigate' },
+  extract:  { icon: '📋', label: 'Extract' },
+  wait:     { icon: '⏳', label: 'Wait' },
+  done:     { icon: '✅', label: 'Done' },
+};
+
+function actionDetail(action) {
+  if (action.response) return '';
+  return action.selector || action.url || action.value || action.ms || '';
+}
+
+function renderActionTimeline() {
+  if (!pendingActions) return;
+  let timeline = actionsBar.querySelector('#action-timeline');
+  if (!timeline) {
+    timeline = document.createElement('div');
+    timeline.id = 'action-timeline';
+    actionsBar.appendChild(timeline);
+  }
+  timeline.innerHTML = '';
+  pendingActions.forEach((action, i) => {
+    const meta = ACTION_META[action.type] || { icon: '•', label: action.type };
+    const card = document.createElement('div');
+    card.className = 'action-card pending';
+    card.dataset.index = i;
+    card.innerHTML = `
+      <span class="action-icon">${meta.icon}</span>
+      <span class="action-label">${meta.label}</span>
+      <span class="action-detail">${actionDetail(action)}</span>
+      <span class="action-status">pending</span>
+    `;
+    timeline.appendChild(card);
+  });
+  actionsBar.classList.remove('hidden');
+}
+
+function updateActionCard(index, status, error) {
+  const timeline = actionsBar.querySelector('#action-timeline');
+  if (!timeline) return;
+  const card = timeline.querySelector(`.action-card[data-index="${index}"]`);
+  if (!card) return;
+  card.classList.remove('pending', 'running', 'done', 'error');
+  card.classList.add(status);
+  const statusEl = card.querySelector('.action-status');
+  if (statusEl) statusEl.textContent = status === 'error' && error ? error : status;
+}
+
 // ---- Execute pending actions ----
 async function runPendingActions() {
   if (!pendingActions || actionRunning) return;
   actionRunning = true;
   runAllBtn.disabled = true;
-  skipBtn.disabled = true;
+  skipBtn.disabled = false;
+
+  renderActionTimeline();
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const tabId = tab?.id;
   if (!tabId) {
     addMessage('error', 'No active tab to execute actions on.');
+    pendingActions = null;
+    actionsBar.classList.add('hidden');
     actionRunning = false;
     runAllBtn.disabled = false;
-    skipBtn.disabled = false;
     return;
   }
 
-  for (const action of pendingActions) {
+  const total = pendingActions.length;
+  for (let i = 0; i < pendingActions.length; i++) {
+    const action = pendingActions[i];
     if (action.type === 'done') {
-      addMessage('assistant', action.response || 'Done.');
-      break;
+      updateActionCard(i, 'done');
+      if (action.response) addMessage('assistant', action.response);
+      continue;
     }
-    addMessage('action', `${action.type}: ${action.selector || action.url || action.value || ''}`);
+    updateActionCard(i, 'running');
+    addMessage('action', `${ACTION_META[action.type]?.icon || '•'} ${action.type}: ${actionDetail(action)}`);
     const result = await chrome.runtime.sendMessage({
       type: 'EXECUTE_ACTIONS',
       actions: [action],
       tabId,
     });
     if (!result?.ok) {
-      addMessage('error', `Action failed: ${result?.error || 'unknown error'}`);
+      const err = result?.error || 'unknown error';
+      updateActionCard(i, 'error', err);
+      addMessage('error', `Action failed: ${err}`);
       break;
     }
+    updateActionCard(i, 'done');
     await new Promise((r) => setTimeout(r, 600));
     await refreshPageContext();
   }
 
   pendingActions = null;
-  actionsBar.classList.add('hidden');
+  setTimeout(() => actionsBar.classList.add('hidden'), 1200);
   actionRunning = false;
   runAllBtn.disabled = false;
-  skipBtn.disabled = false;
 }
 
 // ---- Messages ----

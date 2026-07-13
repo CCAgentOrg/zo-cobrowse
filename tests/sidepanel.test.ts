@@ -130,6 +130,14 @@ describe("sidepanel persona routing", () => {
 
 
 
+
+  it("has action timeline rendering (#03)", () => {
+    expect(code).toContain("renderActionTimeline");
+    expect(code).toContain("updateActionCard");
+    expect(code).toContain("ACTION_META");
+    expect(code).toContain("action-card");
+  });
+
   it("has duckdb query commands (#05)", () => {
     expect(code).toContain("isDuckdb");
     expect(code).toContain("DUCKDB_QUERY");
