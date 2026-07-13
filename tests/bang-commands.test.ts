@@ -60,6 +60,20 @@ describe("parseBangCommand — schema conformance", () => {
     expect(empty.kind).toBe("inline");
   });
 
+
+  it("!query / !data returns { isDuckdb: true, query } (#05)", () => {
+    const r = parse("!query total upi volume by month");
+    expect(r.handled).toBe(true);
+    expect(r.kind).toBe("duckdb");
+    if (r.kind === "duckdb") {
+      expect(r.isDuckdb).toBe(true);
+      expect(r.naturalQuery).toContain("upi volume");
+    }
+    // alias: !data
+    const alias = parse("!data top 10 stocks by market cap");
+    expect(alias.kind).toBe("duckdb");
+  });
+
   it("unknown command returns an inline error mentioning !help", () => {
     const r = parse("!bogus");
     expect(r.handled).toBe(true);

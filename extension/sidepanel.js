@@ -750,6 +750,37 @@ async function fetchModelsAndPersonas() {
 // ---- Bang Commands (!) — Quick Command Templates (#07) ----
 // Logic extracted to lib/bang-commands.js for unit testing (see tests/bang-commands.test.ts).
 
+// Render a DuckDB query result as an inline table in the chat.
+// Expects { columns: string[], rows: any[][], rowCount, sql } from background.js
+function addDuckdbResult(resp) {
+  if (!resp.columns || !resp.rows) {
+    addMessage('assistant', 'Query returned no rows.');
+    return;
+  }
+  const msg = document.createElement('div');
+  msg.className = 'msg msg-assistant duckdb-result';
+  const table = renderTable(resp.columns, resp.rows);
+  msg.innerHTML = `<div class="db-sql"><code>${escapeHtml(resp.sql || '')}</code></div>${table}`;
+  msgsEl.appendChild(msg);
+  msgsEl.scrollTop = msgsEl.scrollHeight;
+}
+
+// Build an HTML table string from columns + rows.
+function renderTable(columns, rows) {
+  const thead = columns.map(c => `<th>${escapeHtml(c)}</th>`).join('');
+  const tbody = rows.map(r =>
+    `<tr>${r.map(cell => `<td>${escapeHtml(cell == null ? '' : String(cell))}</td>`).join('')}</tr>`
+  ).join('');
+  return `<div class="db-table-wrap"><table class="db-table"><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table></div>`;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 async function sendQuery() {
   const query = input.value.trim();
   if (!query || actionRunning) return;
@@ -828,6 +859,26 @@ if (bang.handled) {
       addMessage('error', autoResp.error);
     } else {
       addMessage('assistant', autoResp.response || 'Automation created.');
+    }
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+    return;
+  }
+  if (bang.isDuckdb) {
+    // !query / !data — natural-language DuckDB query
+    addMessage('user', query);
+    addMessage('thinking', 'Querying datasets...');
+    const dbResp = await chrome.runtime.sendMessage({
+      type: 'DUCKDB_QUERY',
+      naturalQuery: bang.naturalQuery,
+    });
+    const thinking = msgsEl.querySelector('.msg-thinking');
+    if (thinking) thinking.remove();
+    if (dbResp.error) {
+      addMessage('error', dbResp.error);
+    } else {
+      addDuckdbResult(dbResp);
     }
     input.disabled = false;
     sendBtn.disabled = false;
@@ -1667,6 +1718,26 @@ sendQuery = async function() {
         addMessage('error', autoResp.error);
       } else {
         addMessage('assistant', autoResp.response || 'Automation created.');
+      }
+      input.disabled = false;
+      sendBtn.disabled = false;
+      input.focus();
+      return;
+    }
+    if (bang.isDuckdb) {
+      // !query / !data — natural-language DuckDB query
+      addMessage('user', query);
+      addMessage('thinking', 'Querying datasets...');
+      const dbResp = await chrome.runtime.sendMessage({
+        type: 'DUCKDB_QUERY',
+        naturalQuery: bang.naturalQuery,
+      });
+      const thinking = msgsEl.querySelector('.msg-thinking');
+      if (thinking) thinking.remove();
+      if (dbResp.error) {
+        addMessage('error', dbResp.error);
+      } else {
+        addDuckdbResult(dbResp);
       }
       input.disabled = false;
       sendBtn.disabled = false;

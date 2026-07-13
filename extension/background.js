@@ -198,6 +198,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       listAutomations().then(sendResponse);
       return true;
     }
+    case 'DUCKDB_QUERY': {
+      runDuckdbQuery(request.naturalQuery).then(sendResponse);
+      return true;
+    }
   }
 });
 
@@ -1093,6 +1097,39 @@ async function listAutomations() {
     return { ok: true, response: data.output || '' };
   } catch (err) {
     return { ok: false, error: `Failed to list automations: ${err.message}` };
+  }
+}
+
+// Run a natural-language query against Zo's DuckDB datasets via zo.space (#05)
+async function runDuckdbQuery(naturalQuery) {
+  if (!config.zoAccessToken) {
+    return { ok: false, error: 'Zo access token not configured.' };
+  }
+  const endpoint = config.zoSpaceEndpoint || 'https://cashlessconsumer.zo.space';
+  try {
+    const resp = await fetch(`${endpoint}/api/cobrowse/query`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.zoAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query: naturalQuery }),
+    });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => '');
+      return { ok: false, error: `DuckDB query failed: ${resp.status} ${resp.statusText}${txt ? ' — ' + txt : ''}` };
+    }
+    const data = await resp.json();
+    // Expected shape from the API: { ok: true, columns: [...], rows: [[...], ...], sql: "..." }
+    return {
+      ok: true,
+      columns: data.columns || [],
+      rows: data.rows || [],
+      sql: data.sql || '',
+      rowCount: Array.isArray(data.rows) ? data.rows.length : 0,
+    };
+  } catch (err) {
+    return { ok: false, error: `DuckDB query error: ${err.message}` };
   }
 }
 

@@ -74,6 +74,13 @@ describe("background.js defaults", () => {
     expect(code).toContain("setDefaultSuggestion");
   
 
+
+  it("has duckdb query handler (#05)", () => {
+    expect(code).toContain("DUCKDB_QUERY");
+    expect(code).toContain("runDuckdbQuery");
+    expect(code).toContain("naturalQuery");
+  });
+
   it("has automation creation handlers (#08)", () => {
     expect(code).toContain("CREATE_AUTOMATION");
     expect(code).toContain("createAutomation");

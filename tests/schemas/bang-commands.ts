@@ -21,11 +21,20 @@ const Save = z.object({
   savePath: z.string(),
 });
 
+// !auto — create a Zo automation/agent from the page
 const Automation = z.object({
   handled: z.literal(true),
   kind: z.literal("automation"),
   isAuto: z.literal(true),
   instruction: z.string(),
+});
+
+// !query / !data — natural-language DuckDB query
+const DuckdbQuery = z.object({
+  handled: z.literal(true),
+  kind: z.literal("duckdb"),
+  isDuckdb: z.literal(true),
+  naturalQuery: z.string(),
 });
 
 const ExpandedQuery = z.object({
@@ -40,6 +49,7 @@ export const BangCommandResultSchema = z.discriminatedUnion("kind", [
   InlineReply,
   Save,
   Automation,
+  DuckdbQuery,
   ExpandedQuery,
 ]);
 
@@ -56,4 +66,6 @@ export const BANG_COMMAND_NAMES = [
   "skill",
   "save",
   "auto",
+  "query",
+  "data",
 ] as const;

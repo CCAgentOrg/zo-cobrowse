@@ -129,6 +129,14 @@ describe("sidepanel persona routing", () => {
   });
 
 
+
+  it("has duckdb query commands (#05)", () => {
+    expect(code).toContain("isDuckdb");
+    expect(code).toContain("DUCKDB_QUERY");
+    expect(code).toContain("addDuckdbResult");
+    expect(code).toContain("renderTable");
+  });
+
   it("has automation command (#08)", () => {
     expect(code).toContain("isAuto");
     expect(code).toContain("CREATE_AUTOMATION");

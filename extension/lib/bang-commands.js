@@ -100,6 +100,18 @@ export function parseBangCommand(rawQuery) {
     return { handled: true, kind: 'automation', isAuto: true, instruction };
   }
 
+  // !query / !data — natural-language DuckDB query (#05)
+  if (name === 'query' || name === 'data') {
+    const naturalQuery = args;
+    if (!naturalQuery) {
+      return {
+        handled: true, kind: 'inline',
+        inlineReply: 'Usage: `!query <question>` — e.g. `!query total UPI volume by month`. Zo translates your question into a DuckDB query against your datasets.',
+      };
+    }
+    return { handled: true, kind: 'duckdb', isDuckdb: true, naturalQuery };
+  }
+
   // Look up the command
   const cmd = BANG_COMMANDS[name];
   if (!cmd) {
