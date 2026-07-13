@@ -222,27 +222,29 @@ async function init() {
   await loadTheme();
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => loadTheme());
   updateStatus(config.hasToken);
+  bindEvents(); // bind first so onboarding buttons always work
   const { [OB_KEY]: obDone = false } = await chrome.storage.sync.get(OB_KEY);
   if (!obDone) { showOnboarding(); return; }
-  bindEvents();
+  await finishInit();
+}
+
+/** Remaining init — called on normal start and from completeOnboarding() */
+async function finishInit() {
   await refreshPageContext();
-  await checkPendingQuery(); // ← NEW: pick up query from context menu click
+  await checkPendingQuery();
   await migrateOldFormat();
   await loadConversations();
   await fetchModelsAndPersonas();
   await loadPresets();
   await loadQuickActions();
   await loadTtsConfig();
-  // Open streaming port to background — enables streaming Zo responses
   connectStreamingPort();
-  // Re-render quick actions when they change in another view (e.g. Options)
   chrome.storage.onChanged.addListener((changes) => {
     if (changes[STORAGE_ACTIONS_KEY]) {
       const actions = changes[STORAGE_ACTIONS_KEY].newValue;
       renderQuickActions(actions || []);
     }
   });
-  // Listen for context menu broadcasts when sidepanel is already open
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'PENDING_ZO_QUERY' && msg.text) {
       input.value = msg.text;
@@ -363,9 +365,10 @@ function handleOnboardingBack() {
 
 async function completeOnboarding() {
   await chrome.storage.sync.set({ [OB_KEY]: true, [OB_STEP_KEY]: 0 });
-  document.getElementById('onboarding-view').classList.add('hidden');
-  document.getElementById('chat-view').classList.remove('hidden');
+  const obView = document.getElementById('onboarding-view');
+  if (obView) obView.classList.add('hidden');
   addSystemMessage('🎉 Onboarding complete! Try asking Zo something about this page.');
+  await finishInit();
 }
 const MODE_LABELS = {
   auto: '◐ Auto',
@@ -471,9 +474,9 @@ function bindEvents() {
   const obNext = $('#ob-next');
   const obBack = $('#ob-back');
   const obSkip = $('#ob-skip');
-  if (obNext) obNext.addEventListener('click', onboardingNext);
-  if (obBack) obBack.addEventListener('click', onboardingBack);
-  if (obSkip) obSkip.addEventListener('click', skipOnboarding);
+  if (obNext) obNext.addEventListener('click', handleOnboardingNext);
+  if (obBack) obBack.addEventListener('click', handleOnboardingBack);
+  if (obSkip) obSkip.addEventListener('click', completeOnboarding);
 }
 
 // ---- View switching ----
