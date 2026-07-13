@@ -11,6 +11,7 @@
     "package": "cd extension && zip -r ../zo-cobrowse.zip . -x '*.git*' -x '*.DS_Store'"
   },
   "devDependencies": {
-    "bun-types": "latest"
+    "bun-types": "latest",
+    "zod": "^4.4.3"
   }
 }

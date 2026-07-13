@@ -33,7 +33,26 @@ From `manifest.json`:
 bun test
 ```
 
-39 tests across 7 files. Adding a feature means adding/updating the corresponding test file under `tests/`.
+78+ tests across 9 files. Adding a feature means adding/updating the corresponding test file under `tests/`.
+
+### Verification layer (Zod schemas) — read before adding features
+
+Contracts are defined as **Zod schemas** in `tests/schemas/` and used by the tests as the single source of truth. Prefer schema validation over scattered `.toContain()` string checks.
+
+| Schema file | Validates | Used by |
+|-------------|-----------|---------|
+| `tests/schemas/manifest.ts` | full `manifest.json` (MV3 shape, commands, omnibox, icons, permissions) | `tests/manifest.test.ts` |
+| `tests/schemas/actions.ts` | the Zo action protocol (`navigate`/`click`/`fill`/`extract`/`scroll`/`wait`/`done`) | `tests/message-contract.test.ts` |
+| `tests/schemas/messages.ts` | every message type passed sidepanel ↔ background ↔ content | `tests/message-contract.test.ts` |
+| `tests/schemas/config.ts` | the `DEFAULTS` config object | (config tests) |
+| `tests/schemas/bang-commands.ts` | `parseBangCommand()` output (discriminated union on `kind`) | `tests/bang-commands.test.ts` |
+
+**Two contract tests guard the boundaries:**
+- `tests/message-contract.test.ts` — asserts background.js has a `case` for **every** message type in the schema, AND that the schema isn't missing any handler background.js already implements. Add a new message type → add it to the schema or this test fails.
+
+**Pattern for pure logic:** extract into `extension/lib/<name>.js` as an ES module (no `chrome.*`/DOM deps), import it from the consuming extension script (which must be loaded as `type="module"` in its HTML), and unit-test it by importing directly + validating output against its Zod schema. See `extension/lib/bang-commands.js` ↔ `tests/bang-commands.test.ts` as the reference.
+
+When you add a feature: extend the relevant schema first, then write the code + a test that validates the code's output against the schema. This catches structural regressions that `.toContain()` misses.
 
 ## When to use this
 

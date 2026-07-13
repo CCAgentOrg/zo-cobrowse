@@ -186,6 +186,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       savePageToWorkspace(request.pageContext, request.savePath).then(sendResponse);
       return true;
     }
+    case 'RUN_SKILL': {
+      runSkill(request.skillName, request.pageContext).then(sendResponse);
+      return true;
+    }
   }
 });
 

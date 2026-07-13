@@ -1,5 +1,7 @@
 // Zo Co-browse — Side Panel Logic
 
+import { parseBangCommand, BANG_COMMANDS } from './lib/bang-commands.js';
+
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
@@ -745,90 +747,8 @@ async function fetchModelsAndPersonas() {
   }
 }
 
-// ---- Send ----
 // ---- Bang Commands (!) — Quick Command Templates (#07) ----
-const BANG_COMMANDS = {
-  summarize: {
-    preset: 'summarize',
-    label: 'Summarize',
-    desc: 'Condense the page into a concise summary',
-    buildQuery: () => 'Summarize this page concisely.',
-  },
-  extract: {
-    preset: 'scrape',
-    label: 'Extract',
-    desc: 'Extract structured data (tables, lists, contacts, prices)',
-    buildQuery: (args) => args ? `Extract ${args} from this page as structured data.` : 'Extract all structured data from this page.',
-  },
-  research: {
-    preset: 'research',
-    label: 'Research',
-    desc: 'Deep research on the page topic',
-    buildQuery: (args) => args ? `Do deep research on: ${args}` : 'Do deep research on this page topic.',
-  },
-  qa: {
-    preset: 'qa',
-    label: 'Q&A',
-    desc: 'Answer a specific question about the page',
-    buildQuery: (args) => args || 'What is this page about?',
-  },
-  ask: {
-    preset: 'qa',
-    label: 'Ask',
-    desc: 'Alias for !qa',
-    buildQuery: (args) => args || 'What is this page about?',
-  },
-  fill: {
-    preset: null,
-    label: 'Fill',
-    desc: 'Ask Zo to fill editable fields on the page',
-    buildQuery: (args) => args ? `Fill the form on this page: ${args}` : 'Fill the editable form fields on this page with reasonable test data.',
-  },
-};
-
-// Returns { handled, query, preset } or { handled: false }
-// If handled is true but query is null, the command produced an inline reply
-// (e.g. !help) and sendQuery should abort after showing it.
-function parseBangCommand(rawQuery) {
-  if (!rawQuery || rawQuery[0] !== '!') return { handled: false };
-
-  const trimmed = rawQuery.slice(1).trim();
-  const spaceIdx = trimmed.indexOf(' ');
-  const name = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx).toLowerCase();
-  const args = spaceIdx === -1 ? '' : trimmed.slice(spaceIdx + 1).trim();
-
-  // !help — list commands inline
-  if (name === 'help' || name === 'commands' || name === '?') {
-    const lines = ['**Quick Commands** (type these in the chat):'];
-    for (const [cmd, def] of Object.entries(BANG_COMMANDS)) {
-      lines.push(`• \`!${cmd}\` — ${def.desc}`);
-    }
-    lines.push('• `!save` — Save this page to your Zo workspace as markdown');
-    lines.push('• `!help` — Show this list');
-    return { handled: true, inlineReply: lines.join('\n') };
-  }
-
-  // !save — save page to Zo workspace as markdown
-  if (name === 'save') {
-    const savePath = args || ''; // optional filename/path argument
-    return { handled: true, isSave: true, savePath };
-  }
-
-  // Look up the command
-  const cmd = BANG_COMMANDS[name];
-  if (!cmd) {
-    return {
-      handled: true,
-      inlineReply: `Unknown command: \`!${name}\`. Type \`!help\` to see available commands.`,
-    };
-  }
-
-  return {
-    handled: true,
-    query: cmd.buildQuery(args),
-    preset: cmd.preset, // may be null for non-preset commands like !fill
-  };
-}
+// Logic extracted to lib/bang-commands.js for unit testing (see tests/bang-commands.test.ts).
 
 async function sendQuery() {
   const query = input.value.trim();

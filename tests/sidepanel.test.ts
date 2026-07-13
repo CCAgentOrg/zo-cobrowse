@@ -6,8 +6,10 @@ const SIDEPANEL_PATH = resolve(import.meta.dir, "../extension/sidepanel.js");
 const code = readFileSync(SIDEPANEL_PATH, "utf-8");
 
 describe("sidepanel.js", () => {
-  it("is valid JavaScript", () => {
-    expect(() => new Function(code)).not.toThrow();
+  it("is valid JavaScript (ESM module)", () => {
+    // sidepanel.js is now an ES module (uses import). Validate via Bun's transpiler,
+    // which accepts import/export and throws on syntax errors.
+    expect(() => new Bun.Transpiler().transformSync(code)).not.toThrow();
   });
 
   it("has history persistence (MAX_HISTORY, loadConversations, saveConversations)", () => {
@@ -126,17 +128,11 @@ describe("sidepanel persona routing", () => {
     expect(code).toContain("savePath");
   });
 
-  it("has bang command parser (#07)", () => {
+  it("imports and dispatches bang commands (#07)", () => {
+    // Logic now lives in extension/lib/bang-commands.js (unit-tested separately);
+    // sidepanel.js imports it and dispatches via parseBangCommand in both sendQuery paths.
+    expect(code).toContain("./lib/bang-commands.js");
     expect(code).toContain("parseBangCommand");
-    expect(code).toContain("BANG_COMMANDS");
-    // Commands registered without ! prefix; help text prepends it dynamically
-    expect(code).toContain("summarize:");
-    expect(code).toContain("extract:");
-    expect(code).toContain("research:");
-    // !help and unknown-command handling
-    expect(code).toContain("=== 'help'");
-    expect(code).toContain("Unknown command");
-    // Wired into both sendQuery paths
     expect(code).toContain("effectiveQuery");
     expect(code).toContain("tempPreset");
   });
