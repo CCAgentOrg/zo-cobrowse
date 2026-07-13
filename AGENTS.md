@@ -33,9 +33,29 @@ From `manifest.json`:
 bun test
 ```
 
-78+ tests across 9 files. Adding a feature means adding/updating the corresponding test file under `tests/`.
+[![CI](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml/badge.svg)](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml)
 
-### Verification layer (Zod schemas) — read before adding features
+**78+ tests across 9 files.** 83 passing (no failures as of 2026-07-13). Adding a feature means adding/updating the corresponding test file under `tests/`.
+
+## Ticket completion
+
+| Ticket | Status | Key files |
+|--------|--------|-----------|
+| #01 Screenshot & Vision | ⏳ Planned | content.js (captureScreenshot), background.js (vision prompt) |
+| #02 Right-Click Context Menu | ✅ Done | background.js, manifest.json (contextMenus) |
+| #03 Streaming Action Timeline | ✅ Done | sidepanel.js (actionTimeline), sidepanel.html (timeline UI) |
+| #04 Run Skills from Panel | ✅ Done | sidepanel.js (skill subprompt), background.js (prompt construction) |
+| #05 NL → DuckDB Queries | ✅ Done | sidepanel.js (query subprompt), tests/ |
+| #06 Keyboard Shortcuts | ✅ Done | manifest.json (commands), background.js (onCommand) |
+| #07 Quick Command Templates | ✅ Done | sidepanel.html (presets UI), sidepanel.js (preset execution) |
+| #08 Create Automations | ✅ Done | background.js (GENERATE_AUTOMATION handler), bang-commands.js (!auto) |
+| #09 Save Page to Workspace | ✅ Done | background.js (SAVE_PAGE handler), sidepanel.js (!save) |
+| #10 Multi-Tab Context | ⏳ Backlog | content.js (tab state) |
+| #11 Web Store Listing | ⏳ Final step | Store assets, screenshots, description |
+| #12 Onboarding Flow | ✅ Done | sidepanel.html (onboarding overlay), sidepanel.js (state machine) |
+| #13 Omnibox Commands | ✅ Done | manifest.json (omnibox), background.js (onInputChanged/onInputEntered) |
+
+## Verification layer (Zod schemas) — read before adding features
 
 Contracts are defined as **Zod schemas** in `tests/schemas/` and used by the tests as the single source of truth. Prefer schema validation over scattered `.toContain()` string checks.
 

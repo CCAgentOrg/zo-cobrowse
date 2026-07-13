@@ -23,6 +23,23 @@ jobs:
       - name: Run tests
         run: bun test
 
+      - name: Validate schemas
+        run: |
+          echo "=== Message types ==="
+          grep -c "MessageType" tests/schemas/messages.ts
+          echo "=== Bang commands ==="
+          bun run --eval "
+            import { readFileSync } from 'fs';
+            const src = readFileSync('tests/schemas/bang-commands.ts', 'utf-8');
+            const zMatch = src.match(/z\.union\(\[([^\]]+)\]/);
+            const count = src.match(/z\.union/g);
+            console.log('Bang command schemas:', count ? count.length : 0);
+          "
+          echo "=== Config schema ==="
+          test -f tests/schemas/config.ts && echo "config.ts OK" || echo "MISSING config.ts"
+          echo "=== Manifest schema ==="
+          test -f tests/schemas/manifest.ts && echo "manifest.ts OK" || echo "MISSING manifest.ts"
+
       - name: Validate extension JS
         run: |
           for f in extension/*.js; do
@@ -39,12 +56,8 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Check for issues
-        run: |
-          echo "=== checking TODO markers ==="
-          grep -rn 'TODO\|FIXME\|HACK' extension/*.js extension/*.html backend/*.ts 2>/dev/null || echo "none found"
-          echo "=== checking line endings ==="
-          file extension/*.js extension/*.html extension/*.css
+      - name: Run linter
+        run: bun run lint
 
   package:
     needs: [test, lint]

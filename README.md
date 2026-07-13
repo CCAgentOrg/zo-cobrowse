@@ -101,16 +101,27 @@ backend/
 └── README.md              # Backend deployment guide
 
 tests/
-├── manifest.test.ts       # Manifest structure
-├── html.test.ts           # UI element presence
-├── background.test.ts     # Config, messaging
-├── content.test.ts        # Context capture, actions
-├── sidepanel.test.ts      # History, init, new-chat
-├── options.test.ts        # Settings form
-└── relay.test.ts          # WebSocket endpoints
+├── schemas/                # Zod contract schemas (single source of truth for shapes)
+│   ├── manifest.ts
+│   ├── actions.ts
+│   ├── messages.ts
+│   ├── config.ts
+│   └── bang-commands.ts
+├── manifest.test.ts        # Manifest validation against schema
+├── message-contract.test.ts# Message contract completeness
+├── html.test.ts            # UI element presence
+├── background.test.ts      # Config, messaging, omnibox, generate
+├── content.test.ts         # Context capture, actions
+├── sidepanel.test.ts       # History, init, new-chat, presets, onboarding
+├── options.test.ts         # Settings form
+├── bang-commands.test.ts   # Bang (!) command parser
+└── relay.test.ts           # WebSocket endpoints
 
-README.md                  # This file
-AGENTS.md                  # Project routing for AI agents
+lib/                        # Pure JS modules (no chrome.* deps, testable directly)
+└── bang-commands.js        # Bang command parser — the reference pattern
+
+README.md                   # This file
+AGENTS.md                   # Project routing for AI agents
 ```
 
 ## Development
@@ -118,7 +129,8 @@ AGENTS.md                  # Project routing for AI agents
 Reload from `chrome://extensions` after edits. Run tests:
 
 ```bash
-bun test        # 39 tests across 7 files
+bun test        # 83 tests across 10 test files + 5 schema files
+bun test:watch  # Watch mode
 ```
 
 ## Why This Pattern
