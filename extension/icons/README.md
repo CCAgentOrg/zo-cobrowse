@@ -1,6 +1,6 @@
 # Zo Co-browse — Icon Set
 
-The **Zo Pegasus on a globe** — Zo carrying your ideas across the web.
+The **Zo Pegasus on a globe** — the Pegasus carries your ideas across the web.
 
 | File | Size | Use |
 |------|------|-----|
@@ -13,9 +13,15 @@ The **Zo Pegasus on a globe** — Zo carrying your ideas across the web.
 
 ## Design
 
-- **Pegasus**: official Zo brand mark (rearing winged horse), rendered in warm off-white
-- **Globe**: deep navy gradient with subtle meridian/equator lines — "co-browse the web"
-- **Ring**: thin gold accent border on navy
-- **Background**: black
+- **Pegasus**: official Zo brand mark — rearing winged horse, the noble steed of the mind. Warm off-white (#f9f6ee) for contrast against the globe.
+- **Globe**: deep navy gradient (#2152a8 → #08183a) with clean equatorial meridian lines — "co-browse the web." A subtle gradient arc catches light at the top-left.
+- **Ring**: thin gold accent border (#7a6a3a, 55% opacity).
+- **Background**: near-black (#0a1228) for depth.
 
-Rendered from `icon.svg` via `rsvg-convert -w <size> -h <size>`.
+## Rendering
+
+From `icon.svg`:
+
+```bash
+rsvg-convert icon.svg -w $size -h $size -o icon${size}.png
+```
