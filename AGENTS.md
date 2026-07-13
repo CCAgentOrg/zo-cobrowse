@@ -57,14 +57,40 @@ bun test
 | #14 Page Monitoring | ⏳ Backlog | ticket-14-page-monitoring.md — not implemented |
 | #15 Shared Sessions | 🟡 Scratch | backend/relay.ts (WebSocket backend exists), extension integration not done |
 
-| #16 Web Monitoring & Page Change Detection | ⏳ New gap | Track page changes, price drops — see `brainstorming/GAP_ANALYSIS.md` |
-| #17 Scheduled AI Commands | ⏳ New gap | Cron-like periodic AI runs — see `brainstorming/GAP_ANALYSIS.md` |
-| #18 Tab Compare / Side-by-Side | ⏳ New gap | Multi-tab diff/summary — see `brainstorming/GAP_ANALYSIS.md` |
-| #19 Console & Network Logs Integration | ⏳ New gap | Debug assistance from console/network tab — see `brainstorming/GAP_ANALYSIS.md` |
-| #20 Site-Level Permission Controls | ⏳ New gap | Granular allow/block per domain — see `brainstorming/GAP_ANALYSIS.md` |
-| #21 Page Context Export (PDF/MD) | ⏳ New gap | One-click page download as PDF or Markdown — see `brainstorming/GAP_ANALYSIS.md` |
-| #22 Multi-Model Selection UI | ⏳ New gap | Choose between Claude/Gemini/Zo models per task — see `brainstorming/GAP_ANALYSIS.md` |
-| #23 Workflow Recording | ⏳ New gap | Record browser actions as replayable workflow — see `brainstorming/GAP_ANALYSIS.md` |
+### 🟢 Tier 1 — Unique Zo Moat (build first)
+
+| # | Gap | Zo Affinity | Priority | Key files |
+|---|-----|-------------|----------|-----------|
+| #16 | **Scheduled AI Commands** | 10/10 | **P0** | Zo automations (48 exist) + panel UI to create/manage. Only ZoCoBrowse can do this at depth. See `brainstorming/ZO_AFFINITY_RANKING.md` |
+| #17 | **Web Monitoring & Page Change Detection** | 10/10 | **P0** | Zo automations as backend + DuckDB change history + workspace archival. Competitors monitor pages; Zo triggers skills on change. See `brainstorming/ZO_AFFINITY_RANKING.md` |
+| #18 | **Shared Sessions (multi-participant)** | 9/10 | **P1** | `backend/relay.ts` exists. Multi-user co-browsing over WebSocket is ZoCoBrowse's unique architectural moat. No competitor has this. |
+| #19 | **Multi-Model Selection UI** | 9/10 | **P1** | Zo BYOK supports any provider. A model picker in the panel unlocks Zo's full flexibility from the browser. |
+| #20 | **Tab Compare / Side-by-Side** | 8/10 | **P1** | Multi-tab context → Zo cross-references with DuckDB datasets, runs skills on merged context. HARPA compares URLs; Zo cross-references intelligently. |
+
+### 🟡 Tier 2 — Strong Zo Leverage (next)
+
+| # | Gap | Zo Affinity | Priority | Key files |
+|---|-----|-------------|----------|-----------|
+| #21 | **Page Context Export (PDF/MD)** | 7/10 | **P2** | Zo has `book-typesetting` skill (pandoc+Eisvogel) and Hugo pipeline. Export → Zo formats and publishes. |
+| #01 | **Screenshot & Vision Capture** | 7/10 | **P2** | ✅ Done (captureVisibleTab + JPEG). Zo can analyze with vision, save to workspace. |
+| #14 | **Page Monitoring (basic)** | 6/10 | **P2** | Periodic re-capture with Zo drives automations. Pair with #17 for full power. |
+| #02 | **Right-click Context Menu** | 6/10 | **P2** | ✅ Done. "Research/Summarize/Explain with Zo". Menu items can trigger specific skills. |
+
+### 🔴 Tier 3 — Parity Catch-up (later)
+
+| # | Gap | Zo Affinity | Priority | Key files |
+|---|-----|-------------|----------|-----------|
+| — | **Image/file upload to panel** | 5/10 | **P3** | Upload → Zo reads & runs skills. Mostly UX work. |
+| — | **Action Templates Library** | 4/10 | **P3** | Pre-built prompts. Could generate from 89 Zo skills. HARPA has 100+ templates. |
+| #23 | **Workflow Recording** | 4/10 | **P3** | Record/replay clicks. Competitors win here. Future: save workflows as Zo skills. |
+| — | **Streaming Responses** | 3/10 | ✅ Done | Pure UX. Done per #03. |
+| — | **Download files** | 3/10 | **P3** | Generic browser feature. |
+| — | **Risk confirmation dialogs** | 2/10 | **P3** | Browser UX. Every extension has it. |
+| #10 | **Site-Level Permission Controls** | 2/10 | **P3** | Chrome config UI. Zero differentiation. |
+| — | **Console & Network Logs** | 2/10 | **P3** | Devtools integration. Low ROI vs Tier 1. |
+| #11 | **Web Store Listing** | 1/10 | **P4** | Distribution, not a feature. Must-do to ship. |
+
+Full analysis: `brainstorming/ZO_AFFINITY_RANKING.md`
 
 ## Verification layer (Zod schemas) — read before adding features
 
