@@ -393,10 +393,14 @@ input, textarea, select {
   white-space: nowrap;
 }
 .header-brand .brand-star {
-  color: var(--amber);
-  font-size: 18px;
-  line-height: 1;
-  filter: drop-shadow(0 0 6px var(--amber-glow));
+  display: none;
+}
+.header-brand .brand-icon-img {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  flex-shrink: 0;
+  display: block;
 }
 .header-brand .brand-zo {
   background: linear-gradient(135deg, var(--amber), var(--indigo));
