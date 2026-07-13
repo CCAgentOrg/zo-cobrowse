@@ -579,10 +579,10 @@ input, textarea, select {
 #messages {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 14px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   background: var(--bg-chat);
 }
 
@@ -598,10 +598,10 @@ input, textarea, select {
 }
 
 .msg-body {
-  padding: 8px 12px;
+  padding: 10px 14px;
   border-radius: var(--radius-md);
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: 13.5px;
+  line-height: 1.6;
   word-wrap: break-word;
   overflow-wrap: break-word;
   max-width: 100%;
@@ -686,33 +686,75 @@ input, textarea, select {
 }
 
 /* ── Message body content ── */
-.msg-body p { margin-bottom: 6px; }
+.msg-body p { margin-bottom: 8px; }
 .msg-body p:last-child { margin-bottom: 0; }
-.msg-body strong { font-weight: 600; }
+.msg-body strong { font-weight: 600; color: var(--text); }
+.msg-body em { font-style: italic; }
+.msg-body ul, .msg-body ol {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+.msg-body li {
+  margin-bottom: 4px;
+  line-height: 1.55;
+}
+.msg-body li:last-child { margin-bottom: 0; }
+.msg-body hr {
+  border: none;
+  border-top: 1px solid var(--border-soft);
+  margin: 12px 0;
+}
+.msg-body blockquote {
+  border-left: 3px solid var(--amber);
+  padding: 4px 12px;
+  margin: 8px 0;
+  color: var(--text-muted);
+  font-style: italic;
+  background: var(--bg-elevated);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.msg-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 12px;
+}
+.msg-body th, .msg-body td {
+  border: 1px solid var(--border-soft);
+  padding: 6px 10px;
+  text-align: left;
+}
+.msg-body th {
+  background: var(--bg-elevated);
+  font-weight: 600;
+}
 .msg-body code {
   font-family: var(--font-code);
-  font-size: 12px;
-  background: var(--bg-hover);
-  padding: 1px 5px;
+  font-size: 12.5px;
+  background: color-mix(in srgb, var(--amber) 10%, var(--bg-hover));
+  padding: 2px 6px;
   border-radius: 4px;
+  color: var(--amber);
 }
 .msg-body pre {
   background: var(--bg-deep);
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-sm);
-  padding: 10px 12px;
+  padding: 12px 14px;
   overflow-x: auto;
-  margin: 6px 0;
+  margin: 8px 0;
 }
 .msg-body pre code {
   background: none;
   padding: 0;
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
 }
 .msg-body a {
   color: var(--indigo);
   text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .msg-assistant .msg-body a { color: var(--amber); }
 
@@ -726,22 +768,23 @@ input, textarea, select {
 /* ── Actions bar (pending actions) ── */
 #actions-bar {
   flex-shrink: 0;
-  padding: 8px 14px;
+  padding: 10px 14px;
   background: var(--bg-surface);
   border-top: 1px solid var(--border-soft);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 #actions-reasoning {
   font-size: 12px;
   color: var(--text-muted);
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .actions-buttons {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -750,8 +793,8 @@ input, textarea, select {
   flex-shrink: 0;
   display: flex;
   align-items: flex-end;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: 8px;
+  padding: 10px 12px;
   background: var(--bg-surface);
   border-top: 1px solid var(--border-soft);
 }
@@ -1389,3 +1432,65 @@ body.options-page {
 .ob-dot { width: 8px; height: 8px; border-radius: 99px; background: var(--border); transition: background 0.2s; }
 .ob-dot.active { background: var(--accent); }
 .ob-step-content { min-height: 120px; }
+
+.msg-body pre code {
+  display: block;
+  background: var(--bg-deep);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-x: auto;
+  tab-size: 2;
+}
+
+/* Tables rendered from markdown */
+.msg-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+.msg-body th, .msg-body td {
+  padding: 6px 10px;
+  text-align: left;
+  border: 1px solid var(--border-soft);
+}
+.msg-body th {
+  background: var(--bg-elevated);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+.msg-body tbody tr:nth-child(even) td {
+  background: var(--bg-hover);
+}
+
+/* Blockquotes */
+.msg-body blockquote {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--amber);
+  color: var(--text-muted);
+  font-style: italic;
+}
+.msg-body blockquote p {
+  margin: 0;
+}
+
+/* List items in rendered messages */
+.msg-body ul, .msg-body ol {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+.msg-body li {
+  margin: 3px 0;
+  line-height: 1.5;
+}
+
+.msg-body a {
+  color: var(--amber);
+}

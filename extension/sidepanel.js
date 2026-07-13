@@ -1240,6 +1240,23 @@ function markdownToHtml(md) {
   });
   // Inline code
   html = html.replace(/`([^`]+)`/g, function(_, c) { return '<code>' + escapeHtml(c) + '</code>'; });
+
+  // Tables: markdown pipe tables
+  html = html.replace(/\|(.+)\|\n\|[-| :]+\|\n((?:\|.+\|\n?)*)/g, function(_, headerRow, bodyRows) {
+    var headers = headerRow.split('|').filter(function(c) { return c.trim(); });
+    var thead = '<thead><tr>' + headers.map(function(h) { return '<th>' + h.trim() + '</th>'; }).join('') + '</tr></thead>';
+    var tbody = '<tbody>';
+    var rows = bodyRows.trim().split('\n');
+    for (var r = 0; r < rows.length; r++) {
+      var cells = rows[r].split('|').filter(function(c) { return c.trim(); });
+      if (cells.length) {
+        tbody += '<tr>' + cells.map(function(c) { return '<td>' + c.trim() + '</td>'; }).join('') + '</tr>';
+      }
+    }
+    tbody += '</tbody>';
+    return '<table>' + thead + tbody + '</table>';
+  });
+
   // Bold
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   // Italic
