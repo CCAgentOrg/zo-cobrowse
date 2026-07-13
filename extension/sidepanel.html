@@ -57,6 +57,22 @@
     <!-- ── Quick action chips ── -->
     <div class="chips-wrap" id="action-chips"></div>
 
+    <!-- ── Onboarding (first-run) ── -->
+    <div id="onboarding-view" class="hidden">
+      <div class="onboarding-card">
+        <div class="onboarding-pegasus">⢕⣿</div>
+        <h2 id="ob-title">Welcome to Zo Co-browse</h2>
+        <p id="ob-desc" class="desc"></p>
+        <div id="ob-body"></div>
+        <div class="onboarding-buttons">
+          <button id="ob-skip" class="btn btn-ghost btn-sm ob-skip-btn">Skip tour</button>
+          <button id="ob-back" class="btn btn-ghost btn-sm">Back</button>
+          <button id="ob-next" class="btn btn-primary btn-sm">Next →</button>
+        </div>
+        <div id="ob-steps" class="onboarding-steps"></div>
+      </div>
+    </div>
+
     <!-- ── Chat view ── -->
     <div id="chat-view">
       <!-- Messages -->

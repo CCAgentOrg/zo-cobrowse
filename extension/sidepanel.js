@@ -222,6 +222,8 @@ async function init() {
   await loadTheme();
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => loadTheme());
   updateStatus(config.hasToken);
+  const { [OB_KEY]: obDone = false } = await chrome.storage.sync.get(OB_KEY);
+  if (!obDone) { showOnboarding(); return; }
   bindEvents();
   await refreshPageContext();
   await checkPendingQuery(); // ← NEW: pick up query from context menu click
@@ -282,6 +284,89 @@ async function loadConfig() {
   updateRoutingBadge();
 }
 
+// ---- Onboarding ----
+
+const OB_KEY = 'cobrowse_onboarding_done';
+const OB_STEP_KEY = 'cobrowse_onboarding_step';
+
+const OB_STEPS = [
+  {
+    title: 'Welcome to Zo Co-browse',
+    desc: 'Your browser, supercharged with AI.',
+    body: '<p>Zo Co-browse connects your browser to Zo Computer — your personal AI server. Zo can see what\'s on the page, answer questions, fill forms, extract data, run DuckDB queries, and even create automations — all from this side panel.</p><p>Let\'s get you set up in 30 seconds.</p>',
+  },
+  {
+    title: 'Connect Your Zo',
+    desc: 'You need a Zo Computer account to use Co-browse.',
+    body: '<p>If you haven\'t already, sign up at <a href="https://zocomputer.com" target="_blank">zocomputer.com</a> — it\'s free.</p><p>Already have an account? Great — the next step is to add your API token.</p>',
+  },
+  {
+    title: 'Add Your API Token',
+    desc: 'This connects the extension to your Zo.',
+    body: '<ol style="text-align:left;margin:0 auto;max-width:340px;line-height:1.8"><li>Open your Zo <strong>Settings → Advanced → Access Tokens</strong></li><li>Create a new token (or copy an existing one)</li><li>Paste it in the <strong>extension settings</strong> (gear icon below)</li></ol><p style="margin-top:12px">💡 Your token is stored locally and never shared.</p>',
+  },
+  {
+    title: 'Test Your Connection',
+    desc: 'Let\'s make sure everything works.',
+    body: '<p>Click <strong>Test Connection</strong> below, or open the extension settings and hit "Test Connection" there.</p><p>If it works, you\'re all set! You can ask Zo anything about the page you\'re on.</p>',
+    final: true,
+  },
+];
+
+async function showOnboarding() {
+  const chatView = document.getElementById('chat-view');
+  const obView = document.getElementById('onboarding-view');
+  if (!obView) return;
+  chatView.classList.add('hidden');
+  obView.classList.remove('hidden');
+
+  const { [OB_STEP_KEY]: step = 0 } = await chrome.storage.sync.get(OB_STEP_KEY);
+  renderOnboardingStep(step);
+}
+
+function renderOnboardingStep(step) {
+  const s = OB_STEPS[step];
+  if (!s) { completeOnboarding(); return; }
+  document.getElementById('ob-title').textContent = s.title;
+  document.getElementById('ob-desc').textContent = s.desc;
+  document.getElementById('ob-body').innerHTML = s.body;
+
+  const backBtn = document.getElementById('ob-back');
+  const nextBtn = document.getElementById('ob-next');
+  backBtn.classList.toggle('hidden', step === 0);
+  nextBtn.textContent = s.final ? '🚀 Get Started' : 'Next →';
+
+  const stepsEl = document.getElementById('ob-steps');
+  stepsEl.innerHTML = OB_STEPS.map((_, i) =>
+    `<span class="ob-dot${i === step ? ' ob-dot-active' : ''}${i < step ? ' ob-dot-done' : ''}"></span>`
+  ).join('');
+
+  chrome.storage.sync.set({ [OB_STEP_KEY]: step });
+}
+
+function handleOnboardingNext() {
+  chrome.storage.sync.get(OB_STEP_KEY, ({ [OB_STEP_KEY]: s }) => {
+    const next = (s || 0) + 1;
+    if (next >= OB_STEPS.length) {
+      completeOnboarding();
+    } else {
+      renderOnboardingStep(next);
+    }
+  });
+}
+
+function handleOnboardingBack() {
+  chrome.storage.sync.get(OB_STEP_KEY, ({ [OB_STEP_KEY]: s }) => {
+    if ((s || 0) > 0) renderOnboardingStep(s - 1);
+  });
+}
+
+async function completeOnboarding() {
+  await chrome.storage.sync.set({ [OB_KEY]: true, [OB_STEP_KEY]: 0 });
+  document.getElementById('onboarding-view').classList.add('hidden');
+  document.getElementById('chat-view').classList.remove('hidden');
+  addSystemMessage('🎉 Onboarding complete! Try asking Zo something about this page.');
+}
 const MODE_LABELS = {
   auto: '◐ Auto',
   lite: '☾ Lite',
@@ -381,6 +466,14 @@ function bindEvents() {
 
   // Open settings on status dot double-click
   statusDot.addEventListener('dblclick', () => chrome.runtime.openOptionsPage());
+
+  // Onboarding navigation
+  const obNext = $('#ob-next');
+  const obBack = $('#ob-back');
+  const obSkip = $('#ob-skip');
+  if (obNext) obNext.addEventListener('click', onboardingNext);
+  if (obBack) obBack.addEventListener('click', onboardingBack);
+  if (obSkip) obSkip.addEventListener('click', skipOnboarding);
 }
 
 // ---- View switching ----

@@ -1330,3 +1330,36 @@ body.options-page {
   border-color: var(--border);
   color: var(--text-muted);
 }
+
+/* ── Onboarding ── */
+#onboarding-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+  flex: 1;
+}
+#chat-view.hidden,
+#onboarding-view.hidden { display: none !important; }
+#onboarding-view:not(.hidden) { display: flex; }
+.onboarding-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  padding: 2rem;
+  max-width: 360px;
+  width: 100%;
+}
+.onboarding-pegasus {
+  font-size: 2rem;
+  opacity: 0.6;
+  margin-bottom: 0.5rem;
+}
+.onboarding-card p { font-size: 0.875rem; color: var(--text-muted); }
+.onboarding-buttons { display: flex; gap: 0.5rem; justify-content: center; margin-top: 1.5rem; }
+.onboarding-steps { display: flex; gap: 6px; justify-content: center; margin-top: 1rem; }
+.ob-dot { width: 8px; height: 8px; border-radius: 99px; background: var(--border); transition: background 0.2s; }
+.ob-dot.active { background: var(--accent); }
+.ob-step-content { min-height: 120px; }
