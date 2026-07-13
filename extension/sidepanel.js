@@ -1207,9 +1207,6 @@ function addMessage(role, text) {
   }
 }
 
-function escapeHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
 
 function markdownToHtml(md) {
   if (!md) return '';
