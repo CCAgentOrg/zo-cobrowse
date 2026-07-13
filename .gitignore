@@ -2,10 +2,6 @@ node_modules/
 *.log
 .env
 .DS_Store
-node_modules/
-*.log
-.env
-.DS_Store
 dist/
 coverage/
 
@@ -14,3 +10,6 @@ brainstorming/
 
 # Skill runtime symlink (created by install)
 skill/installed
+
+bun.lock
+database/

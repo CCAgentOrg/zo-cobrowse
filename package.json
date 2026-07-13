@@ -9,7 +9,7 @@
     "test:watch": "bun test --watch",
     "check-icons": "bash scripts/check-release.sh",
     "check-prereqs": "bash scripts/check-release.sh",
-    "lint:check": "bash scripts/check-release.sh",
+    "lint": "bash scripts/check-release.sh",
     "package": "cd extension && zip -r ../zo-cobrowse.zip . -x '*.git*' -x '*.DS_Store'"
   },
   "devDependencies": {
