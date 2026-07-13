@@ -449,7 +449,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 // Re-create menus on install and browser start
-chrome.runtime.onInstalled.addListener(() => recreateContextMenus());
+chrome.runtime.onInstalled.addListener(() => {
+  recreateContextMenus();
+  // Open side panel automatically when toolbar icon is clicked
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+});
 chrome.runtime.onStartup.addListener(() => recreateContextMenus());
 
 // ── Keyboard Shortcuts (chrome.commands) ──
