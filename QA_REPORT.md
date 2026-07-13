@@ -4,7 +4,7 @@
 
 ## Test Suite Status
 
-**126 tests across 12 files — 126 pass, 0 fail** (422 expect() calls)
+**140 tests across 13 files — 140 pass, 0 fail** (422 expect() calls)
 
 | Area | Tests | Status |
 |------|-------|--------|

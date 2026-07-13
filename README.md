@@ -129,7 +129,7 @@ AGENTS.md                   # Project routing for AI agents
 Reload from `chrome://extensions` after edits. Run tests:
 
 ```bash
-bun test        # 83 tests across 10 test files + 5 schema files
+bun test        # 140 tests across 13 test files + 5 schema files
 bun test:watch  # Watch mode
 ```
 

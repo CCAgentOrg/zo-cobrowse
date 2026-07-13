@@ -53,7 +53,7 @@ Priority-stacked backlog. Work down from P0 to P2.
 
 ## Release Checklist
 
-- [ ] All 126 tests pass
+- [ ] All 140 tests pass
 - [ ] QA_REPORT.md reviewed
 - [ ] PRIVACY.md added to repo root
 - [ ] Package script (`bun run release`) verified

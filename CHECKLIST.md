@@ -263,14 +263,22 @@ Test each:
 
 ## 24. Build & Package
 
-- [ ] `bun test` passes all 83 tests
+- [ ] `bun test` passes all 140 tests
 - [ ] `bun run package` creates `zo-cobrowse.zip`
 - [ ] Zip loads correctly in Chrome via "Load unpacked"
 - [ ] Zip size is reasonable (< 5MB)
 
 ---
 
-## Known Issues (Not Blocking)
+## Fixed Issues
+- **Stream reconnection**: Added STREAM_RECONNECT message type in both background.js and sidepanel.js, with CSS for reconnection indicator
+- **Screenshot capture stability**: Added error handling for tab capture failures, format option passthrough for JPEG
+- **Sidepanel HTML syntax**: Fixed hardcoded extension ID references and invalid boolean attributes
+- **Test suite**: Expanded from 83 to 140 tests across 13 files, including error handling, action execution, settings persistence, and remaining coverage
+- **Centralized config**: Extracted config defaults and validation into extension/lib/config.js
+- **Shared chrome mock**: Mocks extracted to tests/helpers/chrome-mock.ts
+
+## Known Issues (remaining) (Not Blocking)
 
 These are documented in the QA report at `file 'QA_REPORT.md'`:
 - B1: `check-icons` npm script has parse errors (low — not in normal workflow)
