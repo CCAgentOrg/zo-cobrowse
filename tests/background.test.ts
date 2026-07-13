@@ -72,7 +72,14 @@ describe("background.js defaults", () => {
     expect(code).toContain("chrome.omnibox.onInputEntered");
     expect(code).toContain("chrome.omnibox.onInputChanged");
     expect(code).toContain("setDefaultSuggestion");
+  
+  it("has save page handler (#09)", () => {
+    expect(code).toContain("SAVE_PAGE");
+    expect(code).toContain("savePageToWorkspace");
+    expect(code).toContain("cobrowse-save");
+    expect(code).toContain("Documents/research");
   });
+});
 });
 
   it("loads without errors", async () => {

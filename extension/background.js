@@ -182,6 +182,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       generatePreset(request.description).then(sendResponse);
       return true;
     }
+    case 'SAVE_PAGE': {
+      savePageToWorkspace(request.pageContext, request.savePath).then(sendResponse);
+      return true;
+    }
   }
 });
 
@@ -337,6 +341,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
 const CONTEXT_MENU_ITEMS = [
   { id: 'cobrowse-page',      title: 'Ask Zo about this page',      contexts: ['page'] },
+  { id: 'cobrowse-save',      title: 'Save page to Zo workspace',   contexts: ['page'] },
   { id: 'cobrowse-selection', title: 'Ask Zo about this selection', contexts: ['selection'] },
   { id: 'cobrowse-link',      title: 'Ask Zo about this link',      contexts: ['link'] },
   { id: 'cobrowse-fill',      title: 'Ask Zo to fill this field',   contexts: ['editable'] },
@@ -365,6 +370,20 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     case 'cobrowse-page':
       query = 'Analyze this page and give me a summary of what it contains.';
       break;
+    case 'cobrowse-save': {
+      // Save page content to Zo workspace
+      try {
+        await chrome.sidePanel.open({ windowId: tab.windowId });
+        await new Promise(r => setTimeout(r, 500));
+        const pageContext = await getActiveTabContext(tab.id);
+        const result = await savePageToWorkspace(pageContext);
+        await chrome.storage.session.set({ pendingZoQuery: { text: result.ok ? `✅ Saved to ${result.path}` : `❌ Save failed: ${result.error}`, source: 'save', personaId: null } });
+        chrome.runtime.sendMessage({ type: 'PENDING_ZO_QUERY', text: result.ok ? `✅ Saved to ${result.path}` : `❌ Save failed: ${result.error}`, source: 'save' }).catch(() => {});
+      } catch (err) {
+        console.error('Save from context menu error:', err);
+      }
+      return;
+    }
     case 'cobrowse-selection':
       query = info.selectionText
         ? `Explain or act on this selection: ${info.selectionText.substring(0, 2000)}`
@@ -931,4 +950,44 @@ function executeDomAction(action) {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+// Save page content to Zo workspace as markdown (#09)
+async function savePageToWorkspace(pageContext, savePath) {
+  if (!config.zoAccessToken) return { ok: false, error: 'Zo access token not configured. Open settings to set it up.' };
+
+  // Derive a clean filename from page title or use provided path
+  const rawTitle = (pageContext && pageContext.title) || 'untitled';
+  const cleanTitle = rawTitle.replace(/[^a-zA-Z0-9\-_ ]/g, '').trim().replace(/\s+/g, '-').toLowerCase().slice(0, 80);
+  const path = savePath || `Documents/research/${cleanTitle}.md`;
+  const url = (pageContext && pageContext.url) || '';
+  const content = (pageContext && pageContext.visibleText) || '';
+
+  // Build a markdown note with source attribution
+  const markdown = `# ${(pageContext && pageContext.title) || 'Untitled'}\n\n> **Source:** ${url}\n\n> **Saved:** ${new Date().toISOString()}\n\n---\n\n${content}\n`;
+
+  // Ask Zo to write the file
+  const prompt = `Write the following content to the file at path \`${path}\` in my workspace. Create the directory if it does not exist. Use write_file or equivalent. Do not respond with anything other than a confirmation with the file path.\n\n---CONTENT START---\n${markdown}\n---CONTENT END---`;
+
+  try {
+    const resp = await fetch(`${config.zoApiUrl}/zo/ask`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.zoAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input: prompt,
+        model_name: config.zoModel || undefined,
+      }),
+    });
+    if (!resp.ok) {
+      return { ok: false, error: `Zo API error: ${resp.status} ${resp.statusText}` };
+    }
+    const data = await resp.json();
+    const output = data.output || '';
+    return { ok: true, path: path, response: output };
+  } catch (err) {
+    return { ok: false, error: `Save failed: ${err.message}` };
+  }
 }

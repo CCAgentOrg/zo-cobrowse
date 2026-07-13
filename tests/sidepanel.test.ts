@@ -119,6 +119,13 @@ describe("sidepanel persona routing", () => {
   });
 
 
+
+  it("has save page command (#09)", () => {
+    expect(code).toContain("SAVE_PAGE");
+    expect(code).toContain("isSave");
+    expect(code).toContain("savePath");
+  });
+
   it("has bang command parser (#07)", () => {
     expect(code).toContain("parseBangCommand");
     expect(code).toContain("BANG_COMMANDS");

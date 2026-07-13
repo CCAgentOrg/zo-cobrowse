@@ -808,9 +808,10 @@ function parseBangCommand(rawQuery) {
     return { handled: true, inlineReply: lines.join('\n') };
   }
 
-  // !save — deferred to ticket #09, show a friendly note for now
+  // !save — save page to Zo workspace as markdown
   if (name === 'save') {
-    return { handled: true, inlineReply: '💾 Save-to-workspace is coming soon (ticket #09). For now, ask Zo directly: "Save this page to my workspace."' };
+    const savePath = args || ''; // optional filename/path argument
+    return { handled: true, isSave: true, savePath };
   }
 
   // Look up the command
@@ -866,6 +867,27 @@ if (bang.handled) {
     // Inline reply (e.g. !help, !save, unknown) — no Zo call
     addMessage('user', query);
     addMessage('bot', bang.inlineReply);
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+    return;
+  }
+  if (bang.isSave) {
+    // !save — send page to Zo to save in workspace as markdown
+    addMessage('user', query);
+    addMessage('thinking', 'Saving to workspace...');
+    const saveResp = await chrome.runtime.sendMessage({
+      type: 'SAVE_PAGE',
+      pageContext: currentContext,
+      savePath: bang.savePath || '',
+    });
+    const thinking = msgsEl.querySelector('.msg-thinking');
+    if (thinking) thinking.remove();
+    if (saveResp.error) {
+      addMessage('error', saveResp.error);
+    } else {
+      addMessage('assistant', saveResp.response || 'Page saved to workspace.');
+    }
     input.disabled = false;
     sendBtn.disabled = false;
     input.focus();
@@ -1665,6 +1687,26 @@ sendQuery = async function() {
     if (bang.inlineReply) {
       addMessage('user', query);
       addMessage('bot', bang.inlineReply);
+      input.disabled = false;
+      sendBtn.disabled = false;
+      input.focus();
+      return;
+    }
+    if (bang.isSave) {
+      addMessage('user', query);
+      addMessage('thinking', 'Saving to workspace...');
+      const saveResp = await chrome.runtime.sendMessage({
+        type: 'SAVE_PAGE',
+        pageContext: currentContext,
+        savePath: bang.savePath || '',
+      });
+      const thinking = msgsEl.querySelector('.msg-thinking');
+      if (thinking) thinking.remove();
+      if (saveResp.error) {
+        addMessage('error', saveResp.error);
+      } else {
+        addMessage('assistant', saveResp.response || 'Page saved to workspace.');
+      }
       input.disabled = false;
       sendBtn.disabled = false;
       input.focus();
