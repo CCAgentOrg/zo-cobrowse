@@ -190,6 +190,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       runSkill(request.skillName, request.pageContext).then(sendResponse);
       return true;
     }
+    case 'CREATE_AUTOMATION': {
+      createAutomation(request.pageContext, request.trigger, request.action).then(sendResponse);
+      return true;
+    }
+    case 'LIST_AUTOMATIONS': {
+      listAutomations().then(sendResponse);
+      return true;
+    }
   }
 });
 
@@ -995,3 +1003,96 @@ async function savePageToWorkspace(pageContext, savePath) {
     return { ok: false, error: `Save failed: ${err.message}` };
   }
 }
+
+// Run a Zo skill on the current page (#04)
+async function runSkill(skillName, pageContext) {
+  const prompt = `Run the skill named "${skillName}" using the content from the current page as input.
+
+Page URL: ${pageContext?.url || '(unknown)'}
+Page title: ${pageContext?.title || '(unknown)'}
+
+Page text (first 2000 chars):
+${(pageContext?.visibleText || '').slice(0, 2000)}
+
+Read the skill's SKILL.md and follow its instructions.`;
+  try {
+    const resp = await fetch(`${config.zoApiUrl}/zo/ask`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.zoAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input: prompt,
+        model_name: config.zoModel || undefined,
+      }),
+    });
+    if (!resp.ok) {
+      return { ok: false, error: `Zo API error: ${resp.status} ${resp.statusText}` };
+    }
+    const data = await resp.json();
+    return { ok: true, response: data.output || '' };
+  } catch (err) {
+    return { ok: false, error: `Skill run failed: ${err.message}` };
+  }
+}
+
+// Create a scheduled automation from the current page (#08)
+async function createAutomation(instruction, rrule, pageContext) {
+  const prompt = `Create a scheduled automation with these parameters:
+  - Instruction: ${instruction}
+  - Schedule (RRULE): ${rrule || 'FREQ=DAILY'}
+  - Source page URL: ${pageContext?.url || '(unknown)'}
+  - Source page title: ${pageContext?.title || '(unknown)'}
+
+Context from the page (first 1000 chars):
+${(pageContext?.visibleText || '').slice(0, 1000)}
+
+Use the create_agent tool to create this automation now.`;
+  try {
+    const resp = await fetch(`${config.zoApiUrl}/zo/ask`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.zoAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input: prompt,
+        model_name: config.zoModel || undefined,
+      }),
+    });
+    if (!resp.ok) {
+      return { ok: false, error: `Zo API error: ${resp.status} ${resp.statusText}` };
+    }
+    const data = await resp.json();
+    return { ok: true, response: data.output || '' };
+  } catch (err) {
+    return { ok: false, error: `Automation creation failed: ${err.message}` };
+  }
+}
+
+// List existing automations (#08)
+async function listAutomations() {
+  const prompt = 'List all my automations. For each, return the title, schedule (RRULE), and delivery method.';
+  try {
+    const resp = await fetch(`${config.zoApiUrl}/zo/ask`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.zoAccessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input: prompt,
+        model_name: config.zoModel || undefined,
+      }),
+    });
+    if (!resp.ok) {
+      return { ok: false, error: `Zo API error: ${resp.status} ${resp.statusText}` };
+    }
+    const data = await resp.json();
+    return { ok: true, response: data.output || '' };
+  } catch (err) {
+    return { ok: false, error: `Failed to list automations: ${err.message}` };
+  }
+}
+

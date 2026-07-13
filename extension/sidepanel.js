@@ -813,6 +813,27 @@ if (bang.handled) {
     input.focus();
     return;
   }
+  if (bang.isAuto) {
+    // !auto — create a persistent Zo automation from the page
+    addMessage('user', query);
+    addMessage('thinking', 'Creating automation...');
+    const autoResp = await chrome.runtime.sendMessage({
+      type: 'CREATE_AUTOMATION',
+      instruction: bang.instruction || '',
+      pageContext: currentContext,
+    });
+    const thinking2 = msgsEl.querySelector('.msg-thinking');
+    if (thinking2) thinking2.remove();
+    if (autoResp.error) {
+      addMessage('error', autoResp.error);
+    } else {
+      addMessage('assistant', autoResp.response || 'Automation created.');
+    }
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+    return;
+  }
   effectiveQuery = bang.query;
   tempPreset = bang.preset;
 }
@@ -1626,6 +1647,26 @@ sendQuery = async function() {
         addMessage('error', saveResp.error);
       } else {
         addMessage('assistant', saveResp.response || 'Page saved to workspace.');
+      }
+      input.disabled = false;
+      sendBtn.disabled = false;
+      input.focus();
+      return;
+    }
+    if (bang.isAuto) {
+      addMessage('user', query);
+      addMessage('thinking', 'Creating automation...');
+      const autoResp = await chrome.runtime.sendMessage({
+        type: 'CREATE_AUTOMATION',
+        instruction: bang.instruction || '',
+        pageContext: currentContext,
+      });
+      const thinking = msgsEl.querySelector('.msg-thinking');
+      if (thinking) thinking.remove();
+      if (autoResp.error) {
+        addMessage('error', autoResp.error);
+      } else {
+        addMessage('assistant', autoResp.response || 'Automation created.');
       }
       input.disabled = false;
       sendBtn.disabled = false;

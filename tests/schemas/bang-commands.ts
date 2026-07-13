@@ -21,6 +21,13 @@ const Save = z.object({
   savePath: z.string(),
 });
 
+const Automation = z.object({
+  handled: z.literal(true),
+  kind: z.literal("automation"),
+  isAuto: z.literal(true),
+  instruction: z.string(),
+});
+
 const ExpandedQuery = z.object({
   handled: z.literal(true),
   kind: z.literal("command"),
@@ -32,6 +39,7 @@ export const BangCommandResultSchema = z.discriminatedUnion("kind", [
   Passthrough,
   InlineReply,
   Save,
+  Automation,
   ExpandedQuery,
 ]);
 
@@ -46,4 +54,6 @@ export const BANG_COMMAND_NAMES = [
   "fill",
   "skills",
   "skill",
+  "save",
+  "auto",
 ] as const;

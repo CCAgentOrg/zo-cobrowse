@@ -46,6 +46,19 @@ describe("parseBangCommand — schema conformance", () => {
       savePath: "my-note.md",
     });
   });
+  it("!auto returns { isAuto: true, instruction } (#08)", () => {
+    const r = parse("!auto every day at 9am summarize this page");
+    expect(r.handled).toBe(true);
+    expect(r.kind).toBe("automation");
+    if (r.kind === "automation") {
+      expect(r.isAuto).toBe(true);
+      expect(r.instruction).toContain("every day");
+    }
+    // !auto with no args → inline help
+    const empty = parse("!auto");
+    expect(empty.handled).toBe(true);
+    expect(empty.kind).toBe("inline");
+  });
 
   it("unknown command returns an inline error mentioning !help", () => {
     const r = parse("!bogus");

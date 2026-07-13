@@ -52,6 +52,12 @@ export const BANG_COMMANDS = {
       ? `Run the skill named "${args}" using the content from this page as input.`
       : 'Please specify a skill name. Type `!skills` to see available skills.',
   },
+  autos: {
+    preset: null,
+    label: 'Automations',
+    desc: 'List your scheduled Zo automations',
+    buildQuery: () => 'List all my scheduled automations with their titles, schedules, and delivery methods.',
+  },
 };
 
 // Returns { handled, query, preset } or { handled: false }
@@ -80,6 +86,18 @@ export function parseBangCommand(rawQuery) {
   if (name === 'save') {
     const savePath = args || ''; // optional filename/path argument
     return { handled: true, kind: 'save', isSave: true, savePath };
+  }
+
+  // !auto — create a Zo automation/agent from the current page (#08)
+  if (name === 'auto') {
+    const instruction = args || '';
+    if (!instruction) {
+      return {
+        handled: true, kind: 'inline',
+        inlineReply: 'Usage: `!auto <instruction>` — e.g., `!auto summarize this page every day at 9am`. Creates a persistent Zo automation that runs on a schedule.',
+      };
+    }
+    return { handled: true, kind: 'automation', isAuto: true, instruction };
   }
 
   // Look up the command

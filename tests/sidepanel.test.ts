@@ -128,6 +128,12 @@ describe("sidepanel persona routing", () => {
     expect(code).toContain("savePath");
   });
 
+
+  it("has automation command (#08)", () => {
+    expect(code).toContain("isAuto");
+    expect(code).toContain("CREATE_AUTOMATION");
+  });
+
   it("imports and dispatches bang commands (#07)", () => {
     // Logic now lives in extension/lib/bang-commands.js (unit-tested separately);
     // sidepanel.js imports it and dispatches via parseBangCommand in both sendQuery paths.

@@ -73,6 +73,13 @@ describe("background.js defaults", () => {
     expect(code).toContain("chrome.omnibox.onInputChanged");
     expect(code).toContain("setDefaultSuggestion");
   
+
+  it("has automation creation handlers (#08)", () => {
+    expect(code).toContain("CREATE_AUTOMATION");
+    expect(code).toContain("createAutomation");
+    expect(code).toContain("LIST_AUTOMATIONS");
+    expect(code).toContain("listAutomations");
+  });
   it("has save page handler (#09)", () => {
     expect(code).toContain("SAVE_PAGE");
     expect(code).toContain("savePageToWorkspace");
