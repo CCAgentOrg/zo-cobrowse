@@ -652,6 +652,28 @@ input, textarea, select {
   font-size: 12px;
 }
 
+.msg-reconnecting {
+  justify-content: flex-start;
+}
+.msg-reconnecting .msg-body {
+  background: transparent;
+  color: var(--warning, #e8a020);
+  font-style: italic;
+  font-size: 12px;
+}
+
+
+.msg-reconnecting {
+  justify-content: flex-start;
+}
+.msg-reconnecting .msg-body {
+  background: var(--bg-warning, #fff3cd);
+  color: var(--text-warning, #856404);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: var(--radius-md);
+}
+
 .msg-error {
   justify-content: flex-start;
 }

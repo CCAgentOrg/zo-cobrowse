@@ -1775,6 +1775,19 @@ function handleStreamMessage(msg) {
       streamSession.fullText = '';
       break;
     }
+      case 'STREAM_RECONNECT': {
+      if (!streamSession.active) return;
+      let reconn = msgsEl.querySelector('.msg-reconnecting');
+      if (!reconn) {
+        reconn = document.createElement('div');
+        reconn.className = 'msg msg-reconnecting';
+        reconn.innerHTML = '<div class="msg-body">➳ Reconnecting...</div>';
+        msgsEl.appendChild(reconn);
+      }
+      reconn.querySelector('.msg-body').textContent = '➳ Reconnecting... attempt ' + msg.attempt + ' of ' + msg.maxRetries;
+      reconn.scrollIntoView({ behavior: 'smooth' });
+      break;
+    }
   }
 }
 

@@ -1,3 +1,23 @@
+async function askZoStream(port, msg) {
+  const maxRetries = 3;
+  const baseDelay = 1000;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      port.postMessage({ type: 'STREAM_RECONNECT', attempt, maxRetries });
+      return await _askZoStreamImpl(port, msg);
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxRetries) {
+        const delay = baseDelay * Math.pow(2, attempt - 1);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastError;
+}
+
 // Zo Co-browse — Background Service Worker
 // Manages Zo API communication, settings, and message routing
 
@@ -294,7 +314,7 @@ async function getActiveTabContext(tabId, liteMode) {
   // Capture screenshot if enabled and context is valid
   if (context && !context.error && config.enableScreenshots !== false) {
     try {
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg' });
       context.screenshotDataUrl = dataUrl;
     } catch (e) {
       // Screenshot not available — continue without it
@@ -558,7 +578,48 @@ chrome.omnibox.onInputEntered.addListener(async (text, disposition) => {
   }
 });
 
-async function askZoStream(port, msg) {
+
+async function _askZoStreamImpl(port, msg) {
+  // Retry loop with exponential backoff
+  const MAX_RETRIES = 3;
+  const BASE_DELAY = 1000;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 1) {
+      const delay = Math.min(BASE_DELAY * Math.pow(2, attempt - 2), 8000);
+      console.log(`[Zo Co-browse] Retrying (#${attempt}/${MAX_RETRIES}) after ${delay}ms`);
+      port.postMessage({ type: 'STREAM_RECONNECT', attempt, maxRetries: MAX_RETRIES, delay });
+      await new Promise(r => setTimeout(r, delay));
+    }
+    try {
+      await _askZoStreamImpl(port, msg);
+      return; // success — done
+    } catch (err) {
+      lastError = err;
+      console.error(`[Zo Co-browse] askZoStream attempt ${attempt} failed:`, err);
+      // Only retry on network-type errors, not logic errors
+      if (!err.message || (
+        !err.message.includes('fetch') &&
+        !err.message.includes('network') &&
+        !err.message.includes('ERR_CONNECTION') &&
+        !err.message.includes('ERR_SSL') &&
+        !err.message.includes('timeout') &&
+        !err.message.includes('abort')
+      )) {
+        throw err; // not retryable — propagate immediately
+      }
+    }
+  }
+
+  // All retries exhausted — send final error
+  port.postMessage({
+    type: 'STREAM_ERROR',
+    error: `Connection failed after ${MAX_RETRIES} attempts: ${lastError?.message || 'unknown error'}`,
+  });
+}
+
+async function _askZoStreamImpl(port, msg) {
   const { pageContext, userQuery, modelName, personaId, presetSystemPrompt, presetInstructions, intent } = msg;
 
   if (!config.zoAccessToken) {

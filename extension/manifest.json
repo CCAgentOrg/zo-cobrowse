@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Zo Co-browse",
   "version": "0.0.1",
-  "description": "Co-browsing extension powered by Zo — AI backend that sees your page and takes actions through it.",
+  "description": "Co-browsing extension powered by Zo \u2014 AI backend that sees your page and takes actions through it.",
   "permissions": [
     "contextMenus",
     "sidePanel",
@@ -12,7 +12,13 @@
     "scripting",
     "tts"
   ],
-  "host_permissions": ["https://api.zo.computer/*", "https://*.zo.space/*", "https://*.zocomputer.io/*", "http://*/*", "https://*/*"],
+  "host_permissions": [
+    "https://api.zo.computer/*",
+    "https://*.zo.space/*",
+    "https://*.zocomputer.io/*",
+    "http://*/*",
+    "https://*/*"
+  ],
   "side_panel": {
     "default_path": "sidepanel.html"
   },
@@ -27,8 +33,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
@@ -78,5 +88,9 @@
   },
   "omnibox": {
     "keyword": "zo"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'",
+    "sandbox": "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval'; child-src 'self'"
   }
 }

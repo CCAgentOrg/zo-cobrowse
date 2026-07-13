@@ -7,8 +7,9 @@
   "scripts": {
     "test": "bun test",
     "test:watch": "bun test --watch",
-    "lint": "bun run lint:check",
-    "lint:check": "echo '--- line endings ---' && file extension/*.js extension/*.html extension/*.css extension/*.json && echo '--- TODO/FIXME ---' && grep -rn 'TODO\\|FIXME\\|HACK' extension/ --include='*.js' --include='*.html' --include='*.css' --include='*.json' 2>/dev/null || echo 'none found' && echo '--- console.log in prod ---' && grep -rn 'console\\.log' extension/ --include='*.js' 2>/dev/null | grep -v '/icons/' | grep -v '/lib/' || echo 'none' && echo '--- icon files ---' && for s in 16 48 128; do test -f extension/icons/icon${s}.png || echo "MISSING: icon${s}.png"; done && test -f extension/icons/icon.svg && echo 'icon.svg OK' || echo 'MISSING: icon.svg'",
+    "check-icons": "bash scripts/check-release.sh",
+    "check-prereqs": "bash scripts/check-release.sh",
+    "lint:check": "bash scripts/check-release.sh",
     "package": "cd extension && zip -r ../zo-cobrowse.zip . -x '*.git*' -x '*.DS_Store'"
   },
   "devDependencies": {

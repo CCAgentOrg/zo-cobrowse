@@ -1,38 +1,64 @@
 # Zo Co-browse — Consolidated TODO
 
-Single priority-stacked backlog. Tickets exist as GitHub Issues (see `README.md` for links). Work down the list — don't skip ahead without completing the tier above.
+**Last updated**: 2026-07-13
 
-## P0 — Must have (immediate gaps)
+Priority-stacked backlog. Work down from P0 to P2.
 
-| # | Ticket | Effort | Why |
-|---|--------|--------|-----|
-| **01** | Screenshot & Vision Context | Medium | Every competitor has it. Zo can't see layout/UI/images. Biggest competitive gap. |
-| **02** | ✅ Right-Click Context Menu | Small (done) | Zero-effort discoverability. Smallest code change, highest UX impact per line. |
-| **11** | Chrome Web Store Listing | Small | Can't ship without this. Prerequisite for any real user. |
+## Legend
+| Signal | Meaning |
+|--------|---------|
+| ✅ Done | Implemented + tested |
+| 🟢 Started | Code exists, tests may be partial |
+| ⏳ Planned | Not yet started |
+| 🟡 Blocked | Blocked by external dependency |
 
-## P1 — Unique advantages, high value
+---
 
-| # | Ticket | Effort | Why |
-|---|--------|--------|-----|
-| **05** | NL → DuckDB Queries | Medium | **Killer feature.** Nobody else can query datasets conversationally. |
-| **04** | Run Skills from Side Panel | Small | **Killer feature #2.** 89+ skills accessible from the browser. Only Zo can do this. |
-| **08** | Create Automations from Page | Small | **Killer feature #3.** Persistent agents from "watch this page". No competitor has this. |
-| **06** | Keyboard Shortcuts | Small | Power users expect this. Small effort, big retention impact. |
+## P0 — Must Fix
 
-## P2 — Polish & retention
+| # | Ticket | Effort | Status | Notes |
+|---|--------|--------|--------|-------|
+| | Store assets (icons, screenshots, descriptions) | 2h | ⏳ Planned | Needed for Chrome Web Store submission |
+| | Chrome Web Store publication | 4h | ⏳ Planned | Chrome review queue, privacy policy link |
 
-| # | Ticket | Effort | Why |
-|---|--------|--------|-----|
-| **03** | Streaming Action Timeline | Medium | Makes Zo's reasoning visible. Currently actions are invisible in markdown. |
-| **07** | Quick Command Templates | Small | Predictable, repeatable results for common tasks. `!summarize`, `!extract`, etc. |
-| **13** | Omnibox Commands | Small | Keyboard-friendly surface. Complements shortcuts. |
-| **12** | Onboarding Flow | Medium | First-run experience. Needed once Web Store listing ships. |
-| **09** | Save Page to Zo Workspace | Small | Bridges browsing → files. Lower value since manual "save this" already works. |
+## P1 — Core Features
 
-## P3 — Nice to have
+| # | Ticket | Effort | Status | Notes |
+|---|--------|--------|--------|-------|
+| #01 | Screenshot & Vision | ⏳ Planned | background.js has capture + vision prompt; sidepanel needs UI wire-up | |
+| #03 | Action Timeline | ✅ Done | Actions rendered in sidepanel (dom-actions container, timeline coloring) | |
+| #04 | Run Skills from Panel | ✅ Done | Skill selector, RUN_SKILL message, handler in background, output in chat | |
+| #07 | Command Templates (bangs) | ✅ Done | !bangs work in sidepanel, !help lists commands | |
+| #08 | Create Automations | ✅ Done | CREATE_AUTOMATION handler, !auto command, sidepanel auto button | |
+| #09 | Save Page to Workspace | ✅ Done | SAVE_PAGE handler, !save command, save path config | |
+| #11 | Web Store | 2h | ⏳ Planned | Chrome review + distribution |
+| #12 | Onboarding | 2h | ⏳ Planned | First-run tour, tooltip hints |
+| #13 | Omnibox Commands | ✅ Done | manifest.json `omnibox`, background.js `onInputChanged`/`onInputEntered` | |
+| #14 | Page Monitoring | 2h | ⏳ Planned | Periodic context re-capture, diff detection |
+| #15 | Shared Sessions | 4h | ⏳ Planned | WebSocket relay (backend exists, needs extension wiring) |
 
-| # | Ticket | Effort | Why |
-|---|--------|--------|-----|
-| **10** | Multi-Tab Context & Actions | Large | Powerful but high effort. Parchi already has this — no competitive moat. |
-| **14** | Page Monitoring & Change Detection | Medium | Cool, uses Zo scheduling. Complex UX for a niche use case. |
-| **15** | Shareable Co-Browse Sessions | Large | Highest effort, unproven need. Relay backend isn't built. |
+## P2 — Polish & Testing
+
+| # | Ticket | Effort | Status | Notes |
+|---|--------|--------|--------|-------|
+| #05 | DuckDB/SQLite Integration | ✅ Done | !query command, DUCKDB_QUERY handler, DuckDB CLI fallback | |
+| #06 | Keyboard Shortcuts | ✅ Done | 4 shortcuts registered in manifest.json, commands listener in background | |
+| — | Error handling tests | 1h | ✅ Done | `tests/error-handling.test.ts` — 8 tests |
+| — | Action execution tests | 1h | ✅ Done | `tests/actions.test.ts` — 20 tests |
+| — | Settings persistence tests | 1h | ✅ Done | `tests/settings-persistence.test.ts` — 16 tests |
+| — | Screenshot/DuckDB/Automation coverage | 1h | ✅ Done | `tests/remaining-coverage.test.ts` — 6 tests |
+| — | Privacy policy | 0.5h | ✅ Done | `PRIVACY.md` created |
+
+---
+
+## Release Checklist
+
+- [ ] All 126 tests pass
+- [ ] QA_REPORT.md reviewed
+- [ ] PRIVACY.md added to repo root
+- [ ] Package script (`bun run release`) verified
+- [ ] CSP tightened (eval allowed only in sandbox)
+- [ ] API routes authenticated
+- [ ] Stream reconnection verified
+- [ ] Git tag + GitHub release
+- [ ] Chrome Web Store submission
