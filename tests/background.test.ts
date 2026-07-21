@@ -32,8 +32,13 @@ const storage: Record<string, any> = {};
   action: {
     onClicked: { addListener: () => {} },
   },
+  sidePanel: {
+    setPanelBehavior: async () => {},
+    open: async () => {},
+  },
   tabs: {
     query: async () => [{ id: 1, url: "https://example.com", title: "Test" }],
+    captureVisibleTab: async () => "data:image/jpeg;base64,mock",
   },
   runtime: {
     lastError: null,
@@ -61,6 +66,15 @@ const storage: Record<string, any> = {};
     onInputChanged: { addListener: () => {} },
     onInputEntered: { addListener: () => {} },
     setDefaultSuggestion: () => {},
+  },
+  // debugger API mock — needed for CDP-based page eval (mirrors Kilo Code pattern)
+  ["debugger"]: {
+    attach: async () => {},
+    detach: async () => {},
+    sendCommand: async (_, cmd: string, _params: any) => {
+      if (cmd === "Runtime.evaluate") return { result: { value: { url: "", title: "", visibleText: "" } } };
+    },
+    onDetach: { addListener: () => {} },
   },
 };
 

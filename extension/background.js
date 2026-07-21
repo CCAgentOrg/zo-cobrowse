@@ -247,6 +247,116 @@ function sanitizedConfig() {
 }
 
 // ---- Route context capture and action execution through content script ----
+// ---- Timeout wrapper ----
+function withTimeout(promise, ms = 8000, label = 'operation') {
+  let id;
+  const timeout = new Promise((_, reject) => {
+    id = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise.finally(() => clearTimeout(id)), timeout]);
+}
+
+// ---- Debugger-based page eval (primary path, mirrors Kilo Code pattern) ----
+
+const debuggerTabMap = new Map();
+
+async function attachDebugger(tabId) {
+  if (debuggerTabMap.get(tabId)?.attached) return true;
+  try {
+    await chrome.debugger.attach({ tabId }, '1.3');
+    debuggerTabMap.set(tabId, { attached: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function detachDebugger(tabId) {
+  if (debuggerTabMap.get(tabId)?.attached) {
+    try { chrome.debugger.detach({ tabId }); } catch {}
+    debuggerTabMap.delete(tabId);
+  }
+}
+
+async function evalInPage(tabId, expression, timeoutMs = 8000) {
+  if (!await attachDebugger(tabId)) return { ok: false, error: 'debugger unavailable' };
+  try {
+    const result = await withTimeout(
+      chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', {
+        expression,
+        returnByValue: true,
+        awaitPromise: true,
+        userGesture: true,
+      }),
+      timeoutMs,
+      'Runtime.evaluate'
+    );
+    return { ok: true, value: result?.result?.value };
+  } catch (e) {
+    detachDebugger(tabId);
+    return { ok: false, error: e.message };
+  }
+}
+
+function makeCaptureContextEval() {
+  return `(() => {
+    const maxLen = 8000;
+    const main = document.querySelector('main, article, [role="main"], #content, .content');
+    const txt = (main || document.body)?.innerText || '';
+    const fields = [];
+    document.querySelectorAll('input, textarea, select').forEach(el => {
+      if (el.type === 'hidden') return;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      fields.push({ tag: el.tagName.toLowerCase(), type: el.type || 'text', name: el.name || el.id || '', placeholder: el.placeholder || '', value: (el.value || '').substring(0, 100) });
+    });
+    const clicks = [];
+    document.querySelectorAll('a, button, [role="button"], [onclick], input[type="submit"], input[type="button"]').forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.width < 8 || r.height < 8) return;
+      const t = (el.textContent || el.value || '').trim().substring(0, 60);
+      if (t) clicks.push({ text: t, tag: el.tagName.toLowerCase() });
+    });
+    return { url: location.href, title: document.title, visibleText: txt.substring(0, maxLen), formFields: fields.slice(0, 30), clickable: clicks.slice(0, 50), viewport: { w: innerWidth, h: innerHeight }, documentSize: { w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight } };
+  })()`;
+}
+
+function makeActionEval(action) {
+  const a = JSON.stringify(action);
+  return `(() => {
+    const a = ${a};
+    try {
+      if (a.type === 'navigate' || a.type === 'done') return { ok: true, type: a.type };
+      const el = a.selector ? document.querySelector(a.selector) : null;
+      if (a.selector && !el) return { ok: false, error: 'Element not found: ' + a.selector, type: a.type };
+      switch (a.type) {
+        case 'click':
+          el.scrollIntoView({ block: 'center' });
+          el.click();
+          return { ok: true, type: 'click' };
+        case 'fill':
+          el.focus();
+          el.value = '';
+          el.value = a.value;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          return { ok: true, type: 'fill' };
+        case 'extract':
+          return { ok: true, type: 'extract', value: (a.attribute ? el.getAttribute(a.attribute) : el.textContent?.trim()) || '' };
+        case 'scroll':
+          const amt = a.amount || innerHeight * 0.7;
+          scrollBy({ left: 0, top: a.direction === 'up' ? -amt : amt, behavior: 'smooth' });
+          return { ok: true, type: 'scroll' };
+        case 'wait':
+          return new Promise(r => setTimeout(() => r({ ok: true, type: 'wait' }), a.ms || 1000));
+        default:
+          return { ok: false, error: 'Unknown action: ' + a.type };
+      }
+    } catch(e) { return { ok: false, error: e.message, type: a.type }; }
+  })()`;
+}
+
+
 
 async function getActiveTabContext(tabId, liteMode) {
   let tab;
@@ -260,15 +370,47 @@ async function getActiveTabContext(tabId, liteMode) {
 
   let context;
 
-  // Try content script first
+  // Path 1: Debugger-based eval (fastest, works on any page)
   try {
-    const resp = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_CONTEXT', liteMode });
-    if (resp && !resp.error) context = resp;
-  } catch {
-    // content script not injected — fall through
+    var captureExpr = liteMode
+      ? `(function(){
+          var t=document.body?.innerText||'';
+          return {
+            url: location.href,
+            title: document.title,
+            visibleText: t.substring(0,2000),
+            viewport: { w: window.innerWidth, h: window.innerHeight }
+          };
+        })()`
+      : `(function(){
+          var m=document.querySelector('main,article,[role="main"],#content,.content');
+          var b=document.body;
+          var t=(m||b)?.innerText||'';
+          var ff=[];
+          document.querySelectorAll('input:not([type="hidden"]),textarea,select').forEach(function(el){
+            var r=el.getBoundingClientRect();
+            if(r.width===0||r.height===0)return;
+            ff.push({tag:el.tagName.toLowerCase(),type:el.type||'text',name:el.name||el.id||'',placeholder:el.placeholder||''});
+          });
+          return {url:location.href,title:document.title,visibleText:t.substring(0,8000),formFields:ff.slice(0,30),viewport:{w:window.innerWidth,h:window.innerHeight}};
+        })()`;
+    var result = await evalInPage(tab.id, captureExpr, 5000);
+    if (result.ok && result.value && result.value.url) context = result.value;
+  } catch(e) {
+    // debugger not available — fall through
   }
 
-  // Fallback — inject inline
+  // Path 2: Content script
+  if (!context) {
+    try {
+      const resp = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_CONTEXT', liteMode });
+      if (resp && !resp.error) context = resp;
+    } catch {
+      // content script not injected — fall through
+    }
+  }
+
+  // Path 3: executeScript fallback
   if (!context) {
     try {
       const captureFn = liteMode
@@ -277,7 +419,7 @@ async function getActiveTabContext(tabId, liteMode) {
             return {
               url: location.href,
               title: document.title,
-              visibleText: text.substring(0, 2000), // lighter capture
+              visibleText: text.substring(0, 2000),
               viewport: { w: window.innerWidth, h: window.innerHeight },
             };
           }
@@ -289,25 +431,11 @@ async function getActiveTabContext(tabId, liteMode) {
             document.querySelectorAll('input:not([type="hidden"]), textarea, select').forEach((el) => {
               const r = el.getBoundingClientRect();
               if (r.width === 0 || r.height === 0) return;
-              formFields.push({
-                tag: el.tagName.toLowerCase(),
-                type: el.type || 'text',
-                name: el.name || el.id || '',
-                placeholder: el.placeholder || '',
-              });
+              formFields.push({ tag: el.tagName.toLowerCase(), type: el.type || 'text', name: el.name || el.id || '', placeholder: el.placeholder || '' });
             });
-            return {
-              url: location.href,
-              title: document.title,
-              visibleText: text.substring(0, 8000),
-              formFields: formFields.slice(0, 30),
-              viewport: { w: window.innerWidth, h: window.innerHeight },
-            };
+            return { url: location.href, title: document.title, visibleText: text.substring(0, 8000), formFields: formFields.slice(0, 30), viewport: { w: window.innerWidth, h: window.innerHeight } };
           };
-      const [result] = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: captureFn,
-      });
+      const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: captureFn });
       context = result?.result || { error: 'Could not capture context' };
     } catch (err) {
       context = { error: err.message };
@@ -320,7 +448,6 @@ async function getActiveTabContext(tabId, liteMode) {
       const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg' });
       context.screenshotDataUrl = dataUrl;
     } catch (e) {
-      // Screenshot not available — continue without it
       console.log('Screenshot capture skipped:', e.message);
     }
   }
@@ -455,6 +582,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 recreateContextMenus();
 
 // Also re-create on install and browser start
+
+// Clean up debugger state when detached (tab closed, user pressed F12, etc.)
+if (chrome.debugger) {
+  chrome.debugger.onDetach.addListener((source) => {
+    if (source.tabId) detachDebugger(source.tabId);
+  });
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   recreateContextMenus();
 });
@@ -919,37 +1054,51 @@ async function executeActions(actions, tabId) {
       results.push({ ok: true, type: 'done', response: action.response });
       continue;
     }
-    // Try content script first
+
     let result;
-    try {
-      const resp = await chrome.tabs.sendMessage(tabId, {
-        type: 'EXECUTE_ACTION',
-        action,
-      });
-      result = resp || { ok: false, error: 'no response' };
-    } catch {
-      // Content script not loaded — fallback to executeScript
+
+    // Path 1: Debugger eval (fastest, works even if content script not loaded)
+    if (action.selector || action.type === 'scroll') {
       try {
-        const [r] = await chrome.scripting.executeScript({
-          target: { tabId },
-          func: executeDomAction,
-          args: [action],
-        });
+        const resp = await evalInPage(tabId, makeActionEval(action), 8000);
+        if (resp.ok && resp.value && resp.value.ok) {
+          result = resp.value;
+        }
+      } catch {
+        // debugger not available — fall through
+      }
+    }
+
+    // Path 2: Content script
+    if (!result) {
+      try {
+        const resp = await chrome.tabs.sendMessage(tabId, { type: 'EXECUTE_ACTION', action });
+        result = resp || { ok: false, error: 'no response' };
+      } catch {
+        result = null;
+      }
+    }
+
+    // Path 3: executeScript fallback
+    if (!result) {
+      try {
+        const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: executeDomAction, args: [action] });
         result = r.result;
       } catch (err) {
         result = { ok: false, error: err.message };
       }
     }
+
     results.push(result);
-    if (!result?.ok) break; // stop on first failure
+    if (!result?.ok) break;
     if (action.type !== 'wait') await sleep(500);
   }
-  // Wrap in object so callers can check result.ok
-  const allOk = results.every(r => r?.ok);
-  const failed = results.find(r => !r?.ok);
+
+  const allOk = results.every(r => r && r.ok);
+  const failed = results.find(r => r && !r.ok);
   return allOk
     ? { ok: true, results }
-    : { ok: false, results, error: failed?.error || 'Action failed' };
+    : { ok: false, results, error: (failed && failed.error) || 'Action failed' };
 }
 
 function executeDomAction(action) {
