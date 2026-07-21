@@ -1708,12 +1708,16 @@ let streamSession = { active: false, sessionId: 0, msgEl: null, fullText: '', re
 
 function connectStreamingPort() {
   try {
-    streamPort = chrome.runtime.connect({ name: 'cobrowse-stream' });
-    streamPort.onMessage.addListener(handleStreamMessage);
-    streamPort.onDisconnect.addListener(() => {
-      streamPort = null;
-      // Reconnect on next sendQuery
+    const port = chrome.runtime.connect({ name: 'cobrowse-stream' });
+    port.onMessage.addListener(handleStreamMessage);
+    port.onDisconnect.addListener(() => {
+      // Only null if this exact port is still the active one
+      // Prevents stale onDisconnect from nulling a freshly reconnected port
+      if (streamPort === port) {
+        streamPort = null;
+      }
     });
+    streamPort = port;
   } catch {
     streamPort = null;
   }
@@ -1908,10 +1912,10 @@ sendQuery = async function() {
       });
       const thinking = msgsEl.querySelector('.msg-thinking');
       if (thinking) thinking.remove();
-      if (saveResp.error) {
+      if (saveResp && saveResp.error) {
         addMessage('error', saveResp.error);
       } else {
-        addMessage('assistant', saveResp.response || 'Page saved to workspace.');
+        addMessage('assistant', (saveResp && saveResp.response) || 'Page saved to workspace.');
       }
       input.disabled = false;
       sendBtn.disabled = false;
@@ -1928,10 +1932,10 @@ sendQuery = async function() {
       });
       const thinking = msgsEl.querySelector('.msg-thinking');
       if (thinking) thinking.remove();
-      if (autoResp.error) {
+      if (autoResp && autoResp.error) {
         addMessage('error', autoResp.error);
       } else {
-        addMessage('assistant', autoResp.response || 'Automation created.');
+        addMessage('assistant', (autoResp && autoResp.response) || 'Automation created.');
       }
       input.disabled = false;
       sendBtn.disabled = false;
@@ -1939,7 +1943,6 @@ sendQuery = async function() {
       return;
     }
     if (bang.isDuckdb) {
-      // !query / !data — natural-language DuckDB query
       addMessage('user', query);
       addMessage('thinking', 'Querying datasets...');
       const dbResp = await chrome.runtime.sendMessage({
@@ -1948,10 +1951,10 @@ sendQuery = async function() {
       });
       const thinking = msgsEl.querySelector('.msg-thinking');
       if (thinking) thinking.remove();
-      if (dbResp.error) {
+      if (dbResp && dbResp.error) {
         addMessage('error', dbResp.error);
       } else {
-        addDuckdbResult(dbResp);
+        addDuckdbResult(dbResp || {});
       }
       input.disabled = false;
       sendBtn.disabled = false;
@@ -1976,14 +1979,13 @@ sendQuery = async function() {
     }
   }
 
-  // Start streaming session
-  streamSession.sessionId++;
-  streamSession.active = true;
-  streamSession.msgEl = null;
-  streamSession.fullText = '';
-  const thisSession = streamSession.sessionId;
-
+  // --- Streaming path: reconnect port fresh to avoid stale-port silent drops ---
+  connectStreamingPort();
   if (streamPort) {
+    streamSession.sessionId++;
+    streamSession.active = true;
+    streamSession.msgEl = null;
+    streamSession.fullText = '';
     streamPort.postMessage({
       type: 'ASK_ZO',
       pageContext: currentContext,
@@ -1993,60 +1995,62 @@ sendQuery = async function() {
       presetSystemPrompt: presetSystemPrompt,
       presetInstructions: presetInstructions,
     });
-  } else {
-    // Fallback to one-shot if no port
-    const resp = await chrome.runtime.sendMessage({
-      type: 'ASK_ZO',
-      pageContext: currentContext,
-      userQuery: effectiveQuery,
-      modelName: config.selectedModel || undefined,
-      personaId: config.selectedPersona || undefined,
-      presetSystemPrompt: presetSystemPrompt,
-      presetInstructions: presetInstructions,
-    });
+    // Response arrives via handleStreamMessage — input re-enabled there
+    return;
+  }
 
-    const thinking = msgsEl.querySelector('.msg-thinking');
-    if (thinking) thinking.remove();
-    streamSession.active = false;
+  // --- Fallback: one-shot sendMessage if port unavailable ---
+  const resp = await chrome.runtime.sendMessage({
+    type: 'ASK_ZO',
+    pageContext: currentContext,
+    userQuery: effectiveQuery,
+    modelName: config.selectedModel || undefined,
+    personaId: config.selectedPersona || undefined,
+    presetSystemPrompt: presetSystemPrompt,
+    presetInstructions: presetInstructions,
+  });
 
-    if (resp.error) {
-      addMessage('error', resp.error);
-      input.disabled = false;
-      sendBtn.disabled = false;
-      input.focus();
-      return;
-    }
+  const thinking = msgsEl.querySelector('.msg-thinking');
+  if (thinking) thinking.remove();
+  streamSession.active = false;
 
-    const output = resp.output;
-    let reasoning = '';
-    let actions = [];
-
-    if (typeof output === 'object' && output !== null) {
-      reasoning = output.reasoning || '';
-      actions = output.actions || [];
-    } else if (typeof output === 'string') {
-      try {
-        const parsed = JSON.parse(output);
-        reasoning = parsed.reasoning || '';
-        actions = parsed.actions || [];
-      } catch {
-        reasoning = output;
-      }
-    }
-
-    if (!actions.length) {
-      addMessage('assistant', reasoning || 'Done.');
-    } else {
-      handleStreamActions(actions, reasoning);
-      if (actions.some(a => a.type === 'done')) {
-        addMessage('assistant', reasoning || 'Done.');
-      }
-    }
-
+  if (!resp || resp.error) {
+    addMessage('error', (!resp ? 'No response from background. Try reloading the extension.' : resp.error));
     input.disabled = false;
     sendBtn.disabled = false;
     input.focus();
+    return;
   }
+
+  const output = resp.output;
+  let reasoning = '';
+  let actions = [];
+
+  if (typeof output === 'object' && output !== null) {
+    reasoning = output.reasoning || '';
+    actions = output.actions || [];
+  } else if (typeof output === 'string') {
+    try {
+      const parsed = JSON.parse(output);
+      reasoning = parsed.reasoning || '';
+      actions = parsed.actions || [];
+    } catch {
+      reasoning = output;
+    }
+  }
+
+  if (!actions.length) {
+    addMessage('assistant', reasoning || 'Done.');
+  } else {
+    handleStreamActions(actions, reasoning);
+    if (actions.some(a => a.type === 'done')) {
+      addMessage('assistant', reasoning || 'Done.');
+    }
+  }
+
+  input.disabled = false;
+  sendBtn.disabled = false;
+  input.focus();
 };
 function cancelStream() {
   if (streamSession.active) {
