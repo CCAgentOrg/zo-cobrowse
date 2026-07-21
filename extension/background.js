@@ -815,7 +815,9 @@ async function _askZoStreamImpl(port, msg) {
             if (data !== '{}' && data !== '') {
               try {
                 const parsed = JSON.parse(data);
-                if (parsed.output) fullText = parsed.output;
+                if (parsed.output) {
+                  fullText = typeof parsed.output === 'string' ? parsed.output : JSON.stringify(parsed.output);
+                }
               } catch {}
             }
             finishStream(port, fullText, resolvedIntent);
@@ -894,7 +896,9 @@ function finishStream(port, output, intent) {
   // If actions contain a 'done' action, prefer its response text.
   // Otherwise fall back to reasoning or the raw output.
   const doneAction = actions.find(a => a.type === 'done');
-  const fullText = doneAction?.response || reasoning || (typeof output === 'string' ? output : JSON.stringify(output));
+  const rawResponse = doneAction?.response;
+  const safeDoneResponse = typeof rawResponse === 'string' ? rawResponse : (rawResponse ? JSON.stringify(rawResponse) : '');
+  const fullText = safeDoneResponse || reasoning || (typeof output === 'string' ? output : JSON.stringify(output));
 
   port.postMessage({
     type: 'STREAM_DONE',

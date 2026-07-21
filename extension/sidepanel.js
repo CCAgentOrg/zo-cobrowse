@@ -1735,7 +1735,8 @@ function handleStreamMessage(msg) {
 
       // Extract response text for non-action plain-text streaming
       const doneAction = (msg.actions || []).find(a => a.type === 'done');
-      const responseText = doneAction?.response || msg.fullText || streamSession.fullText || msg.reasoning || '';
+      const safe = (v) => typeof v === 'string' ? v : (v ? JSON.stringify(v) : '');
+      const responseText = safe(doneAction?.response) || safe(msg.fullText) || safe(streamSession.fullText) || safe(msg.reasoning) || '';
 
       // Finalize streaming message body only for plain-text responses
       // (structured actions are displayed by handleStreamActions below)
