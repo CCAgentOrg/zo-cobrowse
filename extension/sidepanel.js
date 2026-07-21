@@ -1081,7 +1081,8 @@ addMessage('user', query);
     pendingActions = domActions;
     actionsReasoning.textContent = `🧠 ${reasoning.substring(0, 200)}`;
     actionsBar.classList.remove('hidden');
-    addMessage('assistant', `🧠 ${reasoning} ${doneResponse ? '\n\n' + doneResponse : ''}`);
+    const drs = typeof doneResponse === 'string' ? doneResponse : (doneResponse ? JSON.stringify(doneResponse) : '');
+    addMessage('assistant', `🧠 ${reasoning}${drs ? '\n\n' + drs : ''}`);
     runPendingActions();
   } else if (doneResponse) {
     addMessage('assistant', doneResponse);

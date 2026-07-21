@@ -840,16 +840,16 @@ async function _askZoStreamImpl(port, msg) {
           // FrontendModelResponse (default — also catches any data: without event: prefix for compat)
           try {
             const parsed = JSON.parse(data);
-            // Guard: content must be a string — String() coerces safely, avoids [object Object]
-            const rawContent = parsed.content || parsed.text || parsed.delta || parsed.response || '';
-            const content = typeof rawContent === 'string' ? rawContent : String(rawContent);
+            // Extract text from SSE data — handles Zo content:, Anthropic delta.{text,content}
+            const rawContent = parsed.content || parsed.text || (parsed.delta?.text) || (parsed.delta?.content) || parsed.response || '';
+            const content = typeof rawContent === 'string' ? rawContent : (rawContent ? JSON.stringify(rawContent) : '');
             if (content) {
               fullText += content;
               port.postMessage({ type: 'STREAM_CHUNK', text: fullText });
             }
             // Legacy finish check for non-Zo SSE formats (OpenAI, Anthropic style)
             if (parsed.done || parsed.finish_reason || parsed.type === 'final' || parsed.type === 'complete' || parsed.type === 'End') {
-              if (parsed.output) fullText = typeof parsed.output === 'string' ? parsed.output : String(parsed.output);
+              if (parsed.output) fullText = typeof parsed.output === 'string' ? parsed.output : (parsed.output ? JSON.stringify(parsed.output) : '');
               finishStream(port, fullText, resolvedIntent);
               return;
             }
