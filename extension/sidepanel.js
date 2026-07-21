@@ -8,6 +8,14 @@ const $$ = (sel) => document.querySelectorAll(sel);
 // ---- Constants ----
 const MAX_HISTORY = 50;
 const OLD_STORAGE_KEY = 'cobrowse_history';
+// ---- Safe text helper ----
+function safeText(v) {
+  if (typeof v === 'string') return v;
+  if (v === null || v === undefined) return '';
+  try { const s = JSON.stringify(v); return typeof s === 'string' ? s : ''; }
+  catch { return ''; }
+}
+
 const STORAGE_CONVERSATIONS_KEY = 'cobrowse_convos';
 const STORAGE_ACTIVE_KEY = 'cobrowse_active_id';
 const STORAGE_PRESETS_KEY = 'cobrowse_presets';
@@ -878,7 +886,9 @@ function renderTable(columns, rows) {
 }
 
 function escapeHtml(s) {
-  return String(s)
+  s = safeText(s);
+  if (s === '') return '';
+  return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
@@ -1199,12 +1209,10 @@ async function runPendingActions() {
 
 // ---- Messages ----
 function addMessage(role, text) {
-  if (typeof text !== 'string' && text !== null && text !== undefined) {
-    try { text = JSON.stringify(text); } catch { text = String(text); }
-  }
+  text = safeText(text);
   addMessageDOM(role, text);
   // Auto-read assistant messages via TTS
-  if (role === 'assistant' && ttsAutoRead) {
+  if (role === 'assistant' && ttsAutoRead && text) {
     speakText(text);
   }
   // Persist non-system, non-thinking messages to current conversation
@@ -1327,9 +1335,7 @@ function markdownToHtml(md) {
 }
 
 function addMessageDOM(role, text) {
-  if (typeof text !== 'string' && text !== null && text !== undefined) {
-    try { text = JSON.stringify(text); } catch { text = String(text); }
-  }
+  text = safeText(text);
   const div = document.createElement('div');
   div.className = `msg msg-${role}`;
   const body = document.createElement('div');
@@ -1505,6 +1511,8 @@ async function startPresetCreation() {
 }
 
 function addSystemMessage(text) {
+  text = safeText(text);
+  text = safeText(text);
   msgsEl.innerHTML += `<div class="msg msg-system"><div class="msg-body">${text}</div></div>`;
   msgsEl.scrollTop = msgsEl.scrollHeight;
 }
@@ -1719,13 +1727,13 @@ function handleStreamMessage(msg) {
       if (!streamSession.msgEl) {
         const thinking = msgsEl.querySelector('.msg-thinking');
         if (thinking) thinking.remove();
-        streamSession.msgEl = addMessageDOM('assistant', msg.text);
-        streamSession.fullText = msg.text;
+        streamSession.msgEl = addMessageDOM('assistant', safeText(msg.text));
+        streamSession.fullText = safeText(msg.text);
       } else {
-        streamSession.fullText = msg.text;
+        streamSession.fullText = safeText(msg.text);
         const body = streamSession.msgEl.querySelector('.msg-body');
         if (body) {
-          body.innerHTML = markdownToHtml(msg.text);
+          body.innerHTML = markdownToHtml(safeText(msg.text));
         }
       }
       break;
@@ -1736,8 +1744,7 @@ function handleStreamMessage(msg) {
 
       // Extract response text for non-action plain-text streaming
       const doneAction = (msg.actions || []).find(a => a.type === 'done');
-      const safe = (v) => typeof v === 'string' ? v : (v ? JSON.stringify(v) : '');
-      const responseText = safe(doneAction?.response) || safe(msg.fullText) || safe(streamSession.fullText) || safe(msg.reasoning) || '';
+      const responseText = safeText(doneAction?.response) || safeText(msg.fullText) || safeText(streamSession.fullText) || safeText(msg.reasoning) || '';
 
       // Finalize streaming message body only for plain-text responses
       // (structured actions are displayed by handleStreamActions below)

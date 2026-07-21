@@ -18,6 +18,14 @@ async function askZoStream(port, msg) {
   throw lastError;
 }
 
+// ---- Safe text helper ----
+function safeText(v) {
+  if (typeof v === 'string') return v;
+  if (v === null || v === undefined) return '';
+  try { const s = JSON.stringify(v); return typeof s === 'string' ? s : ''; }
+  catch { return ''; }
+}
+
 // Zo Co-browse — Background Service Worker
 // Manages Zo API communication, settings, and message routing
 
@@ -816,7 +824,7 @@ async function _askZoStreamImpl(port, msg) {
               try {
                 const parsed = JSON.parse(data);
                 if (parsed.output) {
-                  fullText = typeof parsed.output === 'string' ? parsed.output : JSON.stringify(parsed.output);
+                  fullText = safeText(parsed.output);
                 }
               } catch {}
             }
@@ -842,14 +850,14 @@ async function _askZoStreamImpl(port, msg) {
             const parsed = JSON.parse(data);
             // Extract text from SSE data — handles Zo content:, Anthropic delta.{text,content}
             const rawContent = parsed.content || parsed.text || (parsed.delta?.text) || (parsed.delta?.content) || parsed.response || '';
-            const content = typeof rawContent === 'string' ? rawContent : (rawContent ? JSON.stringify(rawContent) : '');
+            const content = safeText(rawContent);
             if (content) {
               fullText += content;
               port.postMessage({ type: 'STREAM_CHUNK', text: fullText });
             }
             // Legacy finish check for non-Zo SSE formats (OpenAI, Anthropic style)
             if (parsed.done || parsed.finish_reason || parsed.type === 'final' || parsed.type === 'complete' || parsed.type === 'End') {
-              if (parsed.output) fullText = typeof parsed.output === 'string' ? parsed.output : (parsed.output ? JSON.stringify(parsed.output) : '');
+              if (parsed.output) fullText = safeText(parsed.output);
               finishStream(port, fullText, resolvedIntent);
               return;
             }
@@ -859,7 +867,7 @@ async function _askZoStreamImpl(port, msg) {
               finishStream(port, fullText, resolvedIntent);
               return;
             }
-            fullText += data;
+            fullText += safeText(data);
             port.postMessage({ type: 'STREAM_CHUNK', text: fullText });
           }
         }
@@ -896,9 +904,8 @@ function finishStream(port, output, intent) {
   // If actions contain a 'done' action, prefer its response text.
   // Otherwise fall back to reasoning or the raw output.
   const doneAction = actions.find(a => a.type === 'done');
-  const rawResponse = doneAction?.response;
-  const safeDoneResponse = typeof rawResponse === 'string' ? rawResponse : (rawResponse ? JSON.stringify(rawResponse) : '');
-  const fullText = safeDoneResponse || reasoning || (typeof output === 'string' ? output : JSON.stringify(output));
+  const safeDoneResponse = safeText(doneAction?.response);
+  const fullText = safeDoneResponse || reasoning || safeText(output);
 
   port.postMessage({
     type: 'STREAM_DONE',
