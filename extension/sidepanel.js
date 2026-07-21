@@ -992,7 +992,7 @@ if (bang.handled) {
   tempPreset = bang.preset;
 }
 
-addMessage('user', query);  addMessage('user', query);
+addMessage('user', query);
   addMessage('thinking', 'Zo is thinking...');
 
   // Determine preset prompts
@@ -1198,6 +1198,9 @@ async function runPendingActions() {
 
 // ---- Messages ----
 function addMessage(role, text) {
+  if (typeof text !== 'string' && text !== null && text !== undefined) {
+    try { text = JSON.stringify(text); } catch { text = String(text); }
+  }
   addMessageDOM(role, text);
   // Auto-read assistant messages via TTS
   if (role === 'assistant' && ttsAutoRead) {
@@ -1323,6 +1326,9 @@ function markdownToHtml(md) {
 }
 
 function addMessageDOM(role, text) {
+  if (typeof text !== 'string' && text !== null && text !== undefined) {
+    try { text = JSON.stringify(text); } catch { text = String(text); }
+  }
   const div = document.createElement('div');
   div.className = `msg msg-${role}`;
   const body = document.createElement('div');
