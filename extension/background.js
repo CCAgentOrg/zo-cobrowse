@@ -5,8 +5,10 @@ async function askZoStream(port, msg) {
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      if (attempt > 1) port.postMessage({ type: 'STREAM_RECONNECT_DONE' });
-      port.postMessage({ type: 'STREAM_RECONNECT', attempt, maxRetries });
+      if (attempt > 1) {
+        port.postMessage({ type: 'STREAM_RECONNECT_DONE' });
+        port.postMessage({ type: 'STREAM_RECONNECT', attempt, maxRetries });
+      }
       return await _askZoStreamImpl(port, msg);
     } catch (err) {
       lastError = err;
@@ -229,7 +231,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
     case 'CREATE_AUTOMATION': {
-      createAutomation(request.pageContext, request.trigger, request.action).then(sendResponse);
+      createAutomation(request.instruction || '', request.rrule || 'FREQ=DAILY', request.pageContext).then(sendResponse);
       return true;
     }
     case 'LIST_AUTOMATIONS': {
@@ -886,9 +888,14 @@ async function _askZoStreamImpl(port, msg) {
           // FrontendModelResponse (default — also catches any data: without event: prefix for compat)
           try {
             const parsed = JSON.parse(data);
-            // Extract text from SSE data — handles Zo content:, Anthropic delta.{text,content}
-            const rawContent = parsed.content || parsed.text || (parsed.delta?.text) || (parsed.delta?.content) || parsed.response || '';
-            const content = safeText(rawContent);
+            // Extract text from SSE data — handles Zo content/text/output, Anthropic delta.{text,content}
+            // Also handle models that send the full response in each chunk (output field)
+            const rawContent = parsed.content || parsed.text || parsed.output || (parsed.delta?.text) || (parsed.delta?.content) || parsed.response || parsed.message || '';
+            let content = safeText(rawContent);
+            // If parsed.output is an object (not a string), stringify it
+            if (!content && parsed.output && typeof parsed.output === 'object') {
+              content = safeText(JSON.stringify(parsed.output));
+            }
             if (content) {
               fullText += content;
               port.postMessage({ type: 'STREAM_CHUNK', text: fullText });
@@ -896,6 +903,7 @@ async function _askZoStreamImpl(port, msg) {
             // Legacy finish check for non-Zo SSE formats (OpenAI, Anthropic style)
             if (parsed.done || parsed.finish_reason || parsed.type === 'final' || parsed.type === 'complete' || parsed.type === 'End') {
               if (parsed.output) fullText = safeText(parsed.output);
+              else if (parsed.type === 'End' && parsed.reasoning) fullText = safeText(parsed);
               finishStream(port, fullText, resolvedIntent);
               return;
             }
@@ -922,28 +930,34 @@ async function _askZoStreamImpl(port, msg) {
 function finishStream(port, output, intent) {
   let reasoning = '';
   let actions = [];
+  let rawOutput = '';
 
-  if (typeof output === 'object' && output !== null) {
-    reasoning = output.reasoning || '';
-    actions = output.actions || [];
-  } else if (typeof output === 'string') {
+  // Normalize to string for consistent parsing
+  const normalizedOutput = (typeof output === 'object' && output !== null)
+    ? output
+    : String(output ?? '');
+
+  if (typeof normalizedOutput === 'object' && normalizedOutput !== null) {
+    reasoning = normalizedOutput.reasoning || '';
+    actions = normalizedOutput.actions || [];
+    rawOutput = safeText(JSON.stringify(normalizedOutput));
+  } else if (typeof normalizedOutput === 'string') {
     try {
-      const parsed = JSON.parse(output);
+      const parsed = JSON.parse(normalizedOutput);
       if (parsed && typeof parsed === 'object') {
         reasoning = parsed.reasoning || '';
         actions = parsed.actions || [];
+        rawOutput = safeText(JSON.stringify(parsed));
       }
     } catch {
-      reasoning = output;
+      reasoning = normalizedOutput;
     }
   }
 
   // Build a user-facing fullText from the resolved response.
-  // If actions contain a 'done' action, prefer its response text.
-  // Otherwise fall back to reasoning or the raw output.
   const doneAction = actions.find(a => a.type === 'done');
   const safeDoneResponse = safeText(doneAction?.response);
-  const fullText = safeDoneResponse || reasoning || safeText(output);
+  const fullText = safeDoneResponse || reasoning || rawOutput || safeText(normalizedOutput);
 
   port.postMessage({
     type: 'STREAM_DONE',

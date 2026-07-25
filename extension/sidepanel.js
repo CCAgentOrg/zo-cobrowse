@@ -1516,7 +1516,6 @@ async function startPresetCreation() {
 
 function addSystemMessage(text) {
   text = safeText(text);
-  text = safeText(text);
   msgsEl.innerHTML += `<div class="msg msg-system"><div class="msg-body">${text}</div></div>`;
   msgsEl.scrollTop = msgsEl.scrollHeight;
 }
@@ -1718,6 +1717,12 @@ function connectStreamingPort() {
       // Only null if this exact port is still the active one
       // Prevents stale onDisconnect from nulling a freshly reconnected port
       if (streamPort === port) {
+        // If streaming session was active, clean up the UI
+        if (streamSession.active) {
+          streamSession.active = false;
+          const thinking = msgsEl?.querySelector('.msg-thinking');
+          if (thinking) thinking.remove();
+        }
         streamPort = null;
       }
     });
@@ -1751,7 +1756,25 @@ function handleStreamMessage(msg) {
       break;
     }
     case 'STREAM_DONE': {
-      if (!streamSession.active) return;
+      const domActions = (msg.actions || []).filter((a) => a.type !== 'navigate' && a.type !== 'done');
+      // Remove any stale thinking indicator regardless of active state
+      const staleThinking = msgsEl.querySelector('.msg-thinking');
+      if (staleThinking) staleThinking.remove();
+
+      if (!streamSession.active) {
+        // Stream was cancelled or port disconnected, but we still have a response —
+        // show it via fallback message rather than silently dropping it
+        if (msg.fullText || msg.reasoning || msg.actions?.length) {
+          const fallbackText = safeText(msg.fullText) || safeText(msg.reasoning) || '';
+          if (fallbackText) addMessage('assistant', fallbackText);
+          const actions = msg.actions || [];
+          if (actions.length > 0) handleStreamActions(actions, msg.reasoning);
+        }
+        input.disabled = false;
+        sendBtn.disabled = false;
+        input.focus();
+        break;
+      }
       // Remove any stale reconnecting banner
       const reconnDone = msgsEl.querySelector('.msg-reconnecting');
       if (reconnDone) reconnDone.remove();
@@ -1770,8 +1793,14 @@ function handleStreamMessage(msg) {
       if (streamSession.msgEl) {
         const body = streamSession.msgEl.querySelector('.msg-body');
         if (body && msg.actions?.length) {
-          // Replace streaming body with the clean response
-          body.innerHTML = markdownToHtml(responseText);
+          // Actions will be displayed by handleStreamActions — preserve the
+          // streaming content as-is instead of replacing with responseText,
+          // avoid duplicating the done response text.
+          // Only update the body if we're NOT adding separate action messages.
+          const hasDisplayActions = msg.actions.some(a => a.type !== 'done');
+          if (!hasDisplayActions) {
+            body.innerHTML = markdownToHtml(responseText);
+          }
         } else if (body) {
           body.innerHTML = markdownToHtml(responseText);
         }
@@ -1793,6 +1822,8 @@ function handleStreamMessage(msg) {
           addMessage('assistant', responseText);
         } else if (msg.actions?.length) {
           // Response is in actions — will be rendered by handleStreamActions
+        } else if (msg.fullText || msg.reasoning) {
+          addMessage('assistant', safeText(msg.fullText) || safeText(msg.reasoning));
         } else {
           addMessage('assistant', 'Done.');
         }
@@ -2015,18 +2046,26 @@ sendQuery = async function() {
     streamSession.active = true;
     streamSession.msgEl = null;
     streamSession.fullText = '';
-    streamPort.postMessage({
-      sessionId: thisSessionId,
-      type: 'ASK_ZO',
-      pageContext: currentContext,
-      userQuery: effectiveQuery,
-      modelName: config.selectedModel || undefined,
-      personaId: config.selectedPersona || undefined,
-      presetSystemPrompt: presetSystemPrompt,
-      presetInstructions: presetInstructions,
-    });
-    // Response arrives via handleStreamMessage — input re-enabled there
-    return;
+    try {
+      streamPort.postMessage({
+        sessionId: thisSessionId,
+        type: 'ASK_ZO',
+        pageContext: currentContext,
+        userQuery: effectiveQuery,
+        modelName: config.selectedModel || undefined,
+        personaId: config.selectedPersona || undefined,
+        presetSystemPrompt: presetSystemPrompt,
+        presetInstructions: presetInstructions,
+      });
+    } catch (e) {
+      // Port disconnected between check and postMessage — fall through to non-streaming fallback
+      streamSession.active = false;
+      streamPort = null;
+    }
+    if (streamPort) {
+      // Response arrives via handleStreamMessage — input re-enabled there
+      return;
+    }
   }
 
   // --- Fallback: one-shot sendMessage if port unavailable ---
@@ -2056,16 +2095,19 @@ sendQuery = async function() {
   let reasoning = '';
   let actions = [];
 
-  if (typeof output === 'object' && output !== null) {
-    reasoning = output.reasoning || '';
-    actions = output.actions || [];
-  } else if (typeof output === 'string') {
+  // Normalize undefined/null/boolean to string for consistent parsing
+  const normalizedOutput = (typeof output === 'object' && output !== null) ? output : String(output ?? '');
+
+  if (typeof normalizedOutput === 'object' && normalizedOutput !== null) {
+    reasoning = normalizedOutput.reasoning || '';
+    actions = normalizedOutput.actions || [];
+  } else if (typeof normalizedOutput === 'string') {
     try {
-      const parsed = JSON.parse(output);
+      const parsed = JSON.parse(normalizedOutput);
       reasoning = parsed.reasoning || '';
       actions = parsed.actions || [];
     } catch {
-      reasoning = output;
+      reasoning = normalizedOutput;
     }
   }
 
@@ -2074,13 +2116,15 @@ sendQuery = async function() {
   const doneResponse = doneAction?.response || '';
 
   if (!actions.length) {
-    addMessage('assistant', reasoning || doneResponse || 'Done.');
+    // Show reasoning or the raw output text, with "Done." only as last resort
+    const fallbackText = reasoning || doneResponse || output || '';
+    addMessage('assistant', fallbackText || 'Done.');
   } else {
     handleStreamActions(actions, reasoning);
     // handleStreamActions already adds the done response for navigate actions
     // (via its own setTimeout). For non-navigate scenarios, display it here.
     if (doneAction && !hasNavigate) {
-      addMessage('assistant', doneResponse || reasoning || 'Done.');
+      addMessage('assistant', doneResponse || reasoning || output || 'Done.');
     }
   }
 

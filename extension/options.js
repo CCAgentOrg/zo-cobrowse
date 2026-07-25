@@ -224,7 +224,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15000);
-      const r = await fetch(DEFAULTS.zoApiUrl, {
+      const r = await fetch('https://api.zo.computer/zo/ask', {
         signal: controller.signal,
         method: 'POST',
         headers: {
