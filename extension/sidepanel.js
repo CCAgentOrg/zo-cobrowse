@@ -891,7 +891,9 @@ function escapeHtml(s) {
   return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/'/g, '&#39;')
+    .replace(/"/g, '&quot;');
 }
 
 async function sendQuery() {
@@ -1724,8 +1726,12 @@ function connectStreamingPort() {
 }
 
 function handleStreamMessage(msg) {
+  // Ignore stale messages from previous sessions
+  if (msg.sessionId && msg.sessionId !== streamSession.sessionId) return;
   switch (msg.type) {
     case 'STREAM_CHUNK': {
+      // Remove any stale reconnecting banner(s)
+      msgsEl.querySelectorAll('.msg-reconnecting').forEach(el => el.remove());
       // First chunk — remove thinking indicator, create assistant message
       if (!streamSession.active) return;
       if (!streamSession.msgEl) {
@@ -1744,6 +1750,9 @@ function handleStreamMessage(msg) {
     }
     case 'STREAM_DONE': {
       if (!streamSession.active) return;
+      // Remove any stale reconnecting banner
+      const reconnDone = msgsEl.querySelector('.msg-reconnecting');
+      if (reconnDone) reconnDone.remove();
       streamSession.active = false;
 
       // Extract response text for non-action plain-text streaming
@@ -1808,6 +1817,9 @@ function handleStreamMessage(msg) {
     }
     case 'STREAM_ERROR': {
       if (!streamSession.active) return;
+      // Remove any stale reconnecting banner
+      const reconnErr = msgsEl.querySelector('.msg-reconnecting');
+      if (reconnErr) reconnErr.remove();
       streamSession.active = false;
       const thinking = msgsEl.querySelector('.msg-thinking');
       if (thinking) thinking.remove();
@@ -1817,6 +1829,12 @@ function handleStreamMessage(msg) {
       input.focus();
       streamSession.msgEl = null;
       streamSession.fullText = '';
+      break;
+    }
+      case 'STREAM_RECONNECT_DONE': {
+      // Successful reconnect — remove the reconnecting banner
+      const reconnDone = msgsEl.querySelector('.msg-reconnecting');
+      if (reconnDone) reconnDone.remove();
       break;
     }
       case 'STREAM_RECONNECT': {
@@ -1979,14 +1997,16 @@ sendQuery = async function() {
     }
   }
 
-  // --- Streaming path: reconnect port fresh to avoid stale-port silent drops ---
-  connectStreamingPort();
+  // --- Streaming path: (re)connect port if needed ---
+  if (!streamPort) connectStreamingPort();
   if (streamPort) {
     streamSession.sessionId++;
+    const thisSessionId = streamSession.sessionId;
     streamSession.active = true;
     streamSession.msgEl = null;
     streamSession.fullText = '';
     streamPort.postMessage({
+      sessionId: thisSessionId,
       type: 'ASK_ZO',
       pageContext: currentContext,
       userQuery: effectiveQuery,

@@ -5,6 +5,7 @@ async function askZoStream(port, msg) {
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      if (attempt > 1) port.postMessage({ type: 'STREAM_RECONNECT_DONE' });
       port.postMessage({ type: 'STREAM_RECONNECT', attempt, maxRetries });
       return await _askZoStreamImpl(port, msg);
     } catch (err) {
@@ -50,6 +51,11 @@ const DEFAULTS = {
 let config = { ...DEFAULTS };
 // Track Zo API conversation ID for multi-turn context
 let zoConversationId = null;
+// Recover conversation ID from session storage (survives MV3 SW restart but not browser close)
+chrome.storage.session.get('zoConversationId').then(s => {
+  if (s.zoConversationId) zoConversationId = s.zoConversationId;
+}).catch(e => console.debug('session.get(zoConversationId):', e));
+
 
 // ---- Intent Classification ----
 // Lite keywords — page-content tasks that don't need Zo's toolchain
@@ -177,6 +183,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     case 'NEW_CONVERSATION': {
       zoConversationId = null;
+      chrome.storage.session.set({ zoConversationId: null }).catch(e => console.debug('session.set:', e));
       sendResponse({ ok: true });
       return true;
     }
@@ -285,6 +292,11 @@ function detachDebugger(tabId) {
     debuggerTabMap.delete(tabId);
   }
 }
+
+// Detach debugger when tab closes — prevents stale debugger sessions
+chrome.tabs.onRemoved.addListener((tabId) => {
+  detachDebugger(tabId);
+});
 
 async function evalInPage(tabId, expression, timeoutMs = 8000) {
   if (!await attachDebugger(tabId)) return { ok: false, error: 'debugger unavailable' };
@@ -456,7 +468,7 @@ async function getActiveTabContext(tabId, liteMode) {
       const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg' });
       context.screenshotDataUrl = dataUrl;
     } catch (e) {
-      console.log('Screenshot capture skipped:', e.message);
+      console.warn('Screenshot capture skipped:', e.message);
     }
   }
 
@@ -505,6 +517,7 @@ chrome.runtime.onConnect.addListener((port) => {
       }
       case 'NEW_CONVERSATION': {
         zoConversationId = null;
+        chrome.storage.session.set({ zoConversationId: null }).catch(e => console.debug('session.set:', e));
         break;
       }
     }
@@ -789,7 +802,7 @@ async function _askZoStreamImpl(port, msg) {
     
     // Capture conversation_id from response headers
     const convHeaderId = response.headers.get('x-conversation-id');
-    if (convHeaderId) zoConversationId = convHeaderId;
+    if (convHeaderId) { zoConversationId = convHeaderId; chrome.storage.session.set({ zoConversationId }); }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -969,7 +982,7 @@ async function askZo(pageContext, userQuery, modelName, personaId, presetSystemP
     }
 
     const data = await response.json();
-    if (data.conversation_id) zoConversationId = data.conversation_id;
+    if (data.conversation_id) { zoConversationId = data.conversation_id; chrome.storage.session.set({ zoConversationId }); }
     return { success: true, output: data.output, intent: resolvedIntent };
   } catch (err) {
     return { error: `Connection failed: ${err.message}` };
@@ -1214,7 +1227,7 @@ async function savePageToWorkspace(pageContext, savePath) {
   const prompt = `Write the following content to the file at path \`${path}\` in my workspace. Create the directory if it does not exist. Use write_file or equivalent. Do not respond with anything other than a confirmation with the file path.\n\n---CONTENT START---\n${markdown}\n---CONTENT END---`;
 
   try {
-    const resp = await fetch(`${config.zoApiUrl}/zo/ask`, {
+    const resp = await fetch(config.zoApiUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${config.zoAccessToken}`,
@@ -1248,7 +1261,7 @@ ${(pageContext?.visibleText || '').slice(0, 2000)}
 
 Read the skill's SKILL.md and follow its instructions.`;
   try {
-    const resp = await fetch(`${config.zoApiUrl}/zo/ask`, {
+    const resp = await fetch(config.zoApiUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${config.zoAccessToken}`,
@@ -1282,7 +1295,7 @@ ${(pageContext?.visibleText || '').slice(0, 1000)}
 
 Use the create_agent tool to create this automation now.`;
   try {
-    const resp = await fetch(`${config.zoApiUrl}/zo/ask`, {
+    const resp = await fetch(config.zoApiUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${config.zoAccessToken}`,
@@ -1307,7 +1320,7 @@ Use the create_agent tool to create this automation now.`;
 async function listAutomations() {
   const prompt = 'List all my automations. For each, return the title, schedule (RRULE), and delivery method.';
   try {
-    const resp = await fetch(`${config.zoApiUrl}/zo/ask`, {
+    const resp = await fetch(config.zoApiUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${config.zoAccessToken}`,

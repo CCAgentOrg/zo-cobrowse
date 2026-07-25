@@ -23,7 +23,25 @@ const storage: Record<string, any> = {};
         Object.assign(storage, items);
       },
     },
-    onChanged: { addListener: () => {} },
+    onChanged: { addListener: () => {} },    session: {
+      get: async (keys: string | string[] | Record<string, any> | null) => {
+        if (typeof keys === "string") return { [keys]: storage[keys] };
+        if (Array.isArray(keys)) {
+          const result: Record<string, any> = {};
+          for (const k of keys) result[k] = storage[k];
+          return result;
+        }
+        if (keys === null) return { ...storage };
+        return { ...storage };
+      },
+      set: async (items: Record<string, any>) => {
+        Object.assign(storage, items);
+      },
+      remove: async (keys: string | string[]) => {
+        if (typeof keys === "string") delete storage[keys];
+        if (Array.isArray(keys)) for (const k of keys) delete storage[k];
+      },
+    },
     local: {
       get: async () => ({}),
       set: async () => {},
@@ -36,7 +54,7 @@ const storage: Record<string, any> = {};
     setPanelBehavior: async () => {},
     open: async () => {},
   },
-  tabs: {
+  tabs: {    onRemoved: { addListener: () => {} },
     query: async () => [{ id: 1, url: "https://example.com", title: "Test" }],
     captureVisibleTab: async () => "data:image/jpeg;base64,mock",
   },
