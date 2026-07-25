@@ -512,7 +512,11 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onMessage.addListener(async (msg) => {
     switch (msg.type) {
       case 'ASK_ZO': {
-        await askZoStream(port, msg);
+        try {
+          await askZoStream(port, msg);
+        } catch (err) {
+          try { port.postMessage({ type: 'STREAM_ERROR', error: `Failed: ${err.message}` }); } catch {}
+        }
         break;
       }
       case 'NEW_CONVERSATION': {
@@ -799,7 +803,19 @@ async function _askZoStreamImpl(port, msg) {
       return;
     }
 
-    
+    // Handle non-streaming JSON responses (models that don't support SSE)
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      try {
+        const data = await response.json();
+        if (data.conversation_id) { zoConversationId = data.conversation_id; chrome.storage.session.set({ zoConversationId }); }
+        finishStream(port, data.output || '', resolvedIntent);
+      } catch (e) {
+        port.postMessage({ type: 'STREAM_ERROR', error: `Non-streaming parse error: ${e.message}` });
+      }
+      return;
+    }
+
     // Capture conversation_id from response headers
     const convHeaderId = response.headers.get('x-conversation-id');
     if (convHeaderId) { zoConversationId = convHeaderId; chrome.storage.session.set({ zoConversationId }); }

@@ -7,7 +7,9 @@ const $$ = (sel) => document.querySelectorAll(sel);
 
 // ---- Constants ----
 const MAX_HISTORY = 50;
+const THINKING_TIMEOUT_MS = 60000;
 const OLD_STORAGE_KEY = 'cobrowse_history';
+let thinkingTimeout = null;
 // ---- Safe text helper ----
 function safeText(v) {
   if (typeof v === 'string') return v;
@@ -1753,7 +1755,11 @@ function handleStreamMessage(msg) {
       // Remove any stale reconnecting banner
       const reconnDone = msgsEl.querySelector('.msg-reconnecting');
       if (reconnDone) reconnDone.remove();
+      // Remove thinking indicator (for non-streaming responses where no STREAM_CHUNK was received)
+      const thinkingDone = msgsEl.querySelector('.msg-thinking');
+      if (thinkingDone) thinkingDone.remove();
       streamSession.active = false;
+      // Remove any stale thinking indicator
 
       // Extract response text for non-action plain-text streaming
       const doneAction = (msg.actions || []).find(a => a.type === 'done');
@@ -1785,6 +1791,10 @@ function handleStreamMessage(msg) {
         // No streaming chunks — fallback to addMessage
         if (responseText) {
           addMessage('assistant', responseText);
+        } else if (msg.actions?.length) {
+          // Response is in actions — will be rendered by handleStreamActions
+        } else {
+          addMessage('assistant', 'Done.');
         }
       }
 
