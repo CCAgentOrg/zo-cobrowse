@@ -2069,12 +2069,18 @@ sendQuery = async function() {
     }
   }
 
+  const doneAction = actions.find(a => a.type === 'done');
+  const hasNavigate = actions.some(a => a.type === 'navigate');
+  const doneResponse = doneAction?.response || '';
+
   if (!actions.length) {
-    addMessage('assistant', reasoning || 'Done.');
+    addMessage('assistant', reasoning || doneResponse || 'Done.');
   } else {
     handleStreamActions(actions, reasoning);
-    if (actions.some(a => a.type === 'done')) {
-      addMessage('assistant', reasoning || 'Done.');
+    // handleStreamActions already adds the done response for navigate actions
+    // (via its own setTimeout). For non-navigate scenarios, display it here.
+    if (doneAction && !hasNavigate) {
+      addMessage('assistant', doneResponse || reasoning || 'Done.');
     }
   }
 

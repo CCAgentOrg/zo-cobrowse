@@ -842,9 +842,16 @@ async function _askZoStreamImpl(port, msg) {
           currentEventType = trimmed.slice(7).trim();
           continue;
         }
+        // Also handle event: without trailing space (valid SSE)
+        if (trimmed.startsWith('event:')) {
+          currentEventType = trimmed.slice(6).trim();
+          continue;
+        }
 
-        if (trimmed.startsWith('data: ')) {
-          const data = trimmed.slice(6).trim();
+        // Handle both data: (with space) and data: (without space)
+        const dataMatch = trimmed.match(/^data:\s?(.*)$/);
+        if (dataMatch) {
+          const data = dataMatch[1].trim();
           if (!data) continue;
 
           // End event — stream completed
@@ -854,6 +861,8 @@ async function _askZoStreamImpl(port, msg) {
                 const parsed = JSON.parse(data);
                 if (parsed.output) {
                   fullText = safeText(parsed.output);
+                } else if (parsed.reasoning || parsed.actions) {
+                  fullText = safeText(parsed);
                 }
               } catch {}
             }
