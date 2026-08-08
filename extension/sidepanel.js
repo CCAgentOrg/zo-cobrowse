@@ -898,215 +898,6 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
-async function sendQuery() {
-  const query = input.value.trim();
-  if (!query || actionRunning) return;
-  input.value = '';
-  input.disabled = true;
-  sendBtn.disabled = true;
-
-  // Ensure we have an active conversation
-  await ensureActiveConversation();
-
-  // If no page context, try again
-  await refreshPageContext();
-  if (!currentContext) {
-    addMessage('error', 'Could not capture page context. Try loading a webpage first.');
-    input.disabled = false;
-    sendBtn.disabled = false;
-    input.focus();
-    return;
-  }
-
-  if (!config.hasToken) {
-    addMessage('error', 'Zo not configured. Open extension settings to add your access token.');
-    input.disabled = false;
-    sendBtn.disabled = false;
-    input.focus();
-    return;
-  }
-
-// Parse bang commands (!) — #07 Quick Command Templates
-const bang = parseBangCommand(query);
-let effectiveQuery = query;
-let tempPreset = null;
-if (bang.handled) {
-  if (bang.inlineReply) {
-    // Inline reply (e.g. !help, !save, unknown) — no Zo call
-    addMessage('user', query);
-    addMessage('bot', bang.inlineReply);
-    input.disabled = false;
-    sendBtn.disabled = false;
-    input.focus();
-    return;
-  }
-  if (bang.isSave) {
-    // !save — send page to Zo to save in workspace as markdown
-    addMessage('user', query);
-    addMessage('thinking', 'Saving to workspace...');
-    const saveResp = await chrome.runtime.sendMessage({
-      type: 'SAVE_PAGE',
-      pageContext: currentContext,
-      savePath: bang.savePath || '',
-    });
-    const thinking = msgsEl.querySelector('.msg-thinking');
-    if (thinking) thinking.remove();
-    if (saveResp.error) {
-      addMessage('error', saveResp.error);
-    } else {
-      addMessage('assistant', saveResp.response || 'Page saved to workspace.');
-    }
-    input.disabled = false;
-    sendBtn.disabled = false;
-    input.focus();
-    return;
-  }
-  if (bang.isAuto) {
-    // !auto — create a persistent Zo automation from the page
-    addMessage('user', query);
-    addMessage('thinking', 'Creating automation...');
-    const autoResp = await chrome.runtime.sendMessage({
-      type: 'CREATE_AUTOMATION',
-      instruction: bang.instruction || '',
-      pageContext: currentContext,
-    });
-    const thinking2 = msgsEl.querySelector('.msg-thinking');
-    if (thinking2) thinking2.remove();
-    if (autoResp.error) {
-      addMessage('error', autoResp.error);
-    } else {
-      addMessage('assistant', autoResp.response || 'Automation created.');
-    }
-    input.disabled = false;
-    sendBtn.disabled = false;
-    input.focus();
-    return;
-  }
-  if (bang.isDuckdb) {
-    // !query / !data — natural-language DuckDB query
-    addMessage('user', query);
-    addMessage('thinking', 'Querying datasets...');
-    const dbResp = await chrome.runtime.sendMessage({
-      type: 'DUCKDB_QUERY',
-      naturalQuery: bang.naturalQuery,
-    });
-    const thinking = msgsEl.querySelector('.msg-thinking');
-    if (thinking) thinking.remove();
-    if (dbResp.error) {
-      addMessage('error', dbResp.error);
-    } else {
-      addDuckdbResult(dbResp);
-    }
-    input.disabled = false;
-    sendBtn.disabled = false;
-    input.focus();
-    return;
-  }
-  effectiveQuery = bang.query;
-  tempPreset = bang.preset;
-}
-
-addMessage('user', query);
-  addMessage('thinking', 'Zo is thinking...');
-
-  // Determine preset prompts
-  let presetSystemPrompt, presetInstructions;
-  const effectivePreset = tempPreset || activePreset;
-  if (effectivePreset) {
-    const preset = getPreset(effectivePreset);
-    if (preset) {
-      presetSystemPrompt = preset.systemPrompt;
-      presetInstructions = preset.instructions;
-    }
-  }
-
-  const resp = await chrome.runtime.sendMessage({
-    type: 'ASK_ZO',
-    pageContext: currentContext,
-    userQuery: effectiveQuery,
-    modelName: config.selectedModel || undefined,
-    personaId: config.selectedPersona || undefined,
-    presetSystemPrompt: presetSystemPrompt,
-    presetInstructions: presetInstructions,
-  });
-
-  // Remove thinking indicator
-  const thinking = msgsEl.querySelector('.msg-thinking');
-  if (thinking) thinking.remove();
-
-  if (resp.error) {
-    addMessage('error', resp.error);
-    input.disabled = false;
-    sendBtn.disabled = false;
-    input.focus();
-    return;
-  }
-
-  // Try to parse output — could be JSON or plain text
-  const output = resp.output;
-  let reasoning = '';
-  let actions = [];
-
-  if (typeof output === 'object' && output !== null) {
-    reasoning = output.reasoning || '';
-    actions = output.actions || [];
-  } else if (typeof output === 'string') {
-    try {
-      const parsed = JSON.parse(output);
-      if (parsed && typeof parsed === 'object') {
-        reasoning = parsed.reasoning || '';
-        actions = parsed.actions || [];
-      }
-    } catch {
-      reasoning = output;
-    }
-  }
-
-  if (!actions.length) {
-    addMessage('assistant', reasoning || 'Done.');
-    input.disabled = false;
-    sendBtn.disabled = false;
-    input.focus();
-    return;
-  }
-
-  // Show reasoning + pending actions
-  const navigateActions = actions.filter((a) => a.type === 'navigate');
-  const domActions = actions.filter((a) => a.type !== 'navigate' && a.type !== 'done');
-  const doneResponse = actions.find((a) => a.type === 'done')?.response;
-
-  if (navigateActions.length) {
-    addMessage('assistant', `📍 Navigating to: ${navigateActions[0].url}`);
-    await chrome.runtime.sendMessage({
-      type: 'NAVIGATE',
-      url: navigateActions[0].url,
-    });
-    setTimeout(async () => {
-      await refreshPageContext();
-      if (doneResponse) addMessage('assistant', doneResponse);
-      input.disabled = false;
-      sendBtn.disabled = false;
-      input.focus();
-    }, 2000);
-    return;
-  }
-
-  if (domActions.length) {
-    pendingActions = domActions;
-    actionsReasoning.textContent = `🧠 ${reasoning.substring(0, 200)}`;
-    actionsBar.classList.remove('hidden');
-    const drs = typeof doneResponse === 'string' ? doneResponse : (doneResponse ? JSON.stringify(doneResponse) : '');
-    addMessage('assistant', `🧠 ${reasoning}${drs ? '\n\n' + drs : ''}`);
-    runPendingActions();
-  } else if (doneResponse) {
-    addMessage('assistant', doneResponse);
-  }
-
-  input.disabled = false;
-  sendBtn.disabled = false;
-  input.focus();
-}
-
 // ---- Action Timeline (#03) ----
 const ACTION_META = {
   click:    { icon: '👆', label: 'Click' },
@@ -1162,6 +953,9 @@ function updateActionCard(index, status, error) {
 // ---- Execute pending actions ----
 async function runPendingActions() {
   if (!pendingActions || actionRunning) return;
+  // Snapshot the array so the Skip button nulling `pendingActions` mid-loop
+  // can't cause a TypeError on the next length read.
+  const actions = pendingActions;
   actionRunning = true;
   runAllBtn.disabled = true;
   skipBtn.disabled = false;
@@ -1179,9 +973,10 @@ async function runPendingActions() {
     return;
   }
 
-  const total = pendingActions.length;
-  for (let i = 0; i < pendingActions.length; i++) {
-    const action = pendingActions[i];
+  for (let i = 0; i < actions.length; i++) {
+    // Stop if the user clicked Skip (nulls pendingActions) between awaits.
+    if (!pendingActions) break;
+    const action = actions[i];
     if (action.type === 'done') {
       updateActionCard(i, 'done');
       if (action.response) addMessage('assistant', action.response);

@@ -134,6 +134,14 @@
       case 'wait':
         await sleep(action.ms || 1000);
         return { ok: true, type: 'wait' };
+      case 'navigate':
+        // Navigation is normally handled by the background (chrome.tabs.update),
+        // but accept it here as a no-op success so a forwarded action never
+        // reports a false failure.
+        return { ok: true, type: 'navigate' };
+      case 'done':
+        // Terminal action — no DOM work, just signal completion.
+        return { ok: true, type: 'done', response: action.response || '' };
       default:
         return { ok: false, error: `Unknown action type: ${action.type}` };
     }
@@ -158,6 +166,11 @@
           .then(sendResponse)
           .catch((err) => sendResponse({ ok: false, error: err.message }));
         return true; // async
+      default:
+        // Unknown request type — respond cleanly so the caller's
+        // sendMessage promise doesn't reject with "message port closed".
+        sendResponse({ ok: false, error: `Unknown request type: ${request.type}` });
+        break;
     }
   });
 })();
