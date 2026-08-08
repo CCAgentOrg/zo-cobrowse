@@ -15,9 +15,9 @@ export const STORAGE = {
   QUICK_ACTIONS: 'zoQuickActions',
   TTS_LANG: 'zoTtsLang',
   TTS_RATE: 'zoTtsRate',
+  TTS_VOICE: 'zoTtsVoice',
   TTS_AUTO_READ: 'zoTtsAutoRead',
   API_URL: 'zoApiUrl',
-  CONVERSATIONS: 'zoConversations',
 };
 
 export const DEFAULTS = {
@@ -33,6 +33,7 @@ export const DEFAULTS = {
   [STORAGE.THEME]: '',
   [STORAGE.TTS_LANG]: '',
   [STORAGE.TTS_RATE]: 1.0,
+  [STORAGE.TTS_VOICE]: '',
   [STORAGE.TTS_AUTO_READ]: false,
   [STORAGE.QUICK_ACTIONS]: [],
 };

@@ -7,9 +7,30 @@ const $$ = (sel) => document.querySelectorAll(sel);
 
 // ---- Constants ----
 const MAX_HISTORY = 50;
-const THINKING_TIMEOUT_MS = 60000;
 const OLD_STORAGE_KEY = 'cobrowse_history';
+// Defensive guard: if background never replies and the port stays alive,
+// the thinking indicator would persist forever. This clears it + re-enables
+// input after the deadline so the panel is never stuck.
+const THINKING_TIMEOUT_MS = 60000;
 let thinkingTimeout = null;
+function startThinkingTimeout() {
+  clearThinkingTimeout();
+  thinkingTimeout = setTimeout(() => {
+    thinkingTimeout = null;
+    const thinking = msgsEl?.querySelector('.msg-thinking');
+    if (thinking) thinking.remove();
+    if (streamSession.active) {
+      streamSession.active = false;
+      streamSession.msgEl = null;
+      streamSession.fullText = '';
+    }
+    if (typeof input !== 'undefined' && input) input.disabled = false;
+    if (typeof sendBtn !== 'undefined' && sendBtn) sendBtn.disabled = false;
+  }, THINKING_TIMEOUT_MS);
+}
+function clearThinkingTimeout() {
+  if (thinkingTimeout) { clearTimeout(thinkingTimeout); thinkingTimeout = null; }
+}
 // ---- Safe text helper ----
 function safeText(v) {
   if (typeof v === 'string') return v;
@@ -108,13 +129,6 @@ let pendingActions = null;
 let currentContext = null;
 let actionRunning = false;
 let isHistoryView = false;
-
-// ---- Streaming state ----
-let zoPort = null;
-let streamSessionId = 0;
-let streamActive = false;
-let streamMsgEl = null;
-let streamAccumulated = '';
 
 // ---- STT state ----
 let recognition = null;
@@ -535,7 +549,7 @@ async function migrateOldFormat() {
   const firstUserMsg = oldMessages.find(m => m.role === 'user');
   conversations[id] = {
     id,
-    title: firstUserMsg ? firstUserMsg.text.substring(0, 60) : 'Previous session',
+    title: firstUserMsg ? String(firstUserMsg.text || '').substring(0, 60) : 'Previous session',
     createdAt: oldMessages[0]?.timestamp || Date.now(),
     updatedAt: Date.now(),
     messages: oldMessages,
@@ -597,7 +611,7 @@ async function saveCurrentConversation() {
     // Auto-title from first user message
     const firstUserMsg = conv.messages.find(m => m.role === 'user');
     if (firstUserMsg && conv.title === 'New Chat') {
-      conv.title = firstUserMsg.text.substring(0, 60);
+      conv.title = String(firstUserMsg.text || '').substring(0, 60);
     }
     saveConversations();
   }
@@ -1517,6 +1531,7 @@ function connectStreamingPort() {
         // input so the user isn't stuck with a permanently disabled panel.
         if (streamSession.active) {
           streamSession.active = false;
+          clearThinkingTimeout();
           const thinking = msgsEl?.querySelector('.msg-thinking');
           if (thinking) thinking.remove();
           if (typeof input !== 'undefined' && input) input.disabled = false;
@@ -1536,6 +1551,8 @@ function handleStreamMessage(msg) {
   if (msg.sessionId && msg.sessionId !== streamSession.sessionId) return;
   switch (msg.type) {
     case 'STREAM_CHUNK': {
+      // First real progress — cancel the thinking timeout
+      clearThinkingTimeout();
       // Remove any stale reconnecting banner(s)
       msgsEl.querySelectorAll('.msg-reconnecting').forEach(el => el.remove());
       // First chunk — remove thinking indicator, create assistant message
@@ -1555,6 +1572,7 @@ function handleStreamMessage(msg) {
       break;
     }
     case 'STREAM_DONE': {
+      clearThinkingTimeout();
       const domActions = (msg.actions || []).filter((a) => a.type !== 'navigate' && a.type !== 'done');
       // Remove any stale thinking indicator regardless of active state
       const staleThinking = msgsEl.querySelector('.msg-thinking');
@@ -1587,20 +1605,14 @@ function handleStreamMessage(msg) {
       const doneAction = (msg.actions || []).find(a => a.type === 'done');
       const responseText = safeText(doneAction?.response) || safeText(msg.fullText) || safeText(streamSession.fullText) || safeText(msg.reasoning) || '';
 
-      // Finalize streaming message body only for plain-text responses
-      // (structured actions are displayed by handleStreamActions below)
+      // Finalize streaming message body. Always normalize to responseText
+      // (the canonical final text) so the rendered DOM never lingers on a
+      // partial streamed chunk. Structured actions are rendered separately
+      // by handleStreamActions (navigate adds its own message; dom actions
+      // render in the timeline), so this body holds the reasoning/done text.
       if (streamSession.msgEl) {
         const body = streamSession.msgEl.querySelector('.msg-body');
-        if (body && msg.actions?.length) {
-          // Actions will be displayed by handleStreamActions — preserve the
-          // streaming content as-is instead of replacing with responseText,
-          // avoid duplicating the done response text.
-          // Only update the body if we're NOT adding separate action messages.
-          const hasDisplayActions = msg.actions.some(a => a.type !== 'done');
-          if (!hasDisplayActions) {
-            body.innerHTML = markdownToHtml(responseText);
-          }
-        } else if (body) {
+        if (body && responseText) {
           body.innerHTML = markdownToHtml(responseText);
         }
         // Add TTS button if not already present
@@ -1656,6 +1668,7 @@ function handleStreamMessage(msg) {
       break;
     }
     case 'STREAM_ERROR': {
+      clearThinkingTimeout();
       if (!streamSession.active) return;
       // Remove any stale reconnecting banner
       const reconnErr = msgsEl.querySelector('.msg-reconnecting');
@@ -1825,6 +1838,7 @@ sendQuery = async function() {
 
   addMessage('user', query);
   addMessage('thinking', 'Zo is thinking...');
+  startThinkingTimeout();
 
   // Determine preset prompts
   let presetSystemPrompt, presetInstructions;
