@@ -412,8 +412,11 @@ const MODE_CYCLE = ['auto', 'lite', 'full'];
 function updateRoutingBadge() {
   const badge = document.getElementById('routing-badge');
   if (!badge) return;
-  const mode = config.personaMode || 'auto';
-  badge.textContent = MODE_LABELS[mode] || '◐ Auto';
+  // Normalize: unknown/legacy mode values fall back to 'auto' so the badge
+  // never shows undefined.
+  const raw = config.personaMode || 'auto';
+  const mode = MODE_LABELS[raw] ? raw : 'auto';
+  badge.textContent = MODE_LABELS[mode];
   badge.className = 'routing-badge ' + mode;
 }
 
@@ -1767,7 +1770,7 @@ sendQuery = async function() {
     const bang = parseBangCommand(query);
     if (bang.inlineReply) {
       addMessage('user', query);
-      addMessage('bot', bang.inlineReply);
+      addMessage('assistant', bang.inlineReply);
       input.disabled = false;
       sendBtn.disabled = false;
       input.focus();

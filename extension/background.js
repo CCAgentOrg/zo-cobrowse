@@ -188,12 +188,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (changes.enableScreenshots?.newValue !== undefined) config.enableScreenshots = changes.enableScreenshots.newValue;
 });
 
-// Open side panel on toolbar icon click
-chrome.action.onClicked.addListener((tab) => {
-  chrome.sidePanel.open({ windowId: tab.windowId });
-});
-
-// Open side panel on toolbar icon click (global scope — takes effect on every SW wake-up)
+// Open side panel on toolbar icon click (global scope — takes effect on every SW wake-up).
+// setPanelBehavior covers the click; no separate action.onClicked listener needed.
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
 
 // ---- Message handler ----
@@ -348,29 +344,6 @@ async function evalInPage(tabId, expression, timeoutMs = 8000) {
     detachDebugger(tabId);
     return { ok: false, error: e.message };
   }
-}
-
-function makeCaptureContextEval() {
-  return `(() => {
-    const maxLen = 8000;
-    const main = document.querySelector('main, article, [role="main"], #content, .content');
-    const txt = (main || document.body)?.innerText || '';
-    const fields = [];
-    document.querySelectorAll('input, textarea, select').forEach(el => {
-      if (el.type === 'hidden') return;
-      const r = el.getBoundingClientRect();
-      if (!r.width || !r.height) return;
-      fields.push({ tag: el.tagName.toLowerCase(), type: el.type || 'text', name: el.name || el.id || '', placeholder: el.placeholder || '', value: (el.value || '').substring(0, 100) });
-    });
-    const clicks = [];
-    document.querySelectorAll('a, button, [role="button"], [onclick], input[type="submit"], input[type="button"]').forEach(el => {
-      const r = el.getBoundingClientRect();
-      if (r.width < 8 || r.height < 8) return;
-      const t = (el.textContent || el.value || '').trim().substring(0, 60);
-      if (t) clicks.push({ text: t, tag: el.tagName.toLowerCase() });
-    });
-    return { url: location.href, title: document.title, visibleText: txt.substring(0, maxLen), formFields: fields.slice(0, 30), clickable: clicks.slice(0, 50), viewport: { w: innerWidth, h: innerHeight }, documentSize: { w: document.documentElement.scrollWidth, h: document.documentElement.scrollHeight } };
-  })()`;
 }
 
 function makeActionEval(action) {
@@ -1070,7 +1043,7 @@ async function askZo(pageContext, userQuery, modelName, personaId, presetSystemP
     }
 
     const data = await response.json();
-    if (data.conversation_id) { zoConversationId = data.conversation_id; chrome.storage.session.set({ zoConversationId }); }
+    if (data.conversation_id) { zoConversationId = data.conversation_id; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
     return { success: true, output: data.output, intent: resolvedIntent };
   } catch (err) {
     return { error: `Connection failed: ${err.message}` };
