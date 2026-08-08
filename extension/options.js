@@ -254,6 +254,29 @@ document.addEventListener('DOMContentLoaded', () => {
     testBtn.textContent = 'Test Connection';
   });
 
+  // Reset to defaults — clears all stored config (sync + local sensitive),
+  // then reloads the page so inputs rehydrate from DEFAULTS.
+  const resetBtn = document.getElementById('reset-defaults');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      if (!confirm('Reset all Zo Co-browse settings to defaults? This clears your token, endpoint, model, and preferences on this device.')) return;
+      // Sensitive (local) + non-sensitive (sync) keys are cleared together.
+      const syncKeys = ['zoModel', 'zoPersonaId', 'zoLitePersonaId', 'zoFullPersonaId', 'personaMode', 'zoQuickActions', 'zoTtsLang', 'zoTtsRate', 'zoTtsAutoRead', 'enabledMenus', 'enableScreenshots', 'cobrowse_theme'];
+      const localKeys = ['zoAccessToken', 'zoSpaceEndpoint'];
+      Promise.all([
+        new Promise((r) => chrome.storage.sync.remove(syncKeys, r)),
+        new Promise((r) => chrome.storage.local.remove(localKeys, r)),
+      ]).then(() => {
+        statusMsg.textContent = '✅ Reset to defaults. Reloading…';
+        statusMsg.className = 'inline-status ok';
+        setTimeout(() => location.reload(), 800);
+      }).catch(() => {
+        statusMsg.textContent = '❌ Reset failed.';
+        statusMsg.className = 'inline-status err';
+      });
+    });
+  }
+
   // Quick nav to Zo settings
   const goToZoBtn = document.getElementById('go-to-zo-settings');
   if (goToZoBtn) {

@@ -3,6 +3,7 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 
 const OPTIONS_PATH = resolve(import.meta.dir, "../extension/options.js");
+const OPTIONS_HTML_PATH = resolve(import.meta.dir, "../extension/options.html");
 
 describe("options.js", () => {
   const code = readFileSync(OPTIONS_PATH, "utf-8");
@@ -43,5 +44,32 @@ it("has screenshot toggle in UI", () => {
   it("shows status messages", () => {
     expect(code).toContain("statusMsg");
     expect(code).toContain("status-message");
+  });
+
+  it("has reset-to-defaults that clears sync + local config (#B-15)", () => {
+    expect(code).toContain("reset-defaults");
+    expect(code).toContain("chrome.storage.sync.remove");
+    expect(code).toContain("chrome.storage.local.remove");
+    expect(code).toContain("zoAccessToken");
+    expect(code).toContain("location.reload");
+  });
+});
+
+describe("options.html shortcuts", () => {
+  const html = readFileSync(OPTIONS_HTML_PATH, "utf-8");
+
+  it("documents shortcuts that match manifest commands (#B-14)", () => {
+    // Manifest declares _execute_action=Z, summarize-page=S, new-chat=N, extract-page=E
+    expect(html).toContain("Ctrl+Shift+Z");
+    expect(html).toContain("Ctrl+Shift+S");
+    expect(html).toContain("Ctrl+Shift+N");
+    expect(html).toContain("Ctrl+Shift+E");
+    // The stale/incorrect K and L shortcuts must be gone
+    expect(html).not.toContain("Ctrl+Shift+K");
+    expect(html).not.toContain("Ctrl+Shift+L");
+  });
+
+  it("has a reset button", () => {
+    expect(html).toContain('id="reset-defaults"');
   });
 });
