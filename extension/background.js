@@ -1,17 +1,53 @@
+// Post a message to a streaming port, tolerating disconnects.
+// Marks the port dead on failure and returns false so callers can stop
+// retrying instead of throwing "disconnected port object" up the stack.
+function safePost(port, msg) {
+  if (!port || port._dead) return false;
+  try {
+    port.postMessage(msg);
+    return true;
+  } catch {
+    port._dead = true;
+    return false;
+  }
+}
+
+// True when an error is transient enough to justify a stream retry.
+// Non-retriable: missing token (config), auth (401/403), bad request (400),
+// missing-content-type, plain text parse errors.
+function isRetriableStreamError(err) {
+  const m = safeText(err && err.message).toLowerCase();
+  if (!m) return true; // unknown — give it one retry
+  if (m.includes('token') || m.includes('not configured')) return false;
+  if (m.includes('zo api error: 4')) return false; // 4xx (auth/bad request)
+  if (m.includes('parse error')) return false;
+  return true; // network / 5xx / aborted → retry
+}
+
 async function askZoStream(port, msg) {
   const maxRetries = 3;
   const baseDelay = 1000;
   let lastError = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    // Port went away (panel closed) — stop immediately, no more API calls.
+    if (port._dead) {
+      throw new Error('Port disconnected');
+    }
     try {
       if (attempt > 1) {
-        port.postMessage({ type: 'STREAM_RECONNECT_DONE' });
-        port.postMessage({ type: 'STREAM_RECONNECT', attempt, maxRetries });
+        // Announce the retry first, then the banner. *_DONE is only sent
+        // after the final attempt succeeds (handled implicitly by the
+        // successful return below, which clears the banner via STREAM_CHUNK).
+        if (!safePost(port, { sessionId: msg.sessionId, type: 'STREAM_RECONNECT', attempt, maxRetries })) {
+          throw new Error('Port disconnected');
+        }
       }
       return await _askZoStreamImpl(port, msg);
     } catch (err) {
       lastError = err;
+      // Don't retry if the port is gone or the error is non-transient.
+      if (port._dead || !isRetriableStreamError(err)) throw err;
       if (attempt < maxRetries) {
         const delay = baseDelay * Math.pow(2, attempt - 1);
         await new Promise(r => setTimeout(r, delay));
@@ -511,13 +547,19 @@ function resolvePersona(userQuery, pageContext) {
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'cobrowse-stream') return;
 
+  // Track disconnects so streaming code can stop posting to a dead port
+  // instead of throwing "Attempting to use a disconnected port object".
+  port.onDisconnect.addListener(() => { port._dead = true; });
+
   port.onMessage.addListener(async (msg) => {
     switch (msg.type) {
       case 'ASK_ZO': {
         try {
           await askZoStream(port, msg);
         } catch (err) {
-          try { port.postMessage({ type: 'STREAM_ERROR', error: `Failed: ${err.message}` }); } catch {}
+          // Final failure after retries (or a non-retriable error). Only try
+          // to surface it if the port is still alive.
+          safePost(port, { sessionId: msg.sessionId, type: 'STREAM_ERROR', error: `Failed: ${err.message}` });
         }
         break;
       }
@@ -749,9 +791,10 @@ chrome.omnibox.onInputEntered.addListener(async (text, disposition) => {
 });
 async function _askZoStreamImpl(port, msg) {
   const { pageContext, userQuery, modelName, personaId, presetSystemPrompt, presetInstructions, intent } = msg;
+  const sid = msg.sessionId;
 
   if (!config.zoAccessToken) {
-    port.postMessage({ type: 'STREAM_ERROR', error: '❌ Zo access token not configured. Open extension settings to set it up.' });
+    safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: '❌ Zo access token not configured. Open extension settings to set it up.' });
     return;
   }
 
@@ -798,10 +841,12 @@ async function _askZoStreamImpl(port, msg) {
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
-      port.postMessage({
-        type: 'STREAM_ERROR',
-        error: `Zo API error: ${response.status}${body ? ' — ' + body.substring(0, 200) : ''}`,
-      });
+      const errMsg = `Zo API error: ${response.status}${body ? ' — ' + body.substring(0, 200) : ''}`;
+      safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: errMsg });
+      // Surface 4xx as a thrown retriable=false error so the retry wrapper stops.
+      if (response.status >= 400 && response.status < 500) {
+        const e = new Error(errMsg); throw e;
+      }
       return;
     }
 
@@ -810,17 +855,17 @@ async function _askZoStreamImpl(port, msg) {
     if (contentType.includes('application/json')) {
       try {
         const data = await response.json();
-        if (data.conversation_id) { zoConversationId = data.conversation_id; chrome.storage.session.set({ zoConversationId }); }
-        finishStream(port, data.output || '', resolvedIntent);
+        if (data.conversation_id) { zoConversationId = data.conversation_id; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
+        finishStream(port, sid, data.output || '', resolvedIntent);
       } catch (e) {
-        port.postMessage({ type: 'STREAM_ERROR', error: `Non-streaming parse error: ${e.message}` });
+        safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: `Non-streaming parse error: ${e.message}` });
       }
       return;
     }
 
     // Capture conversation_id from response headers
     const convHeaderId = response.headers.get('x-conversation-id');
-    if (convHeaderId) { zoConversationId = convHeaderId; chrome.storage.session.set({ zoConversationId }); }
+    if (convHeaderId) { zoConversationId = convHeaderId; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -862,13 +907,15 @@ async function _askZoStreamImpl(port, msg) {
               try {
                 const parsed = JSON.parse(data);
                 if (parsed.output) {
-                  fullText = safeText(parsed.output);
-                } else if (parsed.reasoning || parsed.actions) {
+                  // Don't clobber accumulated streamed text with the final payload
+                  // unless we never received incremental chunks.
+                  if (!fullText) fullText = safeText(parsed.output);
+                } else if ((parsed.reasoning || parsed.actions) && !fullText) {
                   fullText = safeText(parsed);
                 }
               } catch {}
             }
-            finishStream(port, fullText, resolvedIntent);
+            finishStream(port, sid, fullText, resolvedIntent);
             currentEventType = '';
             return;
           }
@@ -877,9 +924,9 @@ async function _askZoStreamImpl(port, msg) {
           if (currentEventType === 'Error') {
             try {
               const parsed = JSON.parse(data);
-              port.postMessage({ type: 'STREAM_ERROR', error: parsed.message || 'Stream error' });
+              safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: parsed.message || 'Stream error' });
             } catch {
-              port.postMessage({ type: 'STREAM_ERROR', error: data });
+              safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: data });
             }
             currentEventType = '';
             return;
@@ -898,36 +945,37 @@ async function _askZoStreamImpl(port, msg) {
             }
             if (content) {
               fullText += content;
-              port.postMessage({ type: 'STREAM_CHUNK', text: fullText });
+              safePost(port, { sessionId: sid, type: 'STREAM_CHUNK', text: fullText });
             }
             // Legacy finish check for non-Zo SSE formats (OpenAI, Anthropic style)
             if (parsed.done || parsed.finish_reason || parsed.type === 'final' || parsed.type === 'complete' || parsed.type === 'End') {
-              if (parsed.output) fullText = safeText(parsed.output);
-              else if (parsed.type === 'End' && parsed.reasoning) fullText = safeText(parsed);
-              finishStream(port, fullText, resolvedIntent);
+              if (parsed.output && !fullText) fullText = safeText(parsed.output);
+              else if (parsed.type === 'End' && parsed.reasoning && !fullText) fullText = safeText(parsed);
+              finishStream(port, sid, fullText, resolvedIntent);
               return;
             }
           } catch {
             // Plain text SSE (e.g. [DONE])
             if (data === '[DONE]') {
-              finishStream(port, fullText, resolvedIntent);
+              finishStream(port, sid, fullText, resolvedIntent);
               return;
             }
             fullText += safeText(data);
-            port.postMessage({ type: 'STREAM_CHUNK', text: fullText });
+            safePost(port, { sessionId: sid, type: 'STREAM_CHUNK', text: fullText });
           }
         }
       }
     }
 
     // Stream ended (no End event received — graceful fallback)
-    finishStream(port, fullText, resolvedIntent);
+    finishStream(port, sid, fullText, resolvedIntent);
   } catch (err) {
-    port.postMessage({ type: 'STREAM_ERROR', error: `Connection failed: ${err.message}` });
+    safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: `Connection failed: ${err.message}` });
+    throw err; // let the retry wrapper decide
   }
 }
 
-function finishStream(port, output, intent) {
+function finishStream(port, sid, output, intent) {
   let reasoning = '';
   let actions = [];
   let rawOutput = '';
@@ -959,7 +1007,8 @@ function finishStream(port, output, intent) {
   const safeDoneResponse = safeText(doneAction?.response);
   const fullText = safeDoneResponse || reasoning || rawOutput || safeText(normalizedOutput);
 
-  port.postMessage({
+  safePost(port, {
+    sessionId: sid,
     type: 'STREAM_DONE',
     reasoning,
     actions,

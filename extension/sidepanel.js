@@ -1718,11 +1718,14 @@ function connectStreamingPort() {
       // Only null if this exact port is still the active one
       // Prevents stale onDisconnect from nulling a freshly reconnected port
       if (streamPort === port) {
-        // If streaming session was active, clean up the UI
+        // If streaming session was active, clean up the UI and re-enable
+        // input so the user isn't stuck with a permanently disabled panel.
         if (streamSession.active) {
           streamSession.active = false;
           const thinking = msgsEl?.querySelector('.msg-thinking');
           if (thinking) thinking.remove();
+          if (typeof input !== 'undefined' && input) input.disabled = false;
+          if (typeof sendBtn !== 'undefined' && sendBtn) sendBtn.disabled = false;
         }
         streamPort = null;
       }
