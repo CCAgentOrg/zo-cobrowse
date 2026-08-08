@@ -238,20 +238,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
     case 'NAVIGATE': {
-      chrome.tabs.update(request.tabId || sender.tab?.id, { url: request.url }).then(() =>
+      const navTabId = request.tabId || sender.tab?.id;
+      if (!navTabId || !request.url) {
+        sendResponse({ ok: false, error: 'NAVIGATE requires tabId and url' });
+        return false;
+      }
+      chrome.tabs.update(navTabId, { url: request.url }).then(() =>
         sendResponse({ ok: true })
-      );
-      return true;
-    }
-    case 'EXECUTE_CONTENT_SCRIPT': {
-      chrome.scripting
-        .executeScript({
-          target: { tabId: request.tabId || sender.tab?.id },
-          func: request.func,
-          args: request.args || [],
-        })
-        .then(([result]) => sendResponse({ ok: true, result: result.result }))
-        .catch((err) => sendResponse({ ok: false, error: err.message }));
+      ).catch((err) => sendResponse({ ok: false, error: err.message }));
       return true;
     }
     case 'GENERATE_PRESET': {
@@ -419,7 +413,13 @@ function makeActionEval(action) {
 async function getActiveTabContext(tabId, liteMode) {
   let tab;
   if (tabId) {
-    tab = { id: tabId };
+    // Look up the full tab so we have windowId for captureVisibleTab; fall
+    // back to the synthesized object if the lookup fails (tab closed, etc.).
+    try {
+      tab = await chrome.tabs.get(tabId);
+    } catch {
+      tab = { id: tabId };
+    }
   } else {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     tab = tabs[0];
@@ -1077,10 +1077,20 @@ async function askZo(pageContext, userQuery, modelName, personaId, presetSystemP
   }
 }
 
+// Derive the API origin from config.zoApiUrl so a self-hosted / overridden
+// endpoint is respected instead of always hitting api.zo.computer.
+function apiOrigin() {
+  try {
+    return new URL(config.zoApiUrl).origin;
+  } catch {
+    return 'https://api.zo.computer';
+  }
+}
+
 async function listModels() {
   if (!config.zoAccessToken) return { error: 'No token' };
   try {
-    const r = await fetch('https://api.zo.computer/models/available', {
+    const r = await fetch(`${apiOrigin()}/models/available`, {
       headers: { Authorization: `Bearer ${config.zoAccessToken}` }
     });
     if (!r.ok) return { error: `HTTP ${r.status}` };
@@ -1095,7 +1105,7 @@ async function listModels() {
 async function listPersonas() {
   if (!config.zoAccessToken) return { error: 'No token' };
   try {
-    const r = await fetch('https://api.zo.computer/personas/available', {
+    const r = await fetch(`${apiOrigin()}/personas/available`, {
       headers: { Authorization: `Bearer ${config.zoAccessToken}` }
     });
     if (!r.ok) return { error: `HTTP ${r.status}` };
@@ -1164,7 +1174,9 @@ async function testConnection() {
     });
     if (r.ok) zoOk = true;
     const body = await r.text();
-    zoOk = body.includes('ZO_OK');
+    // Case-insensitive check; trust r.ok as a fallback so a valid response
+    // that doesn't echo the exact literal isn't reported as failure.
+    if (!body.toLowerCase().includes('zo_ok')) zoOk = r.ok;
   } catch {
     // zoOk stays false
   }
