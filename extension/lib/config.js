@@ -29,7 +29,7 @@ export const DEFAULTS = {
   [STORAGE.FULL_PERSONA_ID]: '',
   [STORAGE.PERSONA_MODE]: 'auto',
   [STORAGE.ENABLE_SCREENSHOTS]: true,
-  [STORAGE.ENABLED_MENUS]: { page: true, selection: true, link: true, fillField: true },
+  [STORAGE.ENABLED_MENUS]: { page: true, selection: true, link: true, editable: true },
   [STORAGE.THEME]: '',
   [STORAGE.TTS_LANG]: '',
   [STORAGE.TTS_RATE]: 1.0,

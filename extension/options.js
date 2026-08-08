@@ -309,7 +309,7 @@ async function populatePersonas(token, liteSelect, fullSelect, liteId, fullId) {
       opt.value = p.id || '';
       opt.textContent = p.name || p.id || '';
       liteSelect.appendChild(opt);
-      fullSelect.appendChild(opt);
+      fullSelect.appendChild(opt.cloneNode(true));
     }
     liteSelect.value = liteId;
     fullSelect.value = fullId;
