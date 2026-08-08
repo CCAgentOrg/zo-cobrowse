@@ -166,40 +166,31 @@ describe("background.js defaults", () => {
 
 const code = readFileSync(resolve(import.meta.dir, "../extension/background.js"), "utf-8");
 
-describe("background persona routing", () => {
-  it("has intent classification keywords", () => {
-    expect(code).toContain("LITE_KEYWORDS");
-    expect(code).toContain("FULL_KEYWORDS");
-    expect(code).toContain("classifyIntent");
-    expect(code).toContain("resolvePersona");
+describe("background Mode system", () => {
+  it("imports the Mode catalog from lib/modes.js", () => {
+    expect(code).toContain("resolveMode");
+    expect(code).toContain("DEFAULT_MODE_ID");
+    expect(code).toContain("ACTION_SCHEMA_COMPACT");
+    expect(code).toContain("./lib/modes.js");
   });
 
-  it("classifies lite intents", () => {
-    expect(code).toContain("summarize");
-    expect(code).toContain("extract");
-    expect(code).toContain("tl;dr");
+  it("assembles prompts via a single buildPrompt helper", () => {
+    expect(code).toContain("function buildPrompt");
+    expect(code).toContain("contextTier");
   });
 
-  it("classifies full intents", () => {
-    expect(code).toContain("duckdb");
-    expect(code).toContain("skill");
-    expect(code).toContain("automati");
+  it("uses tier-gated context capture in getActiveTabContext", () => {
+    expect(code).toContain("getActiveTabContext");
+    expect(code).toContain("contextTier");
   });
 
-  it("supports persona routing config", () => {
-    expect(code).toContain("zoLitePersonaId");
-    expect(code).toContain("zoFullPersonaId");
-    expect(code).toContain("personaMode");
+  it("persists the active Mode id in config", () => {
+    expect(code).toContain("zoActiveMode");
   });
 
-  it("reduces context size for lite mode", () => {
-    expect(code).toContain("isLite");
-    expect(code).toContain("2000");
-  });
-
-  it("returns intent in response", () => {
-    expect(code).toContain("intent:");
-    expect(code).toContain("resolvedIntent");
+  it("generates custom Modes via GENERATE_MODE", () => {
+    expect(code).toContain("GENERATE_MODE");
+    expect(code).toContain("generateMode");
   });
 
   it("has context menu creation in onInstalled", () => {

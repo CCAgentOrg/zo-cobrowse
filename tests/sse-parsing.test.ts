@@ -329,3 +329,87 @@ describe("finishStream plain-text path (ticket #29)", () => {
     expect(sp).toContain("empty response");
   });
 });
+
+describe("finishStream preserves reasoning into STREAM_DONE", () => {
+  // The thinking bubble depends on reasoning surviving finishStream. Extract
+  // the real finishStream + safeText via vm (same pattern as loadHelpers) and
+  // drive it with a fake recording port. Also stub safePost since the slice
+  // only contains these two functions.
+  function braceEnd(src: string, start: number): number {
+    let depth = 0;
+    let started = false;
+    for (let i = start; i < src.length; i++) {
+      if (src[i] === "{") { depth++; started = true; }
+      else if (src[i] === "}") {
+        depth--;
+        if (started && depth === 0) return i + 1;
+      }
+    }
+    return start;
+  }
+  function loadFinishStream() {
+    const safeStart = bgSource.indexOf("function safeText(");
+    const safeEnd = braceEnd(bgSource, safeStart);
+    const fsStart = bgSource.indexOf("function finishStream(");
+    const fsEnd = braceEnd(bgSource, fsStart);
+    const safeSlice = bgSource.slice(safeStart, safeEnd);
+    const fsSlice = bgSource.slice(fsStart, fsEnd);
+    const sandbox: any = {
+      // finishStream calls safePost(port, msg); record what it posts.
+      safePost: (port: any, msg: any) => { port.postMessage(msg); },
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(safeSlice + "\n" + fsSlice, sandbox);
+    if (typeof sandbox.finishStream !== "function") {
+      throw new Error("failed to load finishStream from background.js");
+    }
+    return sandbox.finishStream as (port: any, sid: string, output: any) => void;
+  }
+
+  it("carries reasoning through STREAM_DONE (object output)", () => {
+    const finishStream = loadFinishStream();
+    const posted: any[] = [];
+    const fakePort = { _dead: false, postMessage: (m: any) => posted.push(m) };
+    finishStream(fakePort, "sid-1", {
+      reasoning: "The page is a landing page with no substantive content.",
+      actions: [{ type: "done", response: "## Summary: ..." }],
+    });
+    expect(posted).toHaveLength(1);
+    expect(posted[0].type).toBe("STREAM_DONE");
+    expect(posted[0].reasoning).toBe("The page is a landing page with no substantive content.");
+    expect(posted[0].reasoning.length).toBeGreaterThan(0);
+  });
+
+  it("carries reasoning through STREAM_DONE (JSON-string output)", () => {
+    const finishStream = loadFinishStream();
+    const posted: any[] = [];
+    const fakePort = { _dead: false, postMessage: (m: any) => posted.push(m) };
+    finishStream(fakePort, "sid-2", JSON.stringify({
+      reasoning: "stringified reasoning",
+      actions: [],
+    }));
+    expect(posted[0].reasoning).toBe("stringified reasoning");
+  });
+
+  it("no-ops the port when dead (safePost contract)", () => {
+    // Re-extract with a safePost that honors the real _dead contract.
+    const safeStart = bgSource.indexOf("function safeText(");
+    const safeEnd = braceEnd(bgSource, safeStart);
+    const fsStart = bgSource.indexOf("function finishStream(");
+    const fsEnd = braceEnd(bgSource, fsStart);
+    const spStart = bgSource.indexOf("function safePost(");
+    const spEnd = braceEnd(bgSource, spStart);
+    const sandbox: any = {};
+    vm.createContext(sandbox);
+    vm.runInContext(
+      bgSource.slice(spStart, spEnd) + "\n" +
+      bgSource.slice(safeStart, safeEnd) + "\n" +
+      bgSource.slice(fsStart, fsEnd),
+      sandbox,
+    );
+    const posted: any[] = [];
+    const deadPort = { _dead: true, postMessage: (m: any) => posted.push(m) };
+    sandbox.finishStream(deadPort, "sid-3", { reasoning: "x", actions: [] });
+    expect(posted).toHaveLength(0);
+  });
+});

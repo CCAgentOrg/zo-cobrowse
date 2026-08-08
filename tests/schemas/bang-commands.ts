@@ -41,7 +41,7 @@ const ExpandedQuery = z.object({
   handled: z.literal(true),
   kind: z.literal("command"),
   query: z.string().min(1),
-  preset: z.string().nullable(),
+  mode: z.string().nullable(),
 });
 
 export const BangCommandResultSchema = z.discriminatedUnion("kind", [

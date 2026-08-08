@@ -8,89 +8,53 @@ Chrome MV3 extension + optional WebSocket backend that connects the browser to [
 
 ## To understand quickly
 
-- **`extension/background.js`** — entry point for the service worker. All Zo API communication, message routing, config persistence, conversation_id tracking. Key functions: `getActiveTabContext()`, `askZo()`, `executeActions()`, `testConnection()`.
-- **`extension/content.js`** — injected into web pages. `captureContext()` extracts URL/title/visibleText/formFields/clickable elements. `executeAction()` runs click/fill/extract/scroll/wait in the DOM. Communicates via `chrome.runtime.onMessage` (`CAPTURE_CONTEXT`, `EXECUTE_ACTION`).
-- **`extension/sidepanel.js`** — chat UI. Manages conversation history (stored in `chrome.storage.local`, key `zo_cobrowse_history`, max 50 messages). Sends `ASK_ZO`, `GET_PAGE_CONTEXT`, `NEW_CONVERSATION`, `EXECUTE_ACTIONS` to background. Auto-runs pending actions returned by Zo. "New Chat" button (`#new-chat-btn`) sends `NEW_CONVERSATION` + clears stored history + re-fetches page context.
-- **`extension/options.html`/`.js`** — settings UI. Saves token, API URL, model, Zo.space endpoint to `chrome.storage.sync`. Test connection flow.
+- **`extension/background.js`** — entry point for the service worker. All Zo API communication, message routing, config persistence, conversation_id tracking. Key functions: `getActiveTabContext(tabId, tier, modeId)` (CDP eval fast-path via `debugger` perm; capture is **tier-gated** — 0=url only, 1=+text, 2=+clickable+forms w/ selectors, 3=+screenshot), `buildPrompt(mode, pageContext, userQuery)` (single shared prompt assembler), `askZoStream()`/`_askZoStreamImpl()` (primary streaming path), `askZo()` (non-streaming fallback), `executeActions()`, `testConnection()`, `generateMode()` (LLM custom-Mode generator). Top-level helpers: `safePost()`, `isRetriableStreamError()`.
+- **`extension/content.js`** — injected into web pages. `captureContext()` extracts URL/title/visibleText/formFields/clickable elements. `executeDomAction()` runs click/fill/extract/scroll/wait/navigate/done in the DOM. Communicates via `chrome.runtime.onMessage` (`CAPTURE_CONTEXT`, `EXECUTE_ACTION`).
+- **`extension/sidepanel.js`** — chat UI (~65KB, largest file). Manages conversation history (stored in `chrome.storage.local`, key `zo_cobrowse_history`, max 50 messages). Streaming path: `streamPort` / `handleStreamMessage`, guarded by a per-query `streamSession.sessionId`. Sends `ASK_ZO` (with `modeId` + `customModes`), `GET_PAGE_CONTEXT` (with `tier`), `NEW_CONVERSATION`, `EXECUTE_ACTIONS` to background. Auto-runs pending actions returned by Zo. Mode lifecycle: `loadModes` / `applyMode` / `rebuildModeOptions` / `startModeCreation`.
+- **`extension/lib/`** — pure ES modules with no `chrome.*`/DOM deps. `modes.js` (`BUILTIN_MODES`, `resolveMode`, `presetToMode`, `ACTION_SCHEMA_COMPACT` — the Mode system, single source of truth for prompt + context tier), `bang-commands.js` (`parseBangCommand()`, discriminated union on `kind`, each command carries a `mode` field), `config.js` (the `DEFAULTS` config object + storage keys). Unit-tested directly.
+- **`extension/options.html`/`.js`** — settings UI. Saves token, API URL, model, Zo.space endpoint to `chrome.storage.sync`. Test connection flow + "Reset to defaults".
 - **`backend/relay.ts`** — optional HTTP+WebSocket service for multi-participant sessions. Not required for single-user co-browsing.
 
 ## Key patterns
 
 - **Two-channel approach**: `/zo/ask` for AI inference + action generation; Zo.space API routes for quick data queries (DuckDB, research).
+- **Streaming is the primary path** (`askZoStream` / `_askZoStreamImpl` in background ↔ `streamPort` / `handleStreamMessage` in sidepanel), hardened end-to-end: per-query `sessionId` isolation, `safePost()` that no-ops on dead ports, `port.onDisconnect` → marks `port._dead`, `isRetriableStreamError()` retries only transient errors and emits `STREAM_RECONNECT` before retrying, 60s thinking-indicator liveness timeout. The older non-streaming `askZo()` is retained as fallback. See `QA_REPORT.md` § "Streaming support" before touching this path.
 - **Conversation threading**: background.js stores `zoConversationId`, sends it as `conversation_id` to every `/zo/ask` call. Zo respects this for thread continuity.
 - **Graceful fallback**: content script (`chrome.tabs.sendMessage`) tried first for context/actions; falls back to `chrome.scripting.executeScript` if content script not loaded.
 - **No output_format in API calls**: Zo didn't support `array` type in the `output_format` schema. Instead, the prompt asks for JSON and the code parses it from the text response.
+- **Text safety**: route all output through `addMessageDOM('assistant')` (escapes + markdown + `appendChild`); `safeText`/`String()` coercion at every text sink. Don't use `addMessage('bot')` — it skips markdown.
+- **Reasoning / thinking bubble**: the `reasoning` field Zo returns alongside `actions` is surfaced via `addReasoningBubble(parentMsgEl, reasoning)` in sidepanel.js — a collapsible "💭 Thinking" bubble (collapsed by default) inserted above the assistant message body, rendered through `markdownToHtml` + `safeText` (same safety as assistant messages). It no-ops on empty reasoning (so `ask`/`visual` modes are unaffected). Reasoning is persisted with the assistant message (`{role, text, reasoning, timestamp}`) and re-rendered from history. It arrives only in the final `STREAM_DONE` payload (no incremental streaming of reasoning).
 
 ## Permissions
 
 From `manifest.json`:
-- `sidePanel`, `storage`, `activeTab`, `tabs`, `scripting`
-- `host_permissions`: `https://api.zo.computer/*`, `https://*.zo.space/*`, `http://*/*`, `https://*/*`
+- `debugger`, `contextMenus`, `sidePanel`, `storage`, `activeTab`, `tabs`, `scripting`, `tts`
+- `host_permissions`: `https://api.zo.computer/*`, `https://*.zo.space/*`, `https://*.zocomputer.io/*`, `http://*/*`, `https://*/*`
 
-## Tests
+> `debugger` is required for the CDP eval fast-path in `getActiveTabContext()`; Chrome shows a standard "is being debugged" banner while it runs. All permissions above are exercised by code paths that have tests.
+
+## Tests & scripts
 
 ```bash
-bun test
+bun test              # run the suite (also: npm test)
+bun test --watch      # watch mode (npm run test:watch)
+npm run lint          # release-readiness checks → scripts/check-release.sh
+npm run package       # zip extension/ → zo-cobrowse.zip
 ```
 
 [![CI](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml/badge.svg)](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml)
 
-**126 tests across 12 files. 126 passing (no failures). Adding a feature means adding/updating the corresponding test file under `tests/`.
+**210 tests across 16 files (0 failures, 621 expect() calls).** Every extension JS file transpiles cleanly via `bun build`. Adding a feature means adding/updating the corresponding test file under `tests/`. See `QA_REPORT.md` for the audit history.
 
-## Ticket completion
+## Ticket & feature status
 
-| Ticket | Status | Key files |
-|--------|--------|-----------|
-| #01 Screenshot & Vision | ✅ Done | background.js (captureVisibleTab, JPEG+quality), options.js (screenshot toggle) |
-| #02 Right-Click Context Menu | ✅ Done | background.js, manifest.json (contextMenus) |
-| #03 Streaming Action Timeline | ✅ Done | sidepanel.js (actionTimeline + reconnection banner), sidepanel.html (timeline UI) |
-| #04 Run Skills from Panel | ✅ Done | sidepanel.js (skill subprompt), background.js (prompt construction) |
-| #05 NL → DuckDB Queries | ✅ Done | sidepanel.js (query subprompt), tests/ |
-| #06 Keyboard Shortcuts | ✅ Done | manifest.json (commands), background.js (onCommand) |
-| #07 Quick Command Templates | ✅ Done | sidepanel.html (presets UI), sidepanel.js (preset execution) |
-| #08 Create Automations | ✅ Done | background.js (GENERATE_AUTOMATION handler), bang-commands.js (!auto) |
-| #09 Save Page to Workspace | ✅ Done | background.js (SAVE_PAGE handler), sidepanel.js (!save) |
-| #10 Multi-Tab Context | ⏳ Backlog | content.js (tab state) |
-| #11 Web Store Listing | ⏳ Final step | Store assets, screenshots, description |
-| #12 Onboarding Flow | ✅ Done | sidepanel.html (onboarding overlay), sidepanel.js (state machine) |
-| #13 Omnibox Commands | ✅ Done | manifest.json (omnibox), background.js (onInputChanged/onInputEntered) |
-| #14 Page Monitoring | ⏳ Backlog | ticket-14-page-monitoring.md — not implemented |
-| #15 Shared Sessions | 🟡 Scratch | backend/relay.ts (WebSocket backend exists), extension integration not done |
+- **Shipped tickets (#01–#09, #12, #13, #21-style work):** screenshot/vision, right-click context menu, streaming action timeline, skill runner, NL→DuckDB, keyboard shortcuts, command templates, automations, save-page, onboarding, omnibox.
+- **Not started / backlog (#10, #11, #14, #15):** multi-tab context, web store listing, page monitoring, shared sessions. `backend/relay.ts` exists for #15 but extension integration is undone.
+- **Streaming architecture:** hardened end-to-end this round (see `QA_REPORT.md` § "Streaming support").
 
-### 🟢 Tier 1 — Unique Zo Moat (build first)
+**Authoritative, current status lives in `BACKLOG.md` (feature roadmap) and `QA_REPORT.md` (audit/remediation log).** Per-ticket specs are in `tickets/`. This file is a quick index — update those two docs when status changes rather than maintaining tables here.
 
-| # | Gap | Zo Affinity | Priority | Key files |
-|---|-----|-------------|----------|-----------|
-| #16 | **Scheduled AI Commands** | 10/10 | **P0** | Zo automations (48 exist) + panel UI to create/manage. Only ZoCoBrowse can do this at depth. See `brainstorming/ZO_AFFINITY_RANKING.md` |
-| #17 | **Web Monitoring & Page Change Detection** | 10/10 | **P0** | Zo automations as backend + DuckDB change history + workspace archival. Competitors monitor pages; Zo triggers skills on change. See `brainstorming/ZO_AFFINITY_RANKING.md` |
-| #18 | **Shared Sessions (multi-participant)** | 9/10 | **P1** | `backend/relay.ts` exists. Multi-user co-browsing over WebSocket is ZoCoBrowse's unique architectural moat. No competitor has this. |
-| #19 | **Multi-Model Selection UI** | 9/10 | **P1** | Zo BYOK supports any provider. A model picker in the panel unlocks Zo's full flexibility from the browser. |
-| #20 | **Tab Compare / Side-by-Side** | 8/10 | **P1** | Multi-tab context → Zo cross-references with DuckDB datasets, runs skills on merged context. HARPA compares URLs; Zo cross-references intelligently. |
-
-### 🟡 Tier 2 — Strong Zo Leverage (next)
-
-| # | Gap | Zo Affinity | Priority | Key files |
-|---|-----|-------------|----------|-----------|
-| #21 | **Page Context Export (PDF/MD)** | 7/10 | **P2** | Zo has `book-typesetting` skill (pandoc+Eisvogel) and Hugo pipeline. Export → Zo formats and publishes. |
-| #01 | **Screenshot & Vision Capture** | 7/10 | **P2** | ✅ Done (captureVisibleTab + JPEG). Zo can analyze with vision, save to workspace. |
-| #14 | **Page Monitoring (basic)** | 6/10 | **P2** | Periodic re-capture with Zo drives automations. Pair with #17 for full power. |
-| #02 | **Right-click Context Menu** | 6/10 | **P2** | ✅ Done. "Research/Summarize/Explain with Zo". Menu items can trigger specific skills. |
-
-### 🔴 Tier 3 — Parity Catch-up (later)
-
-| # | Gap | Zo Affinity | Priority | Key files |
-|---|-----|-------------|----------|-----------|
-| — | **Image/file upload to panel** | 5/10 | **P3** | Upload → Zo reads & runs skills. Mostly UX work. |
-| — | **Action Templates Library** | 4/10 | **P3** | Pre-built prompts. Could generate from 89 Zo skills. HARPA has 100+ templates. |
-| #23 | **Workflow Recording** | 4/10 | **P3** | Record/replay clicks. Competitors win here. Future: save workflows as Zo skills. |
-| — | **Streaming Responses** | 3/10 | ✅ Done | Pure UX. Done per #03. |
-| — | **Download files** | 3/10 | **P3** | Generic browser feature. |
-| — | **Risk confirmation dialogs** | 2/10 | **P3** | Browser UX. Every extension has it. |
-| #10 | **Site-Level Permission Controls** | 2/10 | **P3** | Chrome config UI. Zero differentiation. |
-| — | **Console & Network Logs** | 2/10 | **P3** | Devtools integration. Low ROI vs Tier 1. |
-| #11 | **Web Store Listing** | 1/10 | **P4** | Distribution, not a feature. Must-do to ship. |
-
-Full analysis: `brainstorming/ZO_AFFINITY_RANKING.md`
+> Note: older revisions of this file referenced `brainstorming/ZO_AFFINITY_RANKING.md`; that file does not exist in this repo. The Zo-affinity analysis is summarized in `BACKLOG.md`'s tier table instead.
 
 ## Verification layer (Zod schemas) — read before adding features
 
@@ -122,7 +86,8 @@ When you add a feature: extend the relevant schema first, then write the code + 
 
 | Task | File |
 |------|------|
-| Change prompt/action schema | `extension/background.js` → `askZo()` |
+| Change prompt/action schema | `extension/background.js` → `buildPrompt()` + `extension/lib/modes.js` → `ACTION_SCHEMA_COMPACT` |
+| Add/edit a Mode | `extension/lib/modes.js` → `BUILTIN_MODES` (add a schema test in `tests/modes.test.ts`) |
 | Add new action type | `extension/content.js` + `extension/background.js` → `executeDomAction()` |
 | Fix context capture | `extension/background.js` → `getActiveTabContext()` |
 | Change conversation display | `extension/sidepanel.js` → `addMessage()`, `sendQuery()` |

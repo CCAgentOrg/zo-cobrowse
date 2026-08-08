@@ -1,6 +1,14 @@
 // Post a message to a streaming port, tolerating disconnects.
 // Marks the port dead on failure and returns false so callers can stop
 // retrying instead of throwing "disconnected port object" up the stack.
+import {
+  resolveMode,
+  presetToMode,
+  ACTION_SCHEMA_COMPACT,
+  PLAIN_RESPONSE_HINT,
+  DEFAULT_MODE_ID,
+} from './lib/modes.js';
+
 function safePost(port, msg) {
   if (!port || port._dead) return false;
   try {
@@ -105,12 +113,10 @@ const DEFAULTS = {
   zoApiUrl: 'https://api.zo.computer/zo/ask',
   zoModel: '',
   zoSpaceEndpoint: 'https://cashlessconsumer.zo.space',
-  zoPersonaId: '',          // backward compat — overrides routing when set alone
-  zoLitePersonaId: '',
-  zoFullPersonaId: '',
-  personaMode: 'auto',      // 'auto' | 'lite' | 'full'
+  zoPersonaId: '',          // optional: pin the persona sent to the API
+  zoActiveMode: 'cobrowse', // active Mode id (replaces personaMode + presets)
   zoAccessToken: '',
-  enableScreenshots: true,  // capture page screenshots for visual context
+  enableScreenshots: true,  // global kill-switch; per-Mode tiers also gate capture
   enabledMenus: {        // which context menu items are active
     page: true,
     selection: true,
@@ -128,71 +134,14 @@ chrome.storage.session.get('zoConversationId').then(s => {
 }).catch(e => console.debug('session.get(zoConversationId):', e));
 
 
-// ---- Intent Classification ----
-// Lite keywords — page-content tasks that don't need Zo's toolchain
-const LITE_KEYWORDS = [
-  'summarize', 'summary', 'tl;dr', 'tldr', 'extract',
-  'what is this', 'what does this say', 'what does it say',
-  'list the', 'find the', 'who is', 'when was', 'how many',
-  'is there', 'does this', 'give me a', 'write a summary',
-  'in short', 'key points', 'main points', 'quick overview',
-  'bullet point', 'shorten', 'condense', 'translate',
-];
-
-// Full keywords — tasks that need Zo's full capabilities
-const FULL_KEYWORDS = [
-  'skill', 'data', 'duckdb', 'database', 'file', 'files',
-  'automati', 'automation', 'create', 'set up', 'run',
-  'query', 'workspace', 'project', 'folder', 'search for',
-  'remember', 'save this', 'my files', 'browse files',
-  'check my', 'look up', 'find in my', 'search my',
-  'configure', 'settings', 'persona', 'model',
-  'deploy', 'publish', 'upload', 'download',
-  'telegram', 'email', 'slack', 'discord',
-];
-
-function classifyIntent(userQuery, pageContext) {
-  if (!userQuery) return 'full'; // empty query = full (safe fallback)
-  const q = userQuery.toLowerCase().trim();
-
-  // Short queries under 10 words that aren't tool references
-  const words = q.split(/\s+/).filter(Boolean);
-  const hasFullKeyword = FULL_KEYWORDS.some(kw => q.includes(kw));
-  const hasLiteKeyword = LITE_KEYWORDS.some(kw => q.includes(kw));
-
-  // If it explicitly references tools, always full
-  if (hasFullKeyword) return 'full';
-
-  // If it's a short page-content query, classify as lite
-  if (words.length <= 12 && hasLiteKeyword) return 'lite';
-
-  // Very short queries (1-3 words) are likely page questions
-  if (words.length <= 3 && !hasFullKeyword) return 'lite';
-
-  // If page has form fields and query is about filling/interacting
-  const hasForms = pageContext?.formFields?.length > 0;
-  const interactionWords = ['fill', 'click', 'submit', 'type', 'enter', 'select', 'choose', 'press'];
-  if (hasForms && interactionWords.some(w => q.includes(w))) {
-    return 'lite';
-  }
-
-  // Multi-step or longer queries → full
-  if (words.length > 15) return 'full';
-
-  // Ambiguous — safe fallback to full
-  return 'full';
-}
-
 // ---- Init ----
 chrome.storage.sync.get(
-  ['zoApiUrl', 'zoModel', 'zoPersonaId', 'zoLitePersonaId', 'zoFullPersonaId', 'personaMode', 'enableScreenshots', 'enabledMenus'],
+  ['zoApiUrl', 'zoModel', 'zoPersonaId', 'zoActiveMode', 'enableScreenshots', 'enabledMenus'],
   (result) => {
     if (result.zoApiUrl) config.zoApiUrl = result.zoApiUrl;
     if (result.zoModel) config.zoModel = result.zoModel;
     if (result.zoPersonaId) config.zoPersonaId = result.zoPersonaId;
-    if (result.zoLitePersonaId) config.zoLitePersonaId = result.zoLitePersonaId;
-    if (result.zoFullPersonaId) config.zoFullPersonaId = result.zoFullPersonaId;
-    if (result.personaMode) config.personaMode = result.personaMode;
+    if (result.zoActiveMode) config.zoActiveMode = result.zoActiveMode;
     if (result.enableScreenshots !== undefined) config.enableScreenshots = result.enableScreenshots;
       if (result.enabledMenus) config.enabledMenus = { ...config.enabledMenus, ...result.enabledMenus };
   }
@@ -210,9 +159,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (changes.zoApiUrl?.newValue) config.zoApiUrl = changes.zoApiUrl.newValue;
   if (changes.zoModel?.newValue) config.zoModel = changes.zoModel.newValue;
   if (changes.zoPersonaId?.newValue) config.zoPersonaId = changes.zoPersonaId.newValue;
-  if (changes.zoLitePersonaId?.newValue) config.zoLitePersonaId = changes.zoLitePersonaId.newValue;
-  if (changes.zoFullPersonaId?.newValue) config.zoFullPersonaId = changes.zoFullPersonaId.newValue;
-  if (changes.personaMode?.newValue) config.personaMode = changes.personaMode.newValue;
+  if (changes.zoActiveMode?.newValue) config.zoActiveMode = changes.zoActiveMode.newValue;
   if (changes.zoAccessToken?.newValue) config.zoAccessToken = changes.zoAccessToken.newValue;
   else if (changes.zoAccessToken?.oldValue && !changes.zoAccessToken?.newValue) config.zoAccessToken = undefined;
   if (changes.zoSpaceEndpoint?.newValue) config.zoSpaceEndpoint = changes.zoSpaceEndpoint.newValue;
@@ -229,11 +176,11 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   switch (request.type) {
     case 'GET_PAGE_CONTEXT': {
-      getActiveTabContext(sender.tab?.id, request.liteMode).then(sendResponse);
+      getActiveTabContext(sender.tab?.id, request.tier, request.modeId).then(sendResponse);
       return true;
     }
     case 'ASK_ZO': {
-      askZo(request.pageContext, request.userQuery, request.modelName, request.personaId, request.presetSystemPrompt, request.presetInstructions, request.intent).then(sendResponse);
+      askZo(request.pageContext, request.userQuery, request.modelName, request.personaId, request.modeId, request.customModes).then(sendResponse);
       return true;
     }
     case 'RECREATE_CONTEXT_MENUS':
@@ -277,8 +224,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       ).catch((err) => sendResponse({ ok: false, error: err.message }));
       return true;
     }
-    case 'GENERATE_PRESET': {
-      generatePreset(request.description).then(sendResponse);
+    case 'GENERATE_MODE': {
+      generateMode(request.description).then(sendResponse);
       return true;
     }
     case 'SAVE_PAGE': {
@@ -311,9 +258,7 @@ function sanitizedConfig() {
     zoApiUrl: config.zoApiUrl,
     zoModel: config.zoModel,
     zoPersonaId: config.zoPersonaId,
-    zoLitePersonaId: config.zoLitePersonaId,
-    zoFullPersonaId: config.zoFullPersonaId,
-    personaMode: config.personaMode,
+    zoActiveMode: config.zoActiveMode,
     enableScreenshots: config.enableScreenshots,
     enabledMenus: config.enabledMenus,
     zoSpaceEndpoint: config.zoSpaceEndpoint,
@@ -416,7 +361,12 @@ function makeActionEval(action) {
 
 
 
-async function getActiveTabContext(tabId, liteMode) {
+async function getActiveTabContext(tabId, tier, modeId) {
+  // Normalize the tier. tier 0 = URL/title/viewport only; 1 = +text;
+  // 2 = +clickable+forms (with selectors); 3 = +screenshot. Unknown → 2.
+  const t = (typeof tier === 'number' && tier >= 0 && tier <= 3) ? tier : 2;
+  const textBudget = (t >= 1) ? 4000 : 2000; // upper bound at capture; Mode re-slices in buildPrompt
+
   let tab;
   if (tabId) {
     // Look up the full tab so we have windowId for captureVisibleTab; fall
@@ -434,30 +384,33 @@ async function getActiveTabContext(tabId, liteMode) {
 
   let context;
 
+  // Inlined selector builder — kept in sync with content.js buildSelector.
+  // Used by the CDP + executeScript paths so tier-2 selectors work everywhere,
+  // not just when the content script is present.
+  const SEL_HELPER = `function sel(el){
+    if(el.id)try{return '#'+CSS.escape(el.id);}catch(e){}
+    if(el.name && /^(INPUT|TEXTAREA|SELECT)$/i.test(el.tagName))return el.tagName.toLowerCase()+'[name="'+CSS.escape(el.name)+'"]';
+    var s=el.tagName.toLowerCase();
+    if(el.className&&typeof el.className==='string'){var cs=el.className.trim().split(/\\s+/).filter(Boolean).slice(0,3);if(cs.length)s+=cs.map(function(c){return '.'+(window.CSS&&CSS.escape?CSS.escape(c):c);}).join('');}
+    var p=el.parentElement;if(p){var sib=Array.from(p.children).filter(function(x){return x.tagName===el.tagName;});if(sib.length>1){s+=':nth-of-type('+(sib.indexOf(el)+1)+')';}}
+    return s;
+  }`;
+
   // Path 1: Debugger-based eval (fastest, works on any page)
   try {
-    var captureExpr = liteMode
-      ? `(function(){
-          var t=document.body?.innerText||'';
-          return {
-            url: location.href,
-            title: document.title,
-            visibleText: t.substring(0,2000),
-            viewport: { w: window.innerWidth, h: window.innerHeight }
-          };
-        })()`
-      : `(function(){
-          var m=document.querySelector('main,article,[role="main"],#content,.content');
-          var b=document.body;
-          var t=(m||b)?.innerText||'';
-          var ff=[];
-          document.querySelectorAll('input:not([type="hidden"]),textarea,select').forEach(function(el){
-            var r=el.getBoundingClientRect();
-            if(r.width===0||r.height===0)return;
-            ff.push({tag:el.tagName.toLowerCase(),type:el.type||'text',name:el.name||el.id||'',placeholder:el.placeholder||''});
-          });
-          return {url:location.href,title:document.title,visibleText:t.substring(0,8000),formFields:ff.slice(0,30),viewport:{w:window.innerWidth,h:window.innerHeight}};
-        })()`;
+    var captureExpr;
+    if (t === 0) {
+      captureExpr = `(function(){return{url:location.href,title:document.title,viewport:{w:window.innerWidth,h:window.innerHeight}};})()`;
+    } else if (t === 1) {
+      captureExpr = `(function(){var m=document.querySelector('main,article,[role=main],#content,.content');var b=document.body;var tx=(m||b)?.innerText||'';return{url:location.href,title:document.title,visibleText:tx.substring(0,${textBudget}),viewport:{w:window.innerWidth,h:window.innerHeight}};})()`;
+    } else {
+      captureExpr = `(function(){${SEL_HELPER}
+        var m=document.querySelector('main,article,[role=main],#content,.content');var b=document.body;var tx=(m||b)?.innerText||'';
+        var ff=[];document.querySelectorAll('input:not([type=hidden]),textarea,select').forEach(function(el){var r=el.getBoundingClientRect();if(r.width===0||r.height===0)return;ff.push({tag:el.tagName.toLowerCase(),type:el.type||'text',name:el.name||el.id||'',selector:sel(el),placeholder:el.placeholder||''});});
+        var ck=[];document.querySelectorAll('a,button,[role=button],[onclick],input[type=submit],input[type=button]').forEach(function(el){var r=el.getBoundingClientRect();if(r.width<8||r.height<8)return;var tx=(el.textContent||el.value||'').trim().substring(0,60);if(!tx)return;ck.push({text:tx,tag:el.tagName.toLowerCase(),selector:sel(el)});});
+        return{url:location.href,title:document.title,visibleText:tx.substring(0,${textBudget}),formFields:ff.slice(0,30),clickable:ck.slice(0,50),viewport:{w:window.innerWidth,h:window.innerHeight}};
+      })()`;
+    }
     var result = await evalInPage(tab.id, captureExpr, 5000);
     if (result.ok && result.value && result.value.url) context = result.value;
   } catch(e) {
@@ -467,7 +420,7 @@ async function getActiveTabContext(tabId, liteMode) {
   // Path 2: Content script
   if (!context) {
     try {
-      const resp = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_CONTEXT', liteMode });
+      const resp = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_CONTEXT', tier: t });
       if (resp && !resp.error) context = resp;
     } catch {
       // content script not injected — fall through
@@ -477,28 +430,45 @@ async function getActiveTabContext(tabId, liteMode) {
   // Path 3: executeScript fallback
   if (!context) {
     try {
-      const captureFn = liteMode
-        ? () => {
-            const text = document.body?.innerText || '';
-            return {
-              url: location.href,
-              title: document.title,
-              visibleText: text.substring(0, 2000),
-              viewport: { w: window.innerWidth, h: window.innerHeight },
-            };
+      let captureFn;
+      if (t === 0) {
+        captureFn = () => ({ url: location.href, title: document.title, viewport: { w: window.innerWidth, h: window.innerHeight } });
+      } else if (t === 1) {
+        captureFn = () => {
+          const m = document.querySelector('main, article, [role="main"], #content, .content');
+          const text = (m || document.body)?.innerText || '';
+          return { url: location.href, title: document.title, visibleText: text.substring(0, 4000), viewport: { w: window.innerWidth, h: window.innerHeight } };
+        };
+      } else {
+        captureFn = () => {
+          // Inlined selector builder (mirror of content.js buildSelector).
+          function sel(el) {
+            if (el.id) { try { return '#' + CSS.escape(el.id); } catch (e) {} }
+            if (el.name && /^(INPUT|TEXTAREA|SELECT)$/i.test(el.tagName)) return el.tagName.toLowerCase() + '[name="' + CSS.escape(el.name) + '"]';
+            let s = el.tagName.toLowerCase();
+            if (el.className && typeof el.className === 'string') { const cs = el.className.trim().split(/\s+/).filter(Boolean).slice(0, 3); if (cs.length) s += cs.map((c) => '.' + (window.CSS && CSS.escape ? CSS.escape(c) : c)).join(''); }
+            const p = el.parentElement; if (p) { const sib = Array.from(p.children).filter((x) => x.tagName === el.tagName); if (sib.length > 1) s += ':nth-of-type(' + (sib.indexOf(el) + 1) + ')'; }
+            return s;
           }
-        : () => {
-            const main = document.querySelector('main, article, [role="main"], #content, .content');
-            const body = document.body;
-            const text = (main || body)?.innerText || '';
-            const formFields = [];
-            document.querySelectorAll('input:not([type="hidden"]), textarea, select').forEach((el) => {
-              const r = el.getBoundingClientRect();
-              if (r.width === 0 || r.height === 0) return;
-              formFields.push({ tag: el.tagName.toLowerCase(), type: el.type || 'text', name: el.name || el.id || '', placeholder: el.placeholder || '' });
-            });
-            return { url: location.href, title: document.title, visibleText: text.substring(0, 8000), formFields: formFields.slice(0, 30), viewport: { w: window.innerWidth, h: window.innerHeight } };
-          };
+          const m = document.querySelector('main, article, [role="main"], #content, .content');
+          const text = (m || document.body)?.innerText || '';
+          const formFields = [];
+          document.querySelectorAll('input:not([type="hidden"]), textarea, select').forEach((el) => {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) return;
+            formFields.push({ tag: el.tagName.toLowerCase(), type: el.type || 'text', name: el.name || el.id || '', selector: sel(el), placeholder: el.placeholder || '' });
+          });
+          const clickable = [];
+          document.querySelectorAll('a, button, [role="button"], [onclick], input[type="submit"], input[type="button"]').forEach((el) => {
+            const r = el.getBoundingClientRect();
+            if (r.width < 8 || r.height < 8) return;
+            const tx = (el.textContent || el.value || '').trim().substring(0, 60);
+            if (!tx) return;
+            clickable.push({ text: tx, tag: el.tagName.toLowerCase(), selector: sel(el) });
+          });
+          return { url: location.href, title: document.title, visibleText: text.substring(0, 4000), formFields: formFields.slice(0, 30), clickable: clickable.slice(0, 50), viewport: { w: window.innerWidth, h: window.innerHeight } };
+        };
+      }
       const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: captureFn });
       context = result?.result || { error: 'Could not capture context' };
     } catch (err) {
@@ -506,8 +476,9 @@ async function getActiveTabContext(tabId, liteMode) {
     }
   }
 
-  // Capture screenshot if enabled and context is valid
-  if (context && !context.error && config.enableScreenshots !== false) {
+  // Capture screenshot only when the tier asks for it (3) and the global
+  // kill-switch hasn't disabled screenshots. Lower tiers skip the capture cost.
+  if (t >= 3 && context && !context.error && config.enableScreenshots !== false) {
     try {
       const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg' });
       context.screenshotDataUrl = dataUrl;
@@ -519,32 +490,62 @@ async function getActiveTabContext(tabId, liteMode) {
   return context;
 }
 
-// ---- Resolve which persona to use ----
-function resolvePersona(userQuery, pageContext) {
-  // If a specific persona is configured (backward compat), use it directly
-  if (config.zoPersonaId && !config.zoLitePersonaId && !config.zoFullPersonaId) {
-    return { personaId: config.zoPersonaId, intent: 'custom' };
+// ---- Prompt assembly (shared by streaming + non-streaming paths) ----
+
+/** Compact one-line serializer for a clickable element. */
+function compactEl(e) {
+  const text = (e.text || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  const t = text ? ` "${text}"` : '';
+  const sel = e.selector || '';
+  return `[${e.tag || 'a'}${t}${sel ? ' ' + sel : ''}]`;
+}
+
+/** Compact one-line serializer for a form field. */
+function compactForm(f) {
+  const ph = (f.placeholder || '').replace(/\s+/g, ' ').trim().slice(0, 30);
+  const sel = f.selector || '';
+  const ty = f.type ? ` type=${f.type}` : '';
+  const p = ph ? ` "${ph}"` : '';
+  return `[${f.tag || 'input'}${sel}${ty}${p}]`;
+}
+
+/**
+ * Build the single `input` string sent to /zo/ask. The Mode decides system
+ * prompt, instructions, how much page context (tier), the text budget, and
+ * whether to append the action protocol.
+ */
+function buildPrompt(mode, pageContext, userQuery) {
+  const parts = [
+    mode.systemPrompt,
+    '',
+    '## Page',
+    `- URL: ${safeText(pageContext.url)}`,
+    `- Title: ${safeText(pageContext.title)}`,
+    `- Viewport: ${pageContext.viewport?.w || '?'}x${pageContext.viewport?.h || '?'}`,
+  ];
+
+  if (mode.contextTier >= 1) {
+    const text = safeText(pageContext.visibleText || '—empty—').substring(0, mode.textBudget);
+    parts.push('', '## Page Content', '```', text, '```');
+  }
+  if (mode.contextTier >= 2) {
+    const els = pageContext.clickable;
+    if (Array.isArray(els) && els.length) {
+      parts.push('', '## Elements', els.slice(0, 50).map(compactEl).join(''));
+    }
+    const forms = pageContext.formFields;
+    if (Array.isArray(forms) && forms.length) {
+      parts.push('## Forms', forms.slice(0, 30).map(compactForm).join(''));
+    }
+  }
+  if (mode.contextTier >= 3 && pageContext.screenshotDataUrl) {
+    parts.push('', `## Screenshot`, `![page](${pageContext.screenshotDataUrl})`);
   }
 
-  const mode = config.personaMode || 'auto';
-
-  if (mode === 'lite') {
-    return { personaId: config.zoLitePersonaId || config.zoPersonaId || '', intent: 'lite' };
-  }
-  if (mode === 'full') {
-    return { personaId: config.zoFullPersonaId || config.zoPersonaId || '', intent: 'full' };
-  }
-
-  // Auto mode — classify
-  const intent = classifyIntent(userQuery, pageContext);
-  if (intent === 'lite' && config.zoLitePersonaId) {
-    return { personaId: config.zoLitePersonaId, intent: 'lite' };
-  }
-  if (intent === 'full' && config.zoFullPersonaId) {
-    return { personaId: config.zoFullPersonaId, intent: 'full' };
-  }
-  // Fallback: whatever's configured, or none
-  return { personaId: config.zoPersonaId || '', intent };
+  parts.push('', `## User Request`, safeText(userQuery), '');
+  parts.push(mode.instructions);
+  parts.push(mode.expectJson ? ACTION_SCHEMA_COMPACT : PLAIN_RESPONSE_HINT);
+  return parts.join('\n');
 }
 
 // ---- Streaming port handler ----
@@ -796,7 +797,7 @@ chrome.omnibox.onInputEntered.addListener(async (text, disposition) => {
   }
 });
 async function _askZoStreamImpl(port, msg) {
-  const { pageContext, userQuery, modelName, personaId, presetSystemPrompt, presetInstructions, intent } = msg;
+  const { pageContext, userQuery, modelName, personaId, modeId, customModes } = msg;
   const sid = msg.sessionId;
 
   if (!config.zoAccessToken) {
@@ -804,29 +805,13 @@ async function _askZoStreamImpl(port, msg) {
     return;
   }
 
-  // Resolve persona
-  let resolvedPersonaId = personaId;
-  let resolvedIntent = intent;
-  if (!resolvedPersonaId) {
-    const routing = resolvePersona(userQuery, pageContext);
-    resolvedPersonaId = routing.personaId;
-    resolvedIntent = routing.intent;
-  }
+  // Resolve the Mode — single source of truth for prompt + context tier.
+  const mode = resolveMode(modeId || config.zoActiveMode || DEFAULT_MODE_ID, customModes || {});
+  // Persona is now orthogonal: the dropdown chooses it, else fall back to the
+  // configured default persona id. No lite/full routing.
+  const resolvedPersonaId = personaId || config.zoPersonaId || '';
 
-  const isLite = resolvedIntent === 'lite';
-
-  const systemPrompt = presetSystemPrompt || (
-    isLite
-      ? `You are Zo — the user's browser companion. You see the page they're on. Keep responses concise and scannable.`
-      : `You are Zo — the user's AI co-browsing assistant. You see the page they're on and can control the browser.`
-  );
-  const instructions = presetInstructions || (
-    isLite
-      ? `## Instructions\nRespond conversationally and concisely. Answer based on the page content provided below. No actions needed — just respond with helpful text formatted as plain markdown.`
-      : `## Instructions\nThink step by step about what actions to take, then respond with a valid JSON object.\n\n{\n  "reasoning": "your step-by-step thinking",\n  "actions": [\n    {\n      "type": "navigate" | "click" | "fill" | "extract" | "scroll" | "wait" | "done",\n      // For navigate: { "url": "..." }\n      // For click/extract: { "selector": "css-selector" }\n      // For fill: { "selector": "css-selector", "value": "text to type" }\n      // For extract: { "selector": "css-selector", "attribute": "textContent|href|src|..." }\n      // For scroll: { "direction": "up"|"down", "amount": 300 }\n      // For wait: { "ms": 1000 }\n      // For done: { "response": "summary of what happened / answer for user" }\n    }\n  ]\n}`
-  );
-
-  const prompt = `${systemPrompt}\n\n## Current Page\n- **URL:** ${pageContext.url}\n- **Title:** ${pageContext.title}\n- **Viewport:** ${pageContext.viewport?.w || '?'}x${pageContext.viewport?.h || '?'}\n\n## Page Content (visible text)\n\`\`\`\n${(pageContext.visibleText || '—empty—').substring(0, isLite ? 2000 : 4000)}\n\`\`\`\n${pageContext.formFields ? `\n## Interactive Elements\n${JSON.stringify(pageContext.formFields || [], null, 2)}\n` : ''}${pageContext.screenshotDataUrl ? `\n\n## Page Screenshot\n![Current page](${pageContext.screenshotDataUrl})` : ''}\n\n## User Request\n${userQuery}\n\n  ${instructions}`;
+  const prompt = buildPrompt(mode, pageContext, userQuery);
 
   try {
     const response = await fetch(config.zoApiUrl, {
@@ -862,7 +847,7 @@ async function _askZoStreamImpl(port, msg) {
       try {
         const data = await response.json();
         if (data.conversation_id) { zoConversationId = data.conversation_id; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
-        finishStream(port, sid, data.output || '', resolvedIntent);
+        finishStream(port, sid, data.output || '');
       } catch (e) {
         safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: `Non-streaming parse error: ${e.message}` });
       }
@@ -922,7 +907,7 @@ async function _askZoStreamImpl(port, msg) {
                 }
               } catch {}
             }
-            finishStream(port, sid, fullText, resolvedIntent);
+            finishStream(port, sid, fullText);
             currentEventType = '';
             return;
           }
@@ -958,13 +943,13 @@ async function _askZoStreamImpl(port, msg) {
             if (parsed.done || parsed.finish_reason || parsed.type === 'final' || parsed.type === 'complete' || parsed.type === 'End') {
               if (parsed.output && !fullText) fullText = safeText(parsed.output);
               else if (parsed.type === 'End' && parsed.reasoning && !fullText) fullText = safeText(parsed);
-              finishStream(port, sid, fullText, resolvedIntent);
+              finishStream(port, sid, fullText);
               return;
             }
           } catch {
             // Plain text SSE (e.g. [DONE])
             if (data === '[DONE]') {
-              finishStream(port, sid, fullText, resolvedIntent);
+              finishStream(port, sid, fullText);
               return;
             }
             fullText += safeText(data);
@@ -975,14 +960,14 @@ async function _askZoStreamImpl(port, msg) {
     }
 
     // Stream ended (no End event received — graceful fallback)
-    finishStream(port, sid, fullText, resolvedIntent);
+    finishStream(port, sid, fullText);
   } catch (err) {
     safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: `Connection failed: ${err.message}` });
     throw err; // let the retry wrapper decide
   }
 }
 
-function finishStream(port, sid, output, intent) {
+function finishStream(port, sid, output) {
   let reasoning = '';
   let actions = [];
   let rawOutput = '';
@@ -1030,35 +1015,16 @@ function finishStream(port, sid, output, intent) {
   });
 }
 
-async function askZo(pageContext, userQuery, modelName, personaId, presetSystemPrompt, presetInstructions, intent) {
+async function askZo(pageContext, userQuery, modelName, personaId, modeId, customModes) {
   if (!config.zoAccessToken) {
     return { error: '❌ Zo access token not configured. Open extension settings to set it up.' };
   }
 
-  // Resolve persona
-  let resolvedPersonaId = personaId;
-  let resolvedIntent = intent;
-  if (!resolvedPersonaId) {
-    const routing = resolvePersona(userQuery, pageContext);
-    resolvedPersonaId = routing.personaId;
-    resolvedIntent = routing.intent;
-  }
+  // Resolve the Mode — single source of truth for prompt + context tier.
+  const mode = resolveMode(modeId || config.zoActiveMode || DEFAULT_MODE_ID, customModes || {});
+  const resolvedPersonaId = personaId || config.zoPersonaId || '';
 
-  const isLite = resolvedIntent === 'lite';
-
-  // Use preset prompts or persona-specific defaults
-  const systemPrompt = presetSystemPrompt || (
-    isLite
-      ? `You are Zo — the user's browser companion. You see the page they're on. Keep responses concise and scannable.`
-      : `You are Zo — the user's AI co-browsing assistant. You see the page they're on and can control the browser.`
-  );
-  const instructions = presetInstructions || (
-    isLite
-      ? `## Instructions\nRespond conversationally and concisely. Answer based on the page content provided below. No actions needed — just respond with helpful text formatted as plain markdown.`
-      : `## Instructions\nThink step by step about what actions to take, then respond with a valid JSON object.\n\n{\n  "reasoning": "your step-by-step thinking",\n  "actions": [\n    {\n      "type": "navigate" | "click" | "fill" | "extract" | "scroll" | "wait" | "done",\n      // For navigate: { "url": "..." }\n      // For click/extract: { "selector": "css-selector" }\n      // For fill: { "selector": "css-selector", "value": "text to type" }\n      // For extract: { "selector": "css-selector", "attribute": "textContent|href|src|..." }\n      // For scroll: { "direction": "up"|"down", "amount": 300 }\n      // For wait: { "ms": 1000 }\n      // For done: { "response": "summary of what happened / answer for user" }\n    }\n  ]\n}`
-  );
-
-  const prompt = `${systemPrompt}\n\n## Current Page\n- **URL:** ${pageContext.url}\n- **Title:** ${pageContext.title}\n- **Viewport:** ${pageContext.viewport?.w || '?'}x${pageContext.viewport?.h || '?'}\n\n## Page Content (visible text)\n\`\`\`\n${(pageContext.visibleText || '—empty—').substring(0, isLite ? 2000 : 4000)}\n\`\`\`\n${pageContext.formFields ? `\n## Interactive Elements\n${JSON.stringify(pageContext.formFields || [], null, 2)}\n` : ''}${pageContext.screenshotDataUrl ? `\n\n## Page Screenshot\n![Current page](${pageContext.screenshotDataUrl})` : ''}\n\n## User Request\n${userQuery}\n\n  ${instructions}`;
+  const prompt = buildPrompt(mode, pageContext, userQuery);
 
   try {
     const response = await fetch(config.zoApiUrl, {
@@ -1085,7 +1051,7 @@ async function askZo(pageContext, userQuery, modelName, personaId, presetSystemP
 
     const data = await response.json();
     if (data.conversation_id) { zoConversationId = data.conversation_id; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
-    return { success: true, output: data.output, intent: resolvedIntent };
+    return { success: true, output: data.output };
   } catch (err) {
     return { error: `Connection failed: ${err.message}` };
   }
@@ -1131,7 +1097,7 @@ async function listPersonas() {
 }
 
 
-async function generatePreset(description) {
+async function generateMode(description) {
   if (!config.zoAccessToken) {
     return { error: 'No token' };
   }
@@ -1144,7 +1110,7 @@ async function generatePreset(description) {
         Accept: 'application/json',
       },
       body: JSON.stringify({
-        input: `You are a preset designer for a browser co-browsing AI assistant. Based on this user description, generate a preset configuration.\n\nUser description: ${description}\n\nCreate a preset with:\n1. name: A short, catchy name (2-4 words)\n2. description: One sentence explaining what this preset does\n3. systemPrompt: A paragraph setting the AI's role and behavior for this task (write as if addressing the AI directly, starting with \"You are Zo —\")\n4. instructions: Detailed instructions for how the AI should respond, including output format guidance. Include the JSON schema for actions.\n\nReturn ONLY valid JSON with these 4 fields. No markdown, no explanation.`,
+        input: `You are a Mode designer for a browser co-browsing AI assistant. Based on this user description, generate a custom Mode.\n\nUser description: ${description}\n\nCreate a Mode with these fields:\n1. name: A short, catchy name (2-4 words)\n2. description: One sentence explaining what this Mode does\n3. icon: A single emoji\n4. systemPrompt: A paragraph setting the AI's role and behavior for this task (write as if addressing the AI directly, starting with "You are Zo —")\n5. instructions: Detailed instructions for how the AI should respond, including output format guidance.\n6. contextTier: 0 (URL only), 1 (+page text), 2 (+clickable elements & form fields), or 3 (+screenshot)\n7. expectJson: true if the mode should drive browser actions, false if it should reply with plain markdown\n\nReturn ONLY valid JSON with those 7 fields. No markdown, no explanation.`,
         model_name: config.zoModel || undefined,
       }),
     });
@@ -1155,8 +1121,11 @@ async function generatePreset(description) {
     const data = await r.json();
     const output = data.output;
     try {
-      const preset = JSON.parse(output);
-      return { success: true, preset: { ...preset, isBuiltin: false, createdAt: Date.now() } };
+      const raw = JSON.parse(output);
+      // Backfill to a full Mode via the shared normalizer (presetToMode handles
+      // sparse objects and fills tier/budget/expectJson defaults).
+      const mode = presetToMode(raw);
+      return { success: true, mode: { ...mode, createdAt: Date.now() } };
     } catch {
       return { error: 'Failed to parse Zo response as JSON' };
     }

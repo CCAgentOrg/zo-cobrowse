@@ -46,10 +46,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const modelStatus = document.getElementById('model-status');
   const themeSelect = document.getElementById(OPTIONS_THEME_SELECTOR);
 
-  // Persona routing fields
-  const litePersonaSelect = document.getElementById('lite-persona-select');
-  const fullPersonaSelect = document.getElementById('full-persona-select');
-  const personaModeSelect = document.getElementById('persona-mode');
+  // Persona field (the Mode is chosen in the side panel; here we only pin the
+  // default persona that executes requests).
+  const personaSelect = document.getElementById('persona-select');
 
   // Theme selector
   if (themeSelect) {
@@ -92,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load config — sensitive fields from storage.local, rest from storage.sync
   chrome.storage.local.get(['zoAccessToken', 'zoSpaceEndpoint'], (localResult) => {
     chrome.storage.sync.get([
-      'zoModel', 'zoPersonaId', 'zoLitePersonaId', 'zoFullPersonaId', 'personaMode',
+      'zoModel', 'zoPersonaId',
       'zoQuickActions',
       'zoTtsLang', 'zoTtsRate', 'zoTtsAutoRead', 'enabledMenus', 'enableScreenshots'
     ], (syncResult) => {
@@ -101,17 +100,14 @@ document.addEventListener('DOMContentLoaded', () => {
       if (token) tokenInput.value = token;
       if (spaceEndpoint) spaceEndpointInput.value = spaceEndpoint;
 
-      // Persona routing — load both personas with backward compat
-      const liteId = syncResult.zoLitePersonaId || syncResult.zoPersonaId || '';
-      const fullId = syncResult.zoFullPersonaId || syncResult.zoPersonaId || '';
-      litePersonaSelect.value = liteId;
-      fullPersonaSelect.value = fullId;
-      if (syncResult.personaMode) personaModeSelect.value = syncResult.personaMode;
+      // Persona — single default; the side panel's Mode selector does the routing.
+      const personaId = syncResult.zoPersonaId || '';
+      personaSelect.value = personaId;
 
       quickActions = syncResult.zoQuickActions || [];
       renderQuickActionsEditor();
       if (token) populateModels(token, syncResult.zoModel);
-      if (token) populatePersonas(token, litePersonaSelect, fullPersonaSelect, liteId, fullId);
+      if (token) populatePersonas(token, personaSelect, personaId);
 
       // Restore TTS fields
       const langInput = document.getElementById('tts-lang');
@@ -186,10 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Non-sensitive config stays in storage.sync
       chrome.storage.sync.set({
         zoModel: getModelValue(),
-        zoPersonaId: litePersonaSelect.value,
-        zoLitePersonaId: litePersonaSelect.value,
-        zoFullPersonaId: fullPersonaSelect.value,
-        personaMode: personaModeSelect.value,
+        zoPersonaId: personaSelect.value,
         zoQuickActions: quickActions,
         zoTtsLang: (document.getElementById('tts-lang')?.value || 'en-US').trim(),
         zoTtsRate: (document.getElementById('tts-rate')?.value || '1.0').trim(),
@@ -261,7 +254,7 @@ document.addEventListener('DOMContentLoaded', () => {
     resetBtn.addEventListener('click', () => {
       if (!confirm('Reset all Zo Co-browse settings to defaults? This clears your token, endpoint, model, and preferences on this device.')) return;
       // Sensitive (local) + non-sensitive (sync) keys are cleared together.
-      const syncKeys = ['zoModel', 'zoPersonaId', 'zoLitePersonaId', 'zoFullPersonaId', 'personaMode', 'zoQuickActions', 'zoTtsLang', 'zoTtsRate', 'zoTtsAutoRead', 'enabledMenus', 'enableScreenshots', 'cobrowse_theme'];
+      const syncKeys = ['zoModel', 'zoPersonaId', 'zoActiveMode', 'zoQuickActions', 'zoTtsLang', 'zoTtsRate', 'zoTtsAutoRead', 'enabledMenus', 'enableScreenshots', 'cobrowse_theme'];
       const localKeys = ['zoAccessToken', 'zoSpaceEndpoint'];
       Promise.all([
         new Promise((r) => chrome.storage.sync.remove(syncKeys, r)),
@@ -317,7 +310,7 @@ async function populateModels(token, currentValue) {
   }
 }
 
-async function populatePersonas(token, liteSelect, fullSelect, liteId, fullId) {
+async function populatePersonas(token, select, personaId) {
   try {
     const r = await fetch('https://api.zo.computer/personas/available', {
       headers: { Authorization: `Bearer ${token}` },
@@ -325,16 +318,13 @@ async function populatePersonas(token, liteSelect, fullSelect, liteId, fullId) {
     if (!r.ok) return;
     const data = await r.json();
     if (!data.personas?.length) return;
-    liteSelect.innerHTML = '<option value="">Zo (default)</option>';
-    fullSelect.innerHTML = '<option value="">Zo (default)</option>';
+    select.innerHTML = '<option value="">— Zo (default) —</option>';
     for (const p of data.personas) {
       const opt = document.createElement('option');
       opt.value = p.id || '';
       opt.textContent = p.name || p.id || '';
-      liteSelect.appendChild(opt);
-      fullSelect.appendChild(opt.cloneNode(true));
+      select.appendChild(opt);
     }
-    liteSelect.value = liteId;
-    fullSelect.value = fullId;
+    select.value = personaId;
   } catch { /* ignore */ }
 }

@@ -75,6 +75,18 @@ Every extension JS file (`background.js`, `sidepanel.js`, `content.js`, `options
 | P3-32 | Last fire-and-forget `storage.session.set` without `.catch` | Added `.catch` | `e036b81` |
 | P3-33 | Unused icons (`icon32`, `icon256`) | Harmless; left as-is. `debugger` permission privacy note: it's required for the CDP eval fast-path and Chrome shows a standard "is being debugged" banner. |
 
+### Feature — Thinking/reasoning bubble ✅ shipped
+The `reasoning` field Zo returns alongside `actions` was flowing end-to-end (`background.js:finishStream` → `STREAM_DONE.reasoning` → sidepanel) but was invisible for text-only `done` responses — only surfaced truncated-to-200-chars in the `#actions-reasoning` in-action status bar when DOM actions ran.
+
+| Aspect | Implementation |
+|--------|----------------|
+| Rendering | New `addReasoningBubble(parentMsgEl, reasoning)` in sidepanel.js — a collapsible "💭 Thinking" bubble (collapsed by default, click to expand), inserted above the assistant `.msg-body`. Rendered through `markdownToHtml` + `safeText` (same text-safety path as assistant messages). |
+| Coverage | Hooked into all three assistant-finalize paths: streaming `STREAM_DONE` (live `msgEl`), the no-chunks `STREAM_DONE` fallback, the inactive-session late-DONE fallback, and the non-streaming `askZo()` fallback. |
+| Persistence | Reasoning persisted with the assistant message (`{role, text, reasoning, timestamp}`) in both streaming and non-streaming write paths; re-rendered from history in `renderMessages` and `switchToConversation`. |
+| Graceful degradation | `addReasoningBubble` no-ops on empty/whitespace reasoning, so `ask`/`visual` modes (`expectJson:false`, which don't request a `reasoning` field) are unaffected. Old history without `reasoning` is unaffected. |
+| Tests | `tests/sidepanel.test.ts` (8 source-containment assertions for the helper, CSS, persistence field, history re-render) + `tests/sse-parsing.test.ts` (3 vm-extraction tests confirming `reasoning` survives `finishStream` into `STREAM_DONE` for object/JSON-string output, plus the `safePost` dead-port contract). |
+| Not changed | No new `STREAM_REASONING` incremental-stream type — reasoning arrives only in the final `STREAM_DONE`. The existing `#actions-reasoning` in-action status bar is left as-is (different purpose: in-action status during DOM execution). |
+
 ---
 
 ## Streaming support — current architecture (verified)

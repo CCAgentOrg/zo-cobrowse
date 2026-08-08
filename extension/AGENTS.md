@@ -198,16 +198,17 @@ Background SW → `chrome.scripting.executeScript` → (fallback if content scri
 - **`output_format`** in `/zo/ask` doesn't support `array` property types — we prompt for JSON and parse from text. This means the model sometimes returns plain text instead of structured JSON, and the sidepanel handles both.
 - **Content script injection** happens at `document_idle`. On freshly opened tabs, the content script may not be loaded yet when the side panel first queries — the fallback path handles this.
 - **Storage**: `chrome.storage.sync` for config (survives profile sync); `chrome.storage.local` for history (too large for sync, capped at 50 entries).
-## Presets system (2026-07-05)
 
-- Built-in presets (Research Deep-dive, Summarizer, Q&A, Data Extraction) are defined in `sidepanel.js` as `BUILTIN_PRESETS`
-- Custom presets stored in `chrome.storage.local` under `cobrowse_presets`
-- Each preset has: `name`, `description`, `systemPrompt`, `instructions`
-- `systemPrompt` replaces the default co-browsing system prompt
-- `instructions` replaces the default JSON action schema instructions
-- "Create Preset" button (`#create-preset-btn`) sends a `GENERATE_PRESET` message to background, which calls Zo to generate a preset from a user description
-- `GENERATE_PRESET` message type + `generatePreset()` in background.js
-- `presetSystemPrompt` and `presetInstructions` are passed through `ASK_ZO` to `askZo()`
-- Presets are loaded on init via `loadPresets()`
-- Presets show in a dropdown with a separator between built-in and custom
-- Built-in presets have `deleteBtn` hidden; custom presets can be deleted
+## Mode system (replaces presets + personaMode + intent routing)
+
+A **Mode** is the single source of truth for how Zo behaves on a request. It bundles the system prompt, instructions, how much page context to send (a **context tier**), the text budget, and whether the response should be JSON actions or plain markdown.
+
+- **Built-in Modes** (`cobrowse`, `ask`, `research`, `summarize`, `extract`, `visual`) are defined in `extension/lib/modes.js` as `BUILTIN_MODES` (pure ES module, unit-tested via `tests/modes.test.ts`). Each Mode has: `id`, `name`, `icon`, `systemPrompt`, `instructions`, `contextTier` (0–3), `textBudget`, `expectJson`, `builtin`.
+- **Custom Modes** stored in `chrome.storage.local` under `cobrowse_modes`; active Mode id persisted in `chrome.storage.sync` under `zoActiveMode`.
+- **Context tiers**: 0 = URL/title/viewport only · 1 = +visibleText (sliced to `textBudget`) · 2 = +compact clickable + form-field list **with selectors** · 3 = +screenshot. Tier is fixed per-Mode and passed to `getActiveTabContext(tabId, tier, modeId)`, which gates capture cost accordingly.
+- **Compact action schema** (`ACTION_SCHEMA_COMPACT` in modes.js): one line, shipped only when `expectJson` is true — replaces the old ~130-token commented JSON block.
+- **Prompt assembly** is a single helper `buildPrompt(mode, pageContext, userQuery)` in background.js — no more duplicated template in two places.
+- The `✦` button (`#create-mode-btn`) sends `GENERATE_MODE` → `generateMode()` in background.js, which calls Zo and backfills the result via `presetToMode()`.
+- Bang commands (`!summarize`, `!extract`, `!research`, `!qa`/`!ask`) resolve to a `mode` field (not `preset`) that overrides the active Mode for a single turn.
+- **Migration**: legacy `cobrowse_presets` → `cobrowse_modes` (via `presetToMode`), legacy `zoActivePreset` → `zoActiveMode` (with `scrape`→`extract`, `qa`→`ask` id remapping), legacy `personaMode`/`zoLitePersonaId`/`zoFullPersonaId` keys left in place but unread after migration.
+- **Deleted** (replaced by Modes): `classifyIntent`, `LITE_KEYWORDS`/`FULL_KEYWORDS`, `resolvePersona`, `personaMode` badge + `cyclePersonaMode`, the `isLite ? 2000 : 4000` truncation branch, the `presetSystemPrompt`/`presetInstructions`/`intent` fields on `ASK_ZO`.

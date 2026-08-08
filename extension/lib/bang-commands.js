@@ -3,49 +3,49 @@
 
 export const BANG_COMMANDS = {
   summarize: {
-    preset: 'summarize',
+    mode: 'summarize',
     label: 'Summarize',
     desc: 'Condense the page into a concise summary',
     buildQuery: () => 'Summarize this page concisely.',
   },
   extract: {
-    preset: 'scrape',
+    mode: 'extract',
     label: 'Extract',
     desc: 'Extract structured data (tables, lists, contacts, prices)',
     buildQuery: (args) => args ? `Extract ${args} from this page as structured data.` : 'Extract all structured data from this page.',
   },
   research: {
-    preset: 'research',
+    mode: 'research',
     label: 'Research',
     desc: 'Deep research on the page topic',
     buildQuery: (args) => args ? `Do deep research on: ${args}` : 'Do deep research on this page topic.',
   },
   qa: {
-    preset: 'qa',
+    mode: 'ask',
     label: 'Q&A',
     desc: 'Answer a specific question about the page',
     buildQuery: (args) => args || 'What is this page about?',
   },
   ask: {
-    preset: 'qa',
+    mode: 'ask',
     label: 'Ask',
     desc: 'Alias for !qa',
     buildQuery: (args) => args || 'What is this page about?',
   },
   fill: {
-    preset: null,
+    mode: null,
     label: 'Fill',
     desc: 'Ask Zo to fill editable fields on the page',
     buildQuery: (args) => args ? `Fill the form on this page: ${args}` : 'Fill the editable form fields on this page with reasonable test data.',
   },
   skills: {
-    preset: null,
+    mode: null,
     label: 'Skills',
     desc: 'List available Zo skills',
     buildQuery: () => 'List all your available skills. For each skill, give me its name and a one-line description of what it does. Format as a bulleted list.',
   },
   skill: {
-    preset: null,
+    mode: null,
     label: 'Run Skill',
     desc: 'Run a Zo skill on the current page (e.g., !skill cc-awareness-video)',
     buildQuery: (args) => args
@@ -53,14 +53,14 @@ export const BANG_COMMANDS = {
       : 'Please specify a skill name. Type `!skills` to see available skills.',
   },
   autos: {
-    preset: null,
+    mode: null,
     label: 'Automations',
     desc: 'List your scheduled Zo automations',
     buildQuery: () => 'List all my scheduled automations with their titles, schedules, and delivery methods.',
   },
 };
 
-// Returns { handled, query, preset } or { handled: false }
+// Returns { handled, query, mode } or { handled: false }
 // If handled is true but query is null, the command produced an inline reply
 // (e.g. !help) and sendQuery should abort after showing it.
 export function parseBangCommand(rawQuery) {
@@ -124,6 +124,6 @@ export function parseBangCommand(rawQuery) {
   return {
     handled: true, kind: 'command',
     query: cmd.buildQuery(args),
-    preset: cmd.preset, // may be null for non-preset commands like !fill
+    mode: cmd.mode, // may be null for non-mode commands like !fill
   };
 }

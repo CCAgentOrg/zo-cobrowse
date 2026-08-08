@@ -83,7 +83,7 @@ describe("parseBangCommand — schema conformance", () => {
     }
   });
 
-  it("every registered bang command resolves to a query + preset", () => {
+  it("every registered bang command resolves to a query + mode", () => {
     for (const name of Object.keys(BANG_COMMANDS)) {
       const r = parse(`!${name}`);
       expect(r.handled).toBe(true);
@@ -108,12 +108,12 @@ describe("parseBangCommand — schema conformance", () => {
     if ("query" in r3) expect(r3.query).toContain("cc-awareness-video");
   });
 
-  it("preset field is either null or a known preset name", () => {
-    const knownPresets = ["summarize", "scrape", "research", "qa"];
+  it("mode field is either null or a known Mode id", () => {
+    const knownModes = ["summarize", "extract", "research", "ask"];
     for (const name of Object.keys(BANG_COMMANDS)) {
       const r = parse(`!${name}`);
-      if ("preset" in r) {
-        expect(r.preset === null || knownPresets.includes(r.preset)).toBe(true);
+      if ("mode" in r) {
+        expect(r.mode === null || knownModes.includes(r.mode)).toBe(true);
       }
     }
   });

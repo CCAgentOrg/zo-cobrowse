@@ -535,7 +535,7 @@ input, textarea, select {
   border-color: var(--amber);
   box-shadow: 0 0 0 2px var(--amber-glow);
 }
-.controls-bar .create-preset-btn {
+.controls-bar .create-mode-btn {
   font-size: 14px;
   width: 24px;
   height: 24px;
@@ -620,6 +620,8 @@ input, textarea, select {
 
 .msg-assistant {
   justify-content: flex-start;
+  flex-wrap: wrap;
+  align-items: flex-start;
 }
 .msg-assistant .msg-body {
   background: var(--bg-surface);
@@ -651,6 +653,61 @@ input, textarea, select {
   font-style: italic;
   font-size: 12px;
 }
+
+/* ── Collapsible reasoning ("thinking") bubble above assistant messages ── */
+.msg-thinking-bubble {
+  flex: 1 0 100%;        /* take the full row → wraps to its own line above .msg-body */
+  margin-bottom: 6px;
+  padding: 4px 0 4px 10px;
+  border-left: 2px solid var(--border-soft);
+  opacity: 0.9;
+}
+.thinking-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: inherit;
+}
+.thinking-toggle:hover {
+  color: var(--text);
+}
+.thinking-toggle:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+.thinking-caret {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+  transition: transform 0.15s ease;
+  color: var(--text-faint);
+}
+.thinking-toggle[aria-expanded="true"] .thinking-caret {
+  transform: rotate(90deg);
+}
+.thinking-label {
+  font-weight: 500;
+}
+.thinking-content {
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  font-style: italic;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+.thinking-content p { margin-bottom: 6px; }
+.thinking-content p:last-child { margin-bottom: 0; }
+.thinking-content[hidden] { display: none; }
 
 .msg-reconnecting {
   justify-content: flex-start;
@@ -1362,42 +1419,6 @@ body.options-page {
   .toolbar { padding: 4px 8px; }
   .toolbar-select { max-width: 80px; }
   .msg { max-width: 100%; }
-}
-/* ── Persona Routing Badge ── */
-.routing-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-size: 10px;
-  font-weight: 600;
-  cursor: pointer;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-soft);
-  color: var(--text-muted);
-  white-space: nowrap;
-  transition: all 0.15s;
-  user-select: none;
-}
-.routing-badge:hover {
-  border-color: var(--amber);
-  color: var(--text);
-}
-.routing-badge.lite {
-  background: color-mix(in srgb, var(--indigo) 15%, transparent);
-  border-color: var(--indigo);
-  color: var(--indigo);
-}
-.routing-badge.full {
-  background: color-mix(in srgb, var(--amber) 15%, transparent);
-  border-color: var(--amber);
-  color: var(--amber);
-}
-.routing-badge.auto {
-  background: color-mix(in srgb, var(--text-faint) 10%, transparent);
-  border-color: var(--border);
-  color: var(--text-muted);
 }
 
 /* ── Onboarding ── */

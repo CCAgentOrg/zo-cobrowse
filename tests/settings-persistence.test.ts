@@ -13,12 +13,10 @@ const FULL_CONFIG = {
   zoAccessToken: "test-token-123",
   zoModel: "zo-default",
   zoPersonaId: "",
-  zoLitePersonaId: "",
-  zoFullPersonaId: "",
+  zoActiveMode: "cobrowse",
   zoSpaceEndpoint: "https://cashlessconsumer.zo.space",
   enableScreenshots: true,
   enableVision: true,
-  personaMode: "auto",
   enabledMenus: {},
   zoQuickActions: null,
 };
@@ -26,7 +24,7 @@ const FULL_CONFIG = {
 const DEFAULT_CONFIG = {
   zoApiUrl: "",
   zoModel: "",
-  personaMode: "auto",
+  zoActiveMode: "cobrowse",
 };
 
 describe("config schema", () => {

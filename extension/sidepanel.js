@@ -1,6 +1,7 @@
 // Zo Co-browse — Side Panel Logic
 
 import { parseBangCommand, BANG_COMMANDS } from './lib/bang-commands.js';
+import { BUILTIN_MODES, DEFAULT_MODE_ID, resolveMode, presetToMode } from './lib/modes.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -41,7 +42,8 @@ function safeText(v) {
 
 const STORAGE_CONVERSATIONS_KEY = 'cobrowse_convos';
 const STORAGE_ACTIVE_KEY = 'cobrowse_active_id';
-const STORAGE_PRESETS_KEY = 'cobrowse_presets';
+const STORAGE_MODES_KEY = 'cobrowse_modes';
+const STORAGE_LEGACY_PRESETS_KEY = 'cobrowse_presets'; // migrated once, then ignored
 const STORAGE_ACTIONS_KEY = 'zoQuickActions';
 
 // ---- Theme ----
@@ -126,6 +128,7 @@ let config = { hasToken: false };
 let conversations = {};     // all conversations keyed by id
 let activeId = null;        // current conversation id
 let pendingActions = null;
+let pendingActionsReasoning = '';   // reasoning to attach to the done-answer bubble
 let currentContext = null;
 let actionRunning = false;
 let isHistoryView = false;
@@ -164,78 +167,16 @@ const chatView = $('#chat-view');
 const historyViewEl = $('#history-view');
 const historyList = $('#history-list');
 const backToChatBtn = $('#back-to-chat-btn');
-const presetSelect = $('#preset-select');
-const createPresetBtn = $('#create-preset-btn');
+const modeSelect = $('#mode-select');
+const createModeBtn = $('#create-mode-btn');
 
-// ---- Presets ----
-// Built-in presets
-const BUILTIN_PRESETS = {
-  research: {
-    name: 'Research Deep-dive',
-    description: 'Deep research on a topic — extract facts, data, and sources from the page',
-    systemPrompt: "You are Zo — the user's AI research assistant. Your job is to deeply analyze the current page, extract key facts, data points, sources, and insights. Be thorough and cite specific content from the page.",
-    instructions: `## Instructions
-Analyze the page content in depth. Extract: key claims, data/statistics, named entities, sources cited, dates, and any contradictions. Organize your response with clear headings.
+// ---- Modes ----
+// Built-in Modes live in extension/lib/modes.js (imported as BUILTIN_MODES).
+// Custom Modes are user-generated via the ✦ button and stored under
+// STORAGE_MODES_KEY. The active Mode id is persisted under 'zoActiveMode'.
 
-Respond with a valid JSON object:
-{
-  "reasoning": "your analysis process",
-  "actions": [
-    { "type": "extract", "selector": "body", "attribute": "textContent" },
-    { "type": "done", "response": "structured findings markdown" }
-  ]
-}`
-  },
-  summarize: {
-    name: 'Summarizer',
-    description: 'Condense the page into a concise, scannable summary',
-    systemPrompt: "You are Zo — the user's summarization assistant. Condense the page into its essential points. Be concise, objective, and organized.",
-    instructions: `## Instructions
-Produce a concise summary in 3-5 bullet points or a short paragraph. Capture the main argument, key evidence, and conclusion. No fluff.
-
-Respond with a valid JSON object:
-{
-  "reasoning": "what the page is about",
-  "actions": [
-    { "type": "done", "response": "your summary here" }
-  ]
-}`
-  },
-  qa: {
-    name: 'Q&A',
-    description: 'Answer specific questions about the page content',
-    systemPrompt: "You are Zo — answering questions about the current page. Base your answers strictly on page content. When the information is not on the page, say so clearly.",
-    instructions: `## Instructions
-Answer the user's question using only content visible on the current page. If the answer isn't on the page, state that clearly. Quote relevant passages when helpful.
-
-Respond with a valid JSON object:
-{
-  "reasoning": "how you found the answer",
-  "actions": [
-    { "type": "done", "response": "your answer here" }
-  ]
-}`
-  },
-  scrape: {
-    name: 'Data Extraction',
-    description: 'Extract structured data (tables, lists, contacts, prices) from the page',
-    systemPrompt: "You are Zo — the user's data extraction assistant. Extract structured data from the current page. Output clean, machine-readable data in tables or JSON format.",
-    instructions: `## Instructions
-Extract all structured data from the page: tables, lists, contact info, prices, dates, links. Format as markdown tables or JSON where appropriate. Be exhaustive — include everything.
-
-Respond with a valid JSON object:
-{
-  "reasoning": "what data was found",
-  "actions": [
-    { "type": "extract", "selector": "table, ul, ol, dl", "attribute": "textContent" },
-    { "type": "done", "response": "structured data output" }
-  ]
-}`
-  }
-};
-
-let customPresets = {};
-let activePreset = null;
+let customModes = {};
+let activeModeId = DEFAULT_MODE_ID;
 
 
 // ---- Init ----
@@ -260,7 +201,7 @@ async function finishInit() {
     await migrateOldFormat();
     await loadConversations();
     await fetchModelsAndPersonas();
-    await loadPresets();
+    await loadModes();
     await loadQuickActions();
     await loadTtsConfig();
     connectStreamingPort();
@@ -308,11 +249,16 @@ async function checkPendingQuery() {
 async function loadConfig() {
   const resp = await chrome.runtime.sendMessage({ type: 'GET_CONFIG' });
   if (resp) config = resp;
-  // Also load personaMode directly from storage for sync
-  const saved = await chrome.storage.sync.get(['personaMode', 'zoPersonaId']);
-  if (saved.personaMode) config.personaMode = saved.personaMode;
+  // The active Mode + persona are sourced directly from storage so the panel
+  // stays in sync with options.js across reloads.
+  const saved = await chrome.storage.sync.get(['zoActiveMode', 'zoPersonaId']);
   if (saved.zoPersonaId) config.selectedPersona = saved.zoPersonaId;
-  updateRoutingBadge();
+  syncModeSelect();
+}
+
+// Reflect activeModeId into the #mode-select dropdown.
+function syncModeSelect() {
+  if (modeSelect) modeSelect.value = activeModeId;
 }
 
 // ---- Onboarding ----
@@ -401,39 +347,6 @@ async function completeOnboarding() {
   const msg = '🎉 **Onboarding complete!** Try asking Zo something about this page.';
   addMessage('assistant', msg);
 }
-const MODE_LABELS = {
-  auto: '◐ Auto',
-  lite: '☾ Lite',
-  full: '⚡ Full',
-};
-
-const MODE_CYCLE = ['auto', 'lite', 'full'];
-
-function updateRoutingBadge() {
-  const badge = document.getElementById('routing-badge');
-  if (!badge) return;
-  // Normalize: unknown/legacy mode values fall back to 'auto' so the badge
-  // never shows undefined.
-  const raw = config.personaMode || 'auto';
-  const mode = MODE_LABELS[raw] ? raw : 'auto';
-  badge.textContent = MODE_LABELS[mode];
-  badge.className = 'routing-badge ' + mode;
-}
-
-function cyclePersonaMode() {
-  const current = config.personaMode || 'auto';
-  const idx = MODE_CYCLE.indexOf(current);
-  const next = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
-  config.personaMode = next;
-  chrome.storage.sync.set({ personaMode: next });
-  updateRoutingBadge();
-  // Show system message
-  const msg = next === 'auto' ? '◐ Auto mode — Zo classifies each query as Lite or Full'
-    : next === 'lite' ? '☾ Lite mode — page-only, no tool access'
-    : '⚡ Full mode — Zo has full access to files, data, skills';
-  addSystemMessage(`🔄 Persona: ${msg}`);
-}
-
 function updateStatus(connected) {
   statusDot.className = `dot ${connected ? 'dot-connected' : 'dot-disconnected'}`;
   statusDot.title = connected ? 'Zo connected' : 'Not configured — open settings';
@@ -461,14 +374,6 @@ function bindEvents() {
     micBtn.addEventListener('click', () => { startRecording(); });
   }
 
-  // Routing badge — click to cycle persona mode
-  const routingBadge = document.getElementById('routing-badge');
-  if (routingBadge) {
-    routingBadge.addEventListener('click', () => {
-      cyclePersonaMode();
-    });
-  }
-
   // Chips (event delegation for dynamically rendered chips)
   const chipsContainer = $('#action-chips');
   if (chipsContainer) {
@@ -481,9 +386,9 @@ function bindEvents() {
     });
   }
 
-  // Preset selection
-  presetSelect.addEventListener('change', applyPreset);
-  createPresetBtn.addEventListener('click', startPresetCreation);
+  // Mode selection — the single source of truth for how Zo behaves + context.
+  modeSelect.addEventListener('change', applyMode);
+  createModeBtn.addEventListener('click', startModeCreation);
 
   // Theme toggle
   const themeToggle = $('#theme-toggle');
@@ -635,7 +540,8 @@ function renderCurrentConversation() {
     return;
   }
   for (const msg of conv.messages) {
-    addMessageDOM(msg.role, msg.text);
+    const el = addMessageDOM(msg.role, msg.text);
+    if (msg.role === 'assistant' && msg.reasoning) addReasoningBubble(el, msg.reasoning);
   }
 }
 
@@ -684,7 +590,8 @@ async function switchToConversation(id) {
   const conv = getActiveConversation();
   if (conv && conv.messages.length > 0) {
     for (const msg of conv.messages) {
-      addMessageDOM(msg.role, msg.text);
+      const el = addMessageDOM(msg.role, msg.text);
+      if (msg.role === 'assistant' && msg.reasoning) addReasoningBubble(el, msg.reasoning);
     }
   } else {
     addMessageDOM('system', 'Connected to Zo. Ask me about this page, or tell me what to do.');
@@ -831,7 +738,9 @@ function formatTime(ts) {
 
 // ---- Page Context ----
 async function refreshPageContext() {
-  const resp = await chrome.runtime.sendMessage({ type: 'GET_PAGE_CONTEXT' });
+  // Tell the background how much context the active Mode wants (its tier).
+  const mode = resolveMode(activeModeId, customModes);
+  const resp = await chrome.runtime.sendMessage({ type: 'GET_PAGE_CONTEXT', tier: mode.contextTier, modeId: activeModeId });
   if (resp && !resp.error) {
     currentContext = resp;
     pageUrl.textContent = resp.title || resp.url;
@@ -996,7 +905,12 @@ async function runPendingActions() {
     const action = actions[i];
     if (action.type === 'done') {
       updateActionCard(i, 'done');
-      if (action.response) addMessage('assistant', action.response);
+      if (action.response) {
+        const doneEl = addMessage('assistant', action.response);
+        // Attach the reasoning bubble to the answer element (the message the
+        // user actually reads), not the (possibly empty) streamed-text element.
+        addReasoningBubble(doneEl, pendingActionsReasoning);
+      }
       continue;
     }
     updateActionCard(i, 'running');
@@ -1018,6 +932,7 @@ async function runPendingActions() {
   }
 
   pendingActions = null;
+  pendingActionsReasoning = '';
   setTimeout(() => actionsBar.classList.add('hidden'), 1200);
   actionRunning = false;
   runAllBtn.disabled = false;
@@ -1026,7 +941,7 @@ async function runPendingActions() {
 // ---- Messages ----
 function addMessage(role, text) {
   text = safeText(text);
-  addMessageDOM(role, text);
+  const div = addMessageDOM(role, text);
   // Auto-read assistant messages via TTS
   if (role === 'assistant' && ttsAutoRead && text) {
     speakText(text);
@@ -1043,6 +958,7 @@ function addMessage(role, text) {
       saveCurrentConversation();
     }
   }
+  return div;
 }
 
 
@@ -1184,112 +1100,164 @@ function addMessageDOM(role, text) {
   return div;
 }
 
+// Collapsible "💭 Thinking" bubble rendered above an assistant message body,
+// showing the reasoning field Zo returns alongside its actions. No-ops on
+// empty reasoning so non-reasoning modes (ask/visual) are unaffected.
+// Collapsed by default; click the header to expand.
+function addReasoningBubble(parentMsgEl, reasoning) {
+  if (!parentMsgEl) return;
+  const text = safeText(reasoning);
+  if (!text || !text.trim()) return;
+
+  // Don't add a duplicate bubble (e.g. on re-render)
+  if (parentMsgEl.querySelector('.msg-thinking-bubble')) return;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-thinking-bubble';
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'thinking-toggle';
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-label', 'Show reasoning');
+  const caret = document.createElement('span');
+  caret.className = 'thinking-caret';
+  caret.textContent = '▸';
+  const label = document.createElement('span');
+  label.className = 'thinking-label';
+  label.textContent = `💭 Thinking (${text.length} chars)`;
+  toggle.appendChild(caret);
+  toggle.appendChild(label);
+
+  const content = document.createElement('div');
+  content.className = 'thinking-content';
+  content.hidden = true;
+  content.innerHTML = markdownToHtml(text);
+
+  toggle.addEventListener('click', () => {
+    const expanded = toggle.getAttribute('aria-expanded') === 'true';
+    toggle.setAttribute('aria-expanded', String(!expanded));
+    toggle.setAttribute('aria-label', expanded ? 'Show reasoning' : 'Hide reasoning');
+    caret.textContent = expanded ? '▸' : '▾';
+    content.hidden = expanded;
+  });
+
+  bubble.appendChild(toggle);
+  bubble.appendChild(content);
+
+  // Insert above the message body so it reads: thinking → answer
+  const body = parentMsgEl.querySelector('.msg-body');
+  if (body) {
+    parentMsgEl.insertBefore(bubble, body);
+  } else {
+    parentMsgEl.insertBefore(bubble, parentMsgEl.firstChild);
+  }
+}
+
 // ---- Presets ----
 
-async function loadPresets() {
-  const saved = await chrome.storage.local.get(STORAGE_PRESETS_KEY);
-  customPresets = saved[STORAGE_PRESETS_KEY] || {};
-
-  // Restore last used preset
-  const lastPreset = await chrome.storage.local.get('zoActivePreset');
-  if (lastPreset.zoActivePreset) {
-    activePreset = lastPreset.zoActivePreset;
-    presetSelect.value = lastPreset.zoActivePreset;
+async function loadModes() {
+  // One-time migration: legacy 'cobrowse_presets' → 'cobrowse_modes'.
+  const both = await chrome.storage.local.get([STORAGE_MODES_KEY, STORAGE_LEGACY_PRESETS_KEY]);
+  if (!both[STORAGE_MODES_KEY] && both[STORAGE_LEGACY_PRESETS_KEY]) {
+    const migrated = {};
+    for (const [id, preset] of Object.entries(both[STORAGE_LEGACY_PRESETS_KEY])) {
+      // Map legacy preset ids to new Mode ids where they diverge.
+      let modeId = id;
+      if (modeId === 'scrape') modeId = 'extract';
+      else if (modeId === 'qa') modeId = 'ask';
+      migrated[modeId] = presetToMode({ ...preset, id: modeId });
+    }
+    customModes = migrated;
+    await chrome.storage.local.set({ [STORAGE_MODES_KEY]: customModes });
+  } else {
+    customModes = both[STORAGE_MODES_KEY] || {};
   }
+  rebuildModeOptions();
+
+  // Restore last used Mode. Migrate legacy 'zoActivePreset' → 'zoActiveMode'.
+  const activeKeys = await chrome.storage.local.get(['zoActivePreset']);
+  const activeModeSaved = await chrome.storage.sync.get(['zoActiveMode']);
+  let restored = activeModeSaved.zoActiveMode || activeKeys.zoActivePreset;
+  if (restored === 'scrape') restored = 'extract';
+  else if (restored === 'qa') restored = 'ask';
+  activeModeId = restored || DEFAULT_MODE_ID;
+  syncModeSelect();
 }
 
-async function saveCustomPresets() {
-  await chrome.storage.local.set({ [STORAGE_PRESETS_KEY]: customPresets });
+async function saveCustomModes() {
+  await chrome.storage.local.set({ [STORAGE_MODES_KEY]: customModes });
 }
 
-function getPreset(id) {
-  // Check custom presets first, then built-in
-  if (customPresets[id]) return customPresets[id];
-  if (BUILTIN_PRESETS[id]) return BUILTIN_PRESETS[id];
-  return null;
+function applyMode() {
+  const id = modeSelect.value || DEFAULT_MODE_ID;
+  const mode = resolveMode(id, customModes);
+  activeModeId = id;
+  chrome.storage.sync.set({ zoActiveMode: id });
+  rebuildModeOptions();
+  syncModeSelect();
+  const desc = mode.description ? ` ${mode.description}` : '';
+  addSystemMessage(`🔄 **${mode.icon} ${mode.name}** mode active.${desc}`);
 }
 
-function applyPreset() {
-  const id = presetSelect.value;
-  if (!id) {
-    activePreset = null;
-    chrome.storage.local.remove('zoActivePreset');
-    addSystemMessage('Default co-browse mode. Zo will see your page and respond with actions.');
-    return;
-  }
+function rebuildModeOptions() {
+  if (!modeSelect) return;
+  const currentVal = activeModeId;
 
-  // Reload options to include custom presets
-  rebuildPresetOptions();
-
-  const preset = getPreset(id);
-  if (!preset) return;
-
-  activePreset = id;
-  chrome.storage.local.set({ zoActivePreset: id });
-  addSystemMessage(`🔄 **${preset.name}** preset active. ${preset.description}`);
-}
-
-function rebuildPresetOptions() {
-  // Save current selection
-  const currentVal = presetSelect.value;
-
-  // Clear and rebuild
-  presetSelect.innerHTML = '<option value="">Default (co-browse)</option>';
-  for (const [id, p] of Object.entries(BUILTIN_PRESETS)) {
+  modeSelect.innerHTML = '';
+  for (const [id, m] of Object.entries(BUILTIN_MODES)) {
     const opt = document.createElement('option');
     opt.value = id;
-    opt.textContent = `✨ ${p.name}`;
-    presetSelect.appendChild(opt);
+    opt.textContent = `${m.icon} ${m.name}`;
+    modeSelect.appendChild(opt);
   }
 
-  // Separator for custom presets
-  const customIds = Object.keys(customPresets);
+  // Separator + custom Modes
+  const customIds = Object.keys(customModes);
   if (customIds.length > 0) {
     const sep = document.createElement('option');
     sep.disabled = true;
     sep.textContent = '⎯ Custom ⎯';
-    presetSelect.appendChild(sep);
-
-    for (const [id, p] of Object.entries(customPresets)) {
+    modeSelect.appendChild(sep);
+    for (const [id, m] of Object.entries(customModes)) {
       const opt = document.createElement('option');
       opt.value = id;
-      opt.textContent = `👤 ${p.name}`;
-      opt.title = p.description;
-      presetSelect.appendChild(opt);
+      opt.textContent = `${m.icon || '✨'} ${m.name}`;
+      opt.title = m.description || '';
+      modeSelect.appendChild(opt);
     }
   }
 
-  // Restore selection
-  if (currentVal) presetSelect.value = currentVal;
+  if (currentVal) modeSelect.value = currentVal;
 }
 
-async function startPresetCreation() {
-  const input = document.createElement('div');
-  input.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:999;';
-  input.innerHTML = `
+async function startModeCreation() {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:999;';
+  overlay.innerHTML = `
     <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:16px;width:280px;">
-      <h3 style="font-size:14px;margin:0 0 8px;color:var(--text);">Create Preset with Zo</h3>
-      <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px;">Describe what you want this preset to do:</p>
-      <textarea id="preset-desc-input" style="width:100%;height:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px;font-size:13px;resize:none;font-family:var(--font);" placeholder="e.g. Extract all product prices and availability from shopping pages"></textarea>
+      <h3 style="font-size:14px;margin:0 0 8px;color:var(--text);">Create Mode with Zo</h3>
+      <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px;">Describe what you want this Mode to do:</p>
+      <textarea id="mode-desc-input" style="width:100%;height:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:6px;font-size:13px;resize:none;font-family:var(--font);" placeholder="e.g. Extract all product prices and availability from shopping pages"></textarea>
       <div style="display:flex;gap:6px;margin-top:8px;">
-        <button id="generate-preset-confirm" class="btn btn-primary btn-sm" style="flex:1;">Generate ✨</button>
-        <button id="generate-preset-cancel" class="btn btn-sm">Cancel</button>
+        <button id="generate-mode-confirm" class="btn btn-primary btn-sm" style="flex:1;">Generate ✨</button>
+        <button id="generate-mode-cancel" class="btn btn-sm">Cancel</button>
       </div>
     </div>`;
-  document.body.appendChild(input);
+  document.body.appendChild(overlay);
 
-  const descInput = input.querySelector('#preset-desc-input');
+  const descInput = overlay.querySelector('#mode-desc-input');
   descInput.focus();
 
-  input.querySelector('#generate-preset-cancel').addEventListener('click', () => input.remove());
-  input.querySelector('#generate-preset-confirm').addEventListener('click', async () => {
+  overlay.querySelector('#generate-mode-cancel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#generate-mode-confirm').addEventListener('click', async () => {
     const desc = descInput.value.trim();
     if (!desc) return;
-    input.remove();
+    overlay.remove();
 
-    addSystemMessage(`🤖 Generating preset for: "${desc}"...`);
+    addSystemMessage(`🤖 Generating Mode for: "${desc}"...`);
     const resp = await chrome.runtime.sendMessage({
-      type: 'GENERATE_PRESET',
+      type: 'GENERATE_MODE',
       description: desc,
     });
 
@@ -1298,31 +1266,26 @@ async function startPresetCreation() {
     if (msgs.length > 0) msgs[msgs.length - 1].remove();
 
     if (resp.error) {
-      addSystemMessage(`❌ Failed to create preset: ${resp.error}`);
+      addSystemMessage(`❌ Failed to create Mode: ${resp.error}`);
       return;
     }
 
-    const preset = resp.preset;
-    if (!preset.name || !preset.systemPrompt) {
-      addSystemMessage('❌ Zo returned an incomplete preset. Try again with a more specific description.');
+    const mode = resp.mode;
+    if (!mode || !mode.name || !mode.systemPrompt) {
+      addSystemMessage('❌ Zo returned an incomplete Mode. Try again with a more specific description.');
       return;
     }
 
-    // Generate a unique id
     const id = 'custom_' + Date.now();
-    customPresets[id] = {
-      ...preset,
-      isBuiltin: false,
-      id,
-      createdAt: Date.now(),
-    };
-    await saveCustomPresets();
-    rebuildPresetOptions();
+    customModes[id] = { ...mode, id, builtin: false };
+    await saveCustomModes();
+    rebuildModeOptions();
 
-    // Select the new preset
-    presetSelect.value = id;
-    applyPreset();
-    addSystemMessage(`✅ Custom preset **${preset.name}** created and activated.`);
+    // Select the new Mode
+    activeModeId = id;
+    syncModeSelect();
+    chrome.storage.sync.set({ zoActiveMode: id });
+    addSystemMessage(`✅ Custom Mode **${mode.name}** created and activated.`);
   });
 }
 
@@ -1592,7 +1555,8 @@ function handleStreamMessage(msg) {
         // show it via fallback message rather than silently dropping it
         if (msg.fullText || msg.reasoning || msg.actions?.length) {
           const fallbackText = safeText(msg.fullText) || safeText(msg.reasoning) || '';
-          if (fallbackText) addMessage('assistant', fallbackText);
+          const fbEl = fallbackText ? addMessage('assistant', fallbackText) : null;
+          if (fbEl) addReasoningBubble(fbEl, msg.reasoning);
           const actions = msg.actions || [];
           if (actions.length > 0) handleStreamActions(actions, msg.reasoning);
         }
@@ -1636,14 +1600,18 @@ function handleStreamMessage(msg) {
           });
           streamSession.msgEl.appendChild(ttsBtn);
         }
+        // Render the reasoning field (if any) as a collapsible bubble above the body
+        addReasoningBubble(streamSession.msgEl, msg.reasoning);
       } else {
         // No streaming chunks — fallback to addMessage
         if (responseText) {
-          addMessage('assistant', responseText);
+          const el = addMessage('assistant', responseText);
+          addReasoningBubble(el, msg.reasoning);
         } else if (msg.actions?.length) {
           // Response is in actions — will be rendered by handleStreamActions
         } else if (msg.fullText || msg.reasoning) {
-          addMessage('assistant', safeText(msg.fullText) || safeText(msg.reasoning));
+          const el = addMessage('assistant', safeText(msg.fullText) || safeText(msg.reasoning));
+          addReasoningBubble(el, msg.reasoning);
         } else {
           // Truly empty response. Don't claim success ("Done.") — surface a
           // hint so the user knows to check the service-worker console, where
@@ -1656,7 +1624,8 @@ function handleStreamMessage(msg) {
       if (responseText) {
         const conv = getActiveConversation();
         if (conv) {
-          conv.messages.push({ role: 'assistant', text: responseText, timestamp: Date.now() });
+          const reasoningVal = safeText(msg.reasoning) || undefined;
+          conv.messages.push({ role: 'assistant', text: responseText, reasoning: reasoningVal, timestamp: Date.now() });
           if (conv.messages.length > 50) {
             conv.messages = conv.messages.slice(-50);
           }
@@ -1731,13 +1700,17 @@ function handleStreamActions(actions, reasoning) {
     }).catch(() => {});
     setTimeout(async () => {
       await refreshPageContext();
-      if (doneResponse) addMessage('assistant', doneResponse);
+      if (doneResponse) {
+        const el = addMessage('assistant', doneResponse);
+        addReasoningBubble(el, reasoning);
+      }
     }, 2000);
     return;
   }
 
   if (domActions.length) {
     pendingActions = domActions;
+    pendingActionsReasoning = safeText(reasoning);
     actionsReasoning.textContent = `🧠 ${reasoning?.substring(0, 200) || ''}`;
     actionsBar.classList.remove('hidden');
     runPendingActions();
@@ -1774,7 +1747,7 @@ sendQuery = async function() {
 
   // ---- Quick Commands (!) ----
   let effectiveQuery = query;
-  let tempPreset = null;
+  let tempMode = null;
   if (query.startsWith('!')) {
     const bang = parseBangCommand(query);
     if (bang.inlineReply) {
@@ -1845,23 +1818,16 @@ sendQuery = async function() {
       return;
     }
     effectiveQuery = bang.query;
-    tempPreset = bang.preset;
+    tempMode = bang.mode;
   }
 
   addMessage('user', query);
   addMessage('thinking', 'Zo is thinking...');
   startThinkingTimeout();
 
-  // Determine preset prompts
-  let presetSystemPrompt, presetInstructions;
-  const activePresetResolved = tempPreset || activePreset;
-  if (activePresetResolved) {
-    const preset = getPreset(activePresetResolved);
-    if (preset) {
-      presetSystemPrompt = preset.systemPrompt;
-      presetInstructions = preset.instructions;
-    }
-  }
+  // Resolve the Mode for this turn: a bang command can override the active
+  // Mode for a single turn (tempMode), else use the selected Mode.
+  const modeId = tempMode || activeModeId;
 
   // --- Streaming path: (re)connect port if needed ---
   if (!streamPort) connectStreamingPort();
@@ -1879,8 +1845,8 @@ sendQuery = async function() {
         userQuery: effectiveQuery,
         modelName: config.selectedModel || undefined,
         personaId: config.selectedPersona || undefined,
-        presetSystemPrompt: presetSystemPrompt,
-        presetInstructions: presetInstructions,
+        modeId,
+        customModes,
       });
     } catch (e) {
       // Port disconnected between check and postMessage — fall through to non-streaming fallback
@@ -1900,8 +1866,8 @@ sendQuery = async function() {
     userQuery: effectiveQuery,
     modelName: config.selectedModel || undefined,
     personaId: config.selectedPersona || undefined,
-    presetSystemPrompt: presetSystemPrompt,
-    presetInstructions: presetInstructions,
+    modeId,
+    customModes,
   });
 
   const thinking = msgsEl.querySelector('.msg-thinking');
@@ -1939,18 +1905,34 @@ sendQuery = async function() {
   const doneAction = actions.find(a => a.type === 'done');
   const hasNavigate = actions.some(a => a.type === 'navigate');
   const doneResponse = doneAction?.response || '';
+  const reasoningVal = safeText(reasoning) || undefined;
 
   if (!actions.length) {
     // Show reasoning or the raw output text, with "Done." only as last resort
     const fallbackText = reasoning || doneResponse || output || '';
-    addMessage('assistant', fallbackText || 'Done.');
+    const el = addMessage('assistant', fallbackText || 'Done.');
+    addReasoningBubble(el, reasoning);
   } else {
     handleStreamActions(actions, reasoning);
     // handleStreamActions already adds the done response for navigate actions
     // (via its own setTimeout). For non-navigate scenarios, display it here.
     if (doneAction && !hasNavigate) {
-      addMessage('assistant', doneResponse || reasoning || output || 'Done.');
+      const el = addMessage('assistant', doneResponse || reasoning || output || 'Done.');
+      addReasoningBubble(el, reasoning);
+    } else if (reasoningVal) {
+      // navigate-only actions: persist reasoning with the navigate status message
+      const conv = getActiveConversation();
+      const last = conv?.messages?.[conv.messages.length - 1];
+      if (last && last.role === 'assistant') last.reasoning = reasoningVal;
     }
+  }
+
+  // Persist reasoning on the most recent assistant message (addMessage pushed it
+  // without reasoning, since reasoning isn't threaded through every caller).
+  if (reasoningVal) {
+    const conv = getActiveConversation();
+    const last = conv?.messages?.[conv.messages.length - 1];
+    if (last && last.role === 'assistant' && !last.reasoning) last.reasoning = reasoningVal;
   }
 
   input.disabled = false;

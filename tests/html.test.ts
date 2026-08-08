@@ -59,18 +59,16 @@ describe("options.html", () => {
   });
 });
 
-describe("options.html persona routing", () => {
+describe("options.html persona", () => {
   const html = readHTML("options.html");
 
-  it("has persona routing fields", () => {
-    expect(html).toContain("id=\"persona-mode\"");
-    expect(html).toContain("id=\"lite-persona-select\"");
-    expect(html).toContain("id=\"full-persona-select\"");
+  it("has a single persona select field", () => {
+    expect(html).toContain("id=\"persona-select\"");
   });
 
-  it("has routing mode options", () => {
-    expect(html).toContain("value=\"auto\"");
-    expect(html).toContain("value=\"lite\"");
-    expect(html).toContain("value=\"full\"");
+  it("does not carry the removed lite/full persona routing fields", () => {
+    expect(html).not.toContain("id=\"persona-mode\"");
+    expect(html).not.toContain("id=\"lite-persona-select\"");
+    expect(html).not.toContain("id=\"full-persona-select\"");
   });
 });

@@ -33,16 +33,16 @@ describe("screenshot capture patterns", () => {
     expect(bgCode).toMatch(/screenshot/i);
   });
 
-  it("exposes lite mode flag to skip screenshot", () => {
-    expect(bgCode).toMatch(/lite/i);
+  it("gates screenshot capture by the Mode context tier", () => {
+    expect(bgCode).toMatch(/contextTier/i);
     expect(bgCode).toMatch(/screenshot/i);
   });
 });
 
 describe("DuckDB query code patterns", () => {
-  it("references duckdb CLI or duckdb package", () => {
+  it("references the DuckDB query handler", () => {
     expect(
-      bgCode.includes("duckdb") || bgCode.includes("/usr/bin/duckdb")
+      bgCode.includes("runDuckdbQuery") || bgCode.includes("DuckDB")
     ).toBe(true);
   });
 

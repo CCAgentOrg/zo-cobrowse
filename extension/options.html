@@ -253,33 +253,15 @@
 
     <!-- ── Model & Persona ── -->
     <div class="card">
-      <h2>🧠 Persona Routing</h2>
-      <p class="desc">Personas let Zo switch between a lightweight page companion and full tool access. The lite persona has no file/tool access — perfect for quick page tasks.</p>
+      <h2>🧠 Persona</h2>
+      <p class="desc">Pin the Zo persona that runs your requests. The Mode you pick in the side panel decides how Zo behaves; this sets which persona executes it.</p>
 
       <div class="field-group">
-        <label for="persona-mode">Routing Mode</label>
-        <select id="persona-mode">
-          <option value="auto">◐ Auto — classify automatically</option>
-          <option value="lite">☾ Lite — always use lite persona</option>
-          <option value="full">☀ Full — always use full persona</option>
+        <label for="persona-select">Default Persona</label>
+        <select id="persona-select">
+          <option value="">— Zo (default) —</option>
         </select>
-      </div>
-
-      <div class="field-group-double">
-        <div class="field-group">
-          <label for="lite-persona-select">🧘 Lite Persona</label>
-          <select id="lite-persona-select">
-            <option value="">— none (Zo default) —</option>
-          </select>
-          <p class="desc" style="margin-top:4px;font-size:11px;">Page-only: summarize, extract, answer questions. No tool access.</p>
-        </div>
-        <div class="field-group">
-          <label for="full-persona-select">⚡ Full Persona</label>
-          <select id="full-persona-select">
-            <option value="">— Zo (default) —</option>
-          </select>
-          <p class="desc" style="margin-top:4px;font-size:11px;">Full access: files, data, skills, automations, browser actions.</p>
-        </div>
+        <p class="desc" style="margin-top:4px;font-size:11px;">Leave as Zo to use the default, or pick a persona you've created.</p>
       </div>
     </div>
 
