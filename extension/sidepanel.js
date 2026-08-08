@@ -1515,9 +1515,10 @@ async function startPresetCreation() {
 }
 
 function addSystemMessage(text) {
-  text = safeText(text);
-  msgsEl.innerHTML += `<div class="msg msg-system"><div class="msg-body">${text}</div></div>`;
-  msgsEl.scrollTop = msgsEl.scrollHeight;
+  // Route through addMessageDOM: HTML-escapes, parses markdown (so **bold**
+  // renders), and uses appendChild instead of `innerHTML +=` which thrashed
+  // the whole tree and destroyed existing TTS-button listeners.
+  addMessageDOM('system', text);
 }
 
 async function loadQuickActions() {
