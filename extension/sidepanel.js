@@ -1519,6 +1519,12 @@ function stopSpeaking() {
 
 // ---- Streaming (port-based) ----
 
+// Declared (not bare-assigned) so the streaming override below is a valid
+// reassignment in module (strict) scope. Without this declaration the bare
+// `sendQuery = async function () {...}` throws ReferenceError at module
+// evaluation, killing the entire side panel on load.
+let sendQuery = async function () { /* replaced at the end of this file */ };
+
 let streamPort = null;
 let streamSession = { active: false, sessionId: 0, msgEl: null, fullText: '', remainingActions: null };
 
@@ -1639,7 +1645,10 @@ function handleStreamMessage(msg) {
         } else if (msg.fullText || msg.reasoning) {
           addMessage('assistant', safeText(msg.fullText) || safeText(msg.reasoning));
         } else {
-          addMessage('assistant', 'Done.');
+          // Truly empty response. Don't claim success ("Done.") — surface a
+          // hint so the user knows to check the service-worker console, where
+          // background.js logs the first SSE chunk's fields for diagnosis.
+          addMessage('assistant', '_Zo returned an empty response. Check the service worker console (chrome://extensions → Inspect views: service worker) for `[zo-cobrowse] first SSE chunk` to see the actual stream format._');
         }
       }
 

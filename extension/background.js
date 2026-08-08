@@ -57,6 +57,39 @@ async function askZoStream(port, msg) {
   throw lastError;
 }
 
+// ---- Stream content extraction ----
+// Zo's /zo/ask SSE stream is documented (AGENTS.md) as:
+//   event: FrontendModelResponse → text in data.content
+//   event: End                   → full answer in data.output
+//   event: Error                 → message in data.message
+// But the per-event payload shape varies across model providers behind Zo
+// (OpenAI delta.content, Anthropic delta.text, nested message.content, etc.)
+// and the docs don't fully specify it. Extract from any known field so a
+// valid response is never dropped and shown as "Done." (ticket #29).
+function extractStreamContent(parsed) {
+  if (parsed == null) return '';
+  // Direct scalar fields (Zo canonical: content/output/text/response/message)
+  if (typeof parsed.content === 'string') return parsed.content;
+  if (typeof parsed.output === 'string') return parsed.output;
+  if (typeof parsed.text === 'string') return parsed.text;
+  if (typeof parsed.response === 'string') return parsed.response;
+  // OpenAI-style chat completion: choices[0].delta.content
+  const choice = Array.isArray(parsed.choices) ? parsed.choices[0] : null;
+  if (choice?.delta?.content) return safeText(choice.delta.content);
+  if (choice?.message?.content) return safeText(choice.message.content);
+  // Anthropic-style: delta.text / content_block_delta
+  if (parsed.delta?.text) return safeText(parsed.delta.text);
+  if (parsed.delta?.content) return safeText(parsed.delta.content);
+  if (parsed.delta?.content_delta) return safeText(parsed.delta.content_delta);
+  // Nested message.content
+  if (parsed.message?.content) return safeText(parsed.message.content);
+  // output may be an object (e.g. {reasoning, actions}) — stringify as last resort
+  if (parsed.output != null && typeof parsed.output === 'object') {
+    return safeText(JSON.stringify(parsed.output));
+  }
+  return '';
+}
+
 // ---- Safe text helper ----
 function safeText(v) {
   if (typeof v === 'string') return v;
@@ -879,12 +912,13 @@ async function _askZoStreamImpl(port, msg) {
             if (data !== '{}' && data !== '') {
               try {
                 const parsed = JSON.parse(data);
-                if (parsed.output) {
-                  // Don't clobber accumulated streamed text with the final payload
-                  // unless we never received incremental chunks.
-                  if (!fullText) fullText = safeText(parsed.output);
-                } else if ((parsed.reasoning || parsed.actions) && !fullText) {
-                  fullText = safeText(parsed);
+                // Don't clobber accumulated streamed text with the final payload
+                // unless we never received incremental chunks.
+                if (!fullText) {
+                  // Prefer the documented output field, then any content field,
+                  // then the structured reasoning/actions payload.
+                  const endContent = typeof parsed.output === 'string' ? parsed.output : '';
+                  fullText = endContent || extractStreamContent(parsed) || ((parsed.reasoning || parsed.actions) ? safeText(parsed) : '');
                 }
               } catch {}
             }
@@ -908,14 +942,14 @@ async function _askZoStreamImpl(port, msg) {
           // FrontendModelResponse (default — also catches any data: without event: prefix for compat)
           try {
             const parsed = JSON.parse(data);
-            // Extract text from SSE data — handles Zo content/text/output, Anthropic delta.{text,content}
-            // Also handle models that send the full response in each chunk (output field)
-            const rawContent = parsed.content || parsed.text || parsed.output || (parsed.delta?.text) || (parsed.delta?.content) || parsed.response || parsed.message || '';
-            let content = safeText(rawContent);
-            // If parsed.output is an object (not a string), stringify it
-            if (!content && parsed.output && typeof parsed.output === 'object') {
-              content = safeText(JSON.stringify(parsed.output));
+            // One-time diagnostic: log the first real chunk's event + fields so
+            // the actual Zo/model SSE shape is observable. The repo has never
+            // captured a real chunk; this makes field mismatches debuggable.
+            if (!fullText) {
+              try { console.debug('[zo-cobrowse] first SSE chunk:', { event: currentEventType, fields: Object.keys(parsed) }); } catch {}
             }
+            // Extract text from any known field shape (Zo/OpenAI/Anthropic/nested).
+            const content = extractStreamContent(parsed);
             if (content) {
               fullText += content;
               safePost(port, { sessionId: sid, type: 'STREAM_CHUNK', text: fullText });
@@ -952,6 +986,7 @@ function finishStream(port, sid, output, intent) {
   let reasoning = '';
   let actions = [];
   let rawOutput = '';
+  let plainText = '';  // non-JSON answer text, surfaced directly to the user
 
   // Normalize to string for consistent parsing
   const normalizedOutput = (typeof output === 'object' && output !== null)
@@ -969,16 +1004,22 @@ function finishStream(port, sid, output, intent) {
         reasoning = parsed.reasoning || '';
         actions = parsed.actions || [];
         rawOutput = safeText(JSON.stringify(parsed));
+      } else {
+        // JSON but not an object (number/bool) — treat as plain text.
+        plainText = safeText(normalizedOutput);
       }
     } catch {
-      reasoning = normalizedOutput;
+      // Not JSON — this is a plain-text (markdown) answer. Show it directly
+      // rather than routing through `reasoning` (ticket #29: plain-text
+      // answers were only surfaced via reasoning and otherwise became "Done.").
+      plainText = normalizedOutput;
     }
   }
 
-  // Build a user-facing fullText from the resolved response.
+  // Build the user-facing fullText from the resolved response.
   const doneAction = actions.find(a => a.type === 'done');
   const safeDoneResponse = safeText(doneAction?.response);
-  const fullText = safeDoneResponse || reasoning || rawOutput || safeText(normalizedOutput);
+  const fullText = safeDoneResponse || plainText || reasoning || rawOutput || safeText(normalizedOutput);
 
   safePost(port, {
     sessionId: sid,
