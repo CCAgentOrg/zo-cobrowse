@@ -99,13 +99,13 @@ const storage: Record<string, any> = {};
 describe("background.js defaults", () => {
   beforeEach(() => {
     Object.keys(storage).forEach((k) => delete storage[k]);
-  
+  });
+
   it("has omnibox listeners (#13)", () => {
     expect(code).toContain("chrome.omnibox.onInputEntered");
     expect(code).toContain("chrome.omnibox.onInputChanged");
     expect(code).toContain("setDefaultSuggestion");
-  
-
+  });
 
   it("has duckdb query handler (#05)", () => {
     expect(code).toContain("DUCKDB_QUERY");
@@ -119,14 +119,13 @@ describe("background.js defaults", () => {
     expect(code).toContain("LIST_AUTOMATIONS");
     expect(code).toContain("listAutomations");
   });
+
   it("has save page handler (#09)", () => {
     expect(code).toContain("SAVE_PAGE");
     expect(code).toContain("savePageToWorkspace");
     expect(code).toContain("cobrowse-save");
     expect(code).toContain("Documents/research");
   });
-});
-});
 
   it("loads without errors", async () => {
     const mod = await import(resolve(import.meta.dir, "../extension/background.js"));
