@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 import * as vm from "node:vm";
+import { normalizeActions } from "../extension/lib/modes.js";
 
 /**
  * Verify the /zo/ask SSE parser against real-world stream formats.
@@ -357,6 +358,8 @@ describe("finishStream preserves reasoning into STREAM_DONE", () => {
     const sandbox: any = {
       // finishStream calls safePost(port, msg); record what it posts.
       safePost: (port: any, msg: any) => { port.postMessage(msg); },
+      // finishStream calls normalizeActions (imported from lib/modes.js).
+      normalizeActions,
     };
     vm.createContext(sandbox);
     vm.runInContext(safeSlice + "\n" + fsSlice, sandbox);
@@ -399,7 +402,7 @@ describe("finishStream preserves reasoning into STREAM_DONE", () => {
     const fsEnd = braceEnd(bgSource, fsStart);
     const spStart = bgSource.indexOf("function safePost(");
     const spEnd = braceEnd(bgSource, spStart);
-    const sandbox: any = {};
+    const sandbox: any = { normalizeActions };
     vm.createContext(sandbox);
     vm.runInContext(
       bgSource.slice(spStart, spEnd) + "\n" +
@@ -411,5 +414,67 @@ describe("finishStream preserves reasoning into STREAM_DONE", () => {
     const deadPort = { _dead: true, postMessage: (m: any) => posted.push(m) };
     sandbox.finishStream(deadPort, "sid-3", { reasoning: "x", actions: [] });
     expect(posted).toHaveLength(0);
+  });
+
+  // ── Key-first action regression (raw JSON leaking into the chat) ──
+  // Bug: Zo returned actions in key-first form
+  // ({ extract: {...} }, { done: { response } }) instead of type-first
+  // ({ type: 'extract', ... }). finishStream did actions.find(a => a.type === 'done')
+  // → undefined → safeDoneResponse empty → fullText fell back to the stringified
+  // whole blob, which rendered as raw JSON in the chat. normalizeActions() now
+  // converts key-first → type-first at the parse boundary.
+  const KEY_FIRST_PAYLOAD = {
+    reasoning: "The page is a treemap. No hyperlinks. I will extract visible content.",
+    actions: [
+      { extract: { selector: "body", attribute: "textContent" } },
+      { done: { response: "## Summary\n\nNo links on this page." } },
+    ],
+  };
+
+  it("emits the done.response as fullText, not the raw JSON blob", () => {
+    const finishStream = loadFinishStream();
+    const posted: any[] = [];
+    const fakePort = { _dead: false, postMessage: (m: any) => posted.push(m) };
+    finishStream(fakePort, "sid-kf", KEY_FIRST_PAYLOAD);
+    expect(posted).toHaveLength(1);
+    const done = posted[0];
+    expect(done.type).toBe("STREAM_DONE");
+    // fullText must be the done response, not a JSON dump of the payload.
+    expect(done.fullText).toBe("## Summary\n\nNo links on this page.");
+    expect(done.fullText).not.toContain('"reasoning"');
+    expect(done.fullText).not.toContain('"actions"');
+  });
+
+  it("surfaces reasoning in STREAM_DONE (drives the thinking bubble)", () => {
+    const finishStream = loadFinishStream();
+    const posted: any[] = [];
+    const fakePort = { _dead: false, postMessage: (m: any) => posted.push(m) };
+    finishStream(fakePort, "sid-kf-r", KEY_FIRST_PAYLOAD);
+    expect(posted[0].reasoning).toBe(
+      "The page is a treemap. No hyperlinks. I will extract visible content.",
+    );
+  });
+
+  it("emits normalized type-first actions (so executeActions + timeline work)", () => {
+    const finishStream = loadFinishStream();
+    const posted: any[] = [];
+    const fakePort = { _dead: false, postMessage: (m: any) => posted.push(m) };
+    finishStream(fakePort, "sid-kf-a", KEY_FIRST_PAYLOAD);
+    const actions = posted[0].actions;
+    expect(actions.map((a: any) => a.type)).toEqual(["extract", "done"]);
+    expect(actions[0]).toEqual({ type: "extract", selector: "body", attribute: "textContent" });
+    expect(actions[1].type).toBe("done");
+    expect(actions[1].response).toBe("## Summary\n\nNo links on this page.");
+  });
+
+  it("also normalizes when the key-first payload arrives as a JSON string", () => {
+    // Non-streaming / End-only path: output is a JSON string, not an object.
+    const finishStream = loadFinishStream();
+    const posted: any[] = [];
+    const fakePort = { _dead: false, postMessage: (m: any) => posted.push(m) };
+    finishStream(fakePort, "sid-kf-str", JSON.stringify(KEY_FIRST_PAYLOAD));
+    expect(posted[0].fullText).toBe("## Summary\n\nNo links on this page.");
+    expect(posted[0].actions.map((a: any) => a.type)).toEqual(["extract", "done"]);
+    expect(posted[0].reasoning).toContain("treemap");
   });
 });

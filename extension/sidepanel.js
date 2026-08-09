@@ -1,7 +1,7 @@
 // Zo Co-browse — Side Panel Logic
 
 import { parseBangCommand, BANG_COMMANDS } from './lib/bang-commands.js';
-import { BUILTIN_MODES, DEFAULT_MODE_ID, resolveMode, presetToMode } from './lib/modes.js';
+import { BUILTIN_MODES, DEFAULT_MODE_ID, resolveMode, presetToMode, normalizeActions } from './lib/modes.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -1891,12 +1891,12 @@ sendQuery = async function() {
 
   if (typeof normalizedOutput === 'object' && normalizedOutput !== null) {
     reasoning = normalizedOutput.reasoning || '';
-    actions = normalizedOutput.actions || [];
+    actions = normalizeActions(normalizedOutput.actions);
   } else if (typeof normalizedOutput === 'string') {
     try {
       const parsed = JSON.parse(normalizedOutput);
       reasoning = parsed.reasoning || '';
-      actions = parsed.actions || [];
+      actions = normalizeActions(parsed.actions);
     } catch {
       reasoning = normalizedOutput;
     }

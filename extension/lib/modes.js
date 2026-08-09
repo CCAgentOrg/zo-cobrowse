@@ -140,6 +140,61 @@ export function presetToMode(preset) {
 }
 
 /**
+ * The set of action type names, mirrored from the action protocol.
+ * Used to detect the "key-first" action shape Zo sometimes emits.
+ * (Kept here — next to ACTION_SCHEMA_COMPACT, the single source of truth —
+ * rather than duplicated in background.js.)
+ */
+export const ACTION_TYPE_NAMES = ['click', 'fill', 'extract', 'navigate', 'scroll', 'wait', 'done'];
+
+/**
+ * Normalize Zo's action payload to the canonical "type-first" form the
+ * extension executes:
+ *
+ *   type-first (canonical):   { type: 'extract', selector: 'body', attribute: 'textContent' }
+ *   key-first (Zo variant):   { extract: { selector: 'body', attribute: 'textContent' } }
+ *
+ * The compact schema shipped in the prompt (`extract{selector,attribute}`)
+ * is ambiguous, and some models emit actions as `{"<type>": {...}}` instead
+ * of `{"type": "<type>", ...}`. Without normalization those actions silently
+ * drop out of every consumer (`a.type === 'done'`, executeActions, the
+ * timeline) and the whole `{reasoning, actions}` blob leaks into the chat as
+ * raw JSON. This converts key-first to type-first; already-canonical actions
+ * pass through unchanged. Non-conforming entries are dropped.
+ *
+ * Pure (no chrome.* / DOM deps) so it's unit-testable directly.
+ *
+ * @param {unknown} actions
+ * @returns {object[]} canonical type-first action objects
+ */
+export function normalizeActions(actions) {
+  if (!Array.isArray(actions)) return [];
+  const out = [];
+  for (const a of actions) {
+    if (!a || typeof a !== 'object' || Array.isArray(a)) continue;
+    if (typeof a.type === 'string' && ACTION_TYPE_NAMES.includes(a.type)) {
+      // Already canonical. Keep as-is (the consumers own validation).
+      out.push(a);
+      continue;
+    }
+    // Key-first: a single key that is a known action type, mapped to its args.
+    let found = false;
+    for (const key of Object.keys(a)) {
+      if (ACTION_TYPE_NAMES.includes(key)) {
+        const args = (a[key] && typeof a[key] === 'object' && !Array.isArray(a[key])) ? a[key] : {};
+        out.push({ type: key, ...args });
+        found = true;
+        break; // only the first recognized key wins
+      }
+    }
+    if (!found) {
+      // Unknown shape — skip rather than risk rendering raw JSON in the chat.
+    }
+  }
+  return out;
+}
+
+/**
  * Ensure a (possibly user-supplied) mode object has every required field.
  * Missing fields fall back to safe defaults; an absent id uses the provided key.
  */

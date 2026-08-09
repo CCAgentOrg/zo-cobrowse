@@ -7,6 +7,7 @@ import {
   ACTION_SCHEMA_COMPACT,
   PLAIN_RESPONSE_HINT,
   DEFAULT_MODE_ID,
+  normalizeActions,
 } from './lib/modes.js';
 
 function safePost(port, msg) {
@@ -894,20 +895,23 @@ async function _askZoStreamImpl(port, msg) {
 
           // End event — stream completed
           if (currentEventType === 'End') {
+            let endPayload = fullText;  // default: keep any streamed text
             if (data !== '{}' && data !== '') {
               try {
                 const parsed = JSON.parse(data);
                 // Don't clobber accumulated streamed text with the final payload
                 // unless we never received incremental chunks.
                 if (!fullText) {
-                  // Prefer the documented output field, then any content field,
-                  // then the structured reasoning/actions payload.
+                  // Prefer the documented output field, then any content field.
+                  // Pass the parsed object straight through to finishStream so it
+                  // can normalize actions (key-first → type-first) and resolve the
+                  // done.response without first stringifying then re-parsing.
                   const endContent = typeof parsed.output === 'string' ? parsed.output : '';
-                  fullText = endContent || extractStreamContent(parsed) || ((parsed.reasoning || parsed.actions) ? safeText(parsed) : '');
+                  endPayload = endContent || extractStreamContent(parsed) || parsed;
                 }
               } catch {}
             }
-            finishStream(port, sid, fullText);
+            finishStream(port, sid, endPayload);
             currentEventType = '';
             return;
           }
@@ -980,14 +984,14 @@ function finishStream(port, sid, output) {
 
   if (typeof normalizedOutput === 'object' && normalizedOutput !== null) {
     reasoning = normalizedOutput.reasoning || '';
-    actions = normalizedOutput.actions || [];
+    actions = normalizeActions(normalizedOutput.actions);
     rawOutput = safeText(JSON.stringify(normalizedOutput));
   } else if (typeof normalizedOutput === 'string') {
     try {
       const parsed = JSON.parse(normalizedOutput);
       if (parsed && typeof parsed === 'object') {
         reasoning = parsed.reasoning || '';
-        actions = parsed.actions || [];
+        actions = normalizeActions(parsed.actions);
         rawOutput = safeText(JSON.stringify(parsed));
       } else {
         // JSON but not an object (number/bool) — treat as plain text.

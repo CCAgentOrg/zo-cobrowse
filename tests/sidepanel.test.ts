@@ -229,6 +229,24 @@ describe("sidepanel thinking/reasoning bubble", () => {
   });
 });
 
+describe("sidepanel non-streaming ASK_ZO path normalizes key-first actions", () => {
+  // Regression guard for the raw-JSON-in-chat bug: the non-streaming ASK_ZO
+  // response handler must run actions through normalizeActions() (key-first →
+  // type-first) so the done.response is found and reasoning bubbles render,
+  // instead of the whole {reasoning, actions} blob leaking into the chat.
+  it("imports normalizeActions from lib/modes.js", () => {
+    expect(code).toMatch(/import\s*\{[^}]*\bnormalizeActions\b[^}]*\}\s*from\s*['"]\.\/lib\/modes\.js['"]/);
+  });
+
+  it("applies normalizeActions in both parse branches (object + JSON-string output)", () => {
+    // Two call sites: the object branch and the string/JSON.parse branch.
+    const matches = code.match(/normalizeActions\(/g) || [];
+    // At least two usages in the response handler (plus the import, which is
+    // not a call). We assert >=2 call sites to cover both branches.
+    expect(matches.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
 // ── Real DOM test: extract addReasoningBubble + deps from source via vm and
 // drive it against a minimal hand-rolled DOM stub. Source-containment tests
 // above only grep strings; this one proves the bubble actually renders.
