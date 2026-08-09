@@ -180,11 +180,20 @@ describe("background Mode system", () => {
   });
 
   it("gates the action-schema behind mode.expectJson (no leak for read-only modes)", () => {
-    // buildPrompt must push ACTION_SCHEMA_COMPACT only when mode.expectJson
-    // is true; otherwise it pushes the plain-markdown hint. This is the line
-    // that prevents "Respond with JSON {actions}" from leaking into prompts
-    // for ask/research/summarize/extract/visual/custom modes.
-    expect(code).toContain("mode.expectJson ? ACTION_SCHEMA_COMPACT : PLAIN_RESPONSE_HINT");
+    // buildPrompt pushes the plain-markdown hint for non-JSON modes, and the
+    // action schema only for JSON modes. This is the line that prevents
+    // "Respond with JSON {actions}" from leaking into prompts for
+    // ask/research/summarize/extract/visual/custom modes.
+    expect(code).toContain("wantJson ? ACTION_SCHEMA_COMPACT : PLAIN_RESPONSE_HINT");
+  });
+
+  it("imports intent detection and downgrades JSON mode for read-only queries", () => {
+    // Co-browse (the default, expectJson:true) must drop the action envelope
+    // when the query is a read-only intent ("Summarize", "What is…?"), so Zo
+    // replies in plain markdown instead of {actions:[...]}.
+    expect(code).toMatch(/import\s*\{[^}]*shouldDowngradeToJsonDisabled[^}]*\}\s*from\s*['"]\.\/lib\/intent\.js['"]/);
+    expect(code).toContain("shouldDowngradeToJsonDisabled(mode, userQuery)");
+    expect(code).toContain("jsonDisabled");
   });
 
   it("uses tier-gated context capture in getActiveTabContext", () => {
