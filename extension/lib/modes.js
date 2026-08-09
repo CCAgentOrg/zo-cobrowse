@@ -145,7 +145,11 @@ export function presetToMode(preset) {
     instructions: preset.instructions || '',
     contextTier: Number.isInteger(preset.contextTier) ? preset.contextTier : TIER.TEXT,
     textBudget: preset.textBudget || 2000,
-    expectJson: preset.expectJson !== undefined ? !!preset.expectJson : true,
+    // Default to plain-markdown (expectJson:false). Only cobrowse sets
+    // expectJson:true; defaulting custom modes/presets to true silently
+    // leaked the "Respond with JSON {actions}" instruction into prompts
+    // for read-only modes, making Zo emit actions instead of prose.
+    expectJson: preset.expectJson !== undefined ? !!preset.expectJson : false,
     builtin: false,
   };
 }
@@ -220,7 +224,8 @@ function normalizeMode(raw, key) {
     instructions: m.instructions || '',
     contextTier: Number.isInteger(m.contextTier) ? m.contextTier : TIER.TEXT,
     textBudget: m.textBudget || 2000,
-    expectJson: m.expectJson !== undefined ? !!m.expectJson : true,
+    // Default to plain-markdown (see presetToMode for rationale).
+    expectJson: m.expectJson !== undefined ? !!m.expectJson : false,
     builtin: false,
   };
 }
