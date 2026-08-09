@@ -712,27 +712,73 @@ input, textarea, select {
   max-width: 100%;
 }
 
+/* ── User message: Zo "composer-shell" bubble ──
+   Right-aligned, neutral sidebar bg, primary-tinted border, subtle
+   inset+drop shadow (mirrors zo.computer's data-message-role="user"
+   composer-shell). Capped width so long prompts wrap, not stretch. */
 .msg-user {
   justify-content: flex-end;
+  align-items: flex-end;
 }
 .msg-user .msg-body {
-  background: linear-gradient(135deg, var(--amber), var(--indigo));
-  color: white;
-  border-bottom-right-radius: 4px;
+  background: var(--zo-sidebar);
+  color: var(--zo-foreground);
+  border: 1px solid var(--zo-border-primary);
+  border-bottom-right-radius: 4px;   /* tail corner */
   font-weight: 500;
+  max-width: min(100%, 640px);
+  /* inset highlight + soft drop shadow, like Zo's composer-shell */
+  box-shadow:
+    rgba(255, 255, 255, 0.10) 0 1px 0 inset,
+    rgba(0, 0, 0, 0.06) 0 1px 2px,
+    rgba(0, 0, 0, 0.04) 0 2px 4px;
 }
-.msg-user .msg-body p { color: white; }
+.msg-user .msg-body p { color: var(--zo-foreground); }
 
+/* Inline file/page mention pill inside a user message (Zo file-mention badge). */
+.msg-mention {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 200px;
+  padding: 1px 8px 1px 4px;
+  margin: 0 2px;
+  border-radius: 6px;
+  background: var(--zo-accent);
+  color: var(--zo-muted-foreground);
+  font-family: var(--font-code);
+  font-size: 0.92em;
+  vertical-align: baseline;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msg-mention .msg-mention-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  opacity: 0.8;
+}
+.msg-mention .msg-mention-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Assistant message: bare prose (Zo model-response) ──
+   No bubble/background — left-aligned prose at a readable measure,
+   selectable. Matches zo.computer's data-message-role="assistant"
+   max-w-[65ch] typeset block. */
 .msg-assistant {
   justify-content: flex-start;
   flex-wrap: wrap;
   align-items: flex-start;
 }
 .msg-assistant .msg-body {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-soft);
-  border-bottom-left-radius: 4px;
-  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  color: var(--zo-foreground);
+  max-width: 65ch;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .msg-system {

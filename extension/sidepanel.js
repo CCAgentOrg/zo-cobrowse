@@ -1219,12 +1219,11 @@ function addMessageDOM(role, text) {
   const body = document.createElement('div');
   body.className = 'msg-body';
 
-  // Render markdown for assistant messages, keep others as plain text
-  if (role === 'assistant' || role === 'system' || role === 'thinking') {
-    body.innerHTML = markdownToHtml(text);
-  } else {
-    body.textContent = text;
-  }
+  // All roles render markdown (user input is prose too, matching Zo's
+  // composer-shell which renders TipTap/ProseMirror). markdownToHtml +
+  // safeText keep every text sink escaped — never raw innerHTML of
+  // untrusted text.
+  body.innerHTML = markdownToHtml(text);
 
   div.appendChild(body);
 
@@ -1244,6 +1243,31 @@ function addMessageDOM(role, text) {
   msgsEl.appendChild(div);
   msgsEl.scrollTop = msgsEl.scrollHeight;
   return div;
+}
+
+// Render a page/file mention pill (Zo file-mention badge) and append it
+// to a user message body. `label` is the page title or filename; an inline
+// SVG file icon leads, matching Zo's data-testid="file-mention-badge".
+// Pure DOM, text-safed. Returns the pill element.
+function appendMentionPill(userBody, label) {
+  if (!userBody) return null;
+  const pill = document.createElement('span');
+  pill.className = 'msg-mention';
+
+  const icon = document.createElement('span');
+  icon.className = 'msg-mention-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML =
+    '<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 16" width="18" height="16"><path d="M3.25 1A2.25 2.25 0 0 0 1 3.25v9.5A2.25 2.25 0 0 0 3.25 15h11.5A2.25 2.25 0 0 0 17 12.75v-8a2.25 2.25 0 0 0-2.25-2.25H9.915a.75.75 0 0 1-.385-.107L7.742 1.321A2.25 2.25 0 0 0 6.585 1zM2.5 3.25a.75.75 0 0 1 .75-.75h3.335a.75.75 0 0 1 .385.107l1.788 1.072c.35.21.75.321 1.157.321h4.835a.75.75 0 0 1 .75.75V5h-13z"></path></svg>';
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'msg-mention-label';
+  labelEl.textContent = safeText(label);
+
+  pill.appendChild(icon);
+  pill.appendChild(labelEl);
+  userBody.appendChild(pill);
+  return pill;
 }
 
 // Collapsible "💭 Thinking" bubble rendered above an assistant message body,
@@ -2020,7 +2044,19 @@ sendQuery = async function() {
     tempMode = bang.mode;
   }
 
-  addMessage('user', query);
+  const userMsgEl = addMessage('user', query);
+  // When a page is captured for this turn, show a Zo-style mention pill
+  // (file-mention badge) in the user message so it reads like Zo's
+  // composer-shell with an attached file/page reference.
+  if (currentContext && (currentContext.title || currentContext.url)) {
+    const userBody = userMsgEl && userMsgEl.querySelector
+      ? userMsgEl.querySelector('.msg-body')
+      : null;
+    if (userBody) {
+      const host = safeText(currentContext.title || currentContext.url);
+      appendMentionPill(userBody, host);
+    }
+  }
   addMessage('thinking', 'Zo is thinking...');
   startThinkingTimeout();
 
