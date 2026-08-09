@@ -62,3 +62,54 @@ describe("sticky top region layout", () => {
     expect(block).toContain("overflow: hidden");
   });
 });
+
+describe("Zo-native design system tokens", () => {
+  // The conversation surface must stay on Hanken Grotesk + the neutral
+  // --zo-* palette to match zo.computer. These guard against regressions
+  // back to the old Fraunces/Figtree + amber-only system.
+  it("UI + display fonts resolve to Hanken Grotesk (bundled)", () => {
+    expect(css).toContain("'Hanken Grotesk'");
+    const fontUi = ruleBlock(":root");
+    expect(fontUi).toContain("--font-ui: 'Hanken Grotesk'");
+    expect(fontUi).toContain("--font-display: 'Hanken Grotesk'");
+  });
+
+  it("declares a bundled @font-face (MV3 CSP-safe, no external font-src for text)", () => {
+    expect(css).toMatch(/@font-face[^}]*'Hanken Grotesk'/);
+    expect(css).toContain("assets/fonts/HankenGrotesk");
+  });
+
+  it("defines the Zo-neutral token set in :root", () => {
+    const root = ruleBlock(":root");
+    for (const tok of [
+      "--zo-sidebar", "--zo-foreground", "--zo-primary", "--zo-primary-foreground",
+      "--zo-accent", "--zo-accent-foreground", "--zo-muted-foreground",
+      "--zo-border", "--zo-border-primary",
+    ]) {
+      expect(root).toContain(tok);
+    }
+  });
+
+  it("every theme variant carries the Zo-neutral tokens", () => {
+    for (const sel of [
+      '[data-theme="dark"]', '[data-theme="light"]', '[data-theme="sepia"]',
+      '[data-theme="forest"]', '[data-theme="ocean"]',
+    ]) {
+      const block = ruleBlock(sel);
+      expect(block).toContain("--zo-primary");
+      expect(block).toContain("--zo-border");
+    }
+  });
+
+  it("#messages uses the Zo spacing model (gap-6, pt-8) and a centered rail", () => {
+    const block = ruleBlock("#messages");
+    expect(block).toContain("gap: 24px");
+    expect(block).toContain("padding: 32px");
+  });
+
+  it(".msg is capped + centered like Zo's max-w-3xl mx-auto", () => {
+    const block = ruleBlock(".msg");
+    expect(block).toContain("max-width: 768px");
+    expect(block).toContain("margin-inline: auto");
+  });
+});
