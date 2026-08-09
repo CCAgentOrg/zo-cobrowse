@@ -149,6 +149,20 @@ describe("sidepanel Mode system", () => {
     expect(code).toContain("action-card");
   });
 
+  it("renders the timeline as an inline run block + groups repeats + tracks duration (Gaps 1/2/4)", () => {
+    // Inline "⚡ Worked N steps · duration" run block in the chat stream.
+    expect(code).toContain("function groupActions");
+    expect(code).toContain("msg-action-run");
+    expect(code).toContain("action-run-header");
+    expect(code).toContain("⚡ Worked");
+    expect(code).toContain("function formatDuration");
+    // Duration is captured at run start/end.
+    expect(code).toMatch(/runStartTime = Date\.now\(\)/);
+    expect(code).toMatch(/Date\.now\(\) - runStartTime/);
+    // The old duplicate inline ".msg-action" message per step is gone.
+    expect(code).not.toContain("addMessage('action',");
+  });
+
   it("has duckdb query commands (#05)", () => {
     expect(code).toContain("isDuckdb");
     expect(code).toContain("DUCKDB_QUERY");
@@ -189,6 +203,15 @@ describe("sidepanel thinking/reasoning bubble", () => {
     expect(code).toContain("thinking-content");
     expect(code).toContain('aria-expanded');
     expect(code).toContain("content.hidden = true");
+  });
+
+  it("shows a one-line summary in the collapsed header (Gap 3, matches zo.computer)", () => {
+    // The label is now "💭 Thought" plus a reasoningSummary() preview, not a
+    // bare char count.
+    expect(code).toContain("function reasoningSummary");
+    expect(code).toContain("'💭 Thought'");
+    expect(code).toContain("thinking-summary");
+    expect(css).toContain(".thinking-summary");
   });
 
   it("no-ops on empty reasoning so non-reasoning modes are unaffected", () => {
@@ -331,6 +354,7 @@ describe("addReasoningBubble DOM behavior", () => {
     sandbox.document = { createElement: (t: string) => new El(t) };
     vm.runInContext(
       extractFn("safeText") + "\n" +
+      extractFn("reasoningSummary") + "\n" +
       extractFn("escapeHtml") + "\n" +
       extractFn("markdownToHtml") + "\n" +
       extractFn("addReasoningBubble"),
@@ -361,12 +385,20 @@ describe("addReasoningBubble DOM behavior", () => {
     expect(msg.children[0]).toBe(bubble);
     expect(msg.children[1]).toBe(body);
 
-    // Toggle header with char count, aria-expanded=false (collapsed)
+    // Toggle header: label is now "💭 Thought", with a summary preview line
+    // and a separate char-count meta span (Gap 3, matches zo.computer).
     const toggle = bubble!.querySelector(".thinking-toggle");
     expect(toggle).not.toBeNull();
     expect(toggle!.getAttribute("aria-expanded")).toBe("false");
-    expect(toggle!.querySelector(".thinking-label")!.textContent)
-      .toContain(String(reasoning.length));
+    expect(toggle!.querySelector(".thinking-label")!.textContent).toContain("Thought");
+    // The one-line summary preview reflects the reasoning content.
+    const summary = toggle!.querySelector(".thinking-summary");
+    expect(summary).not.toBeNull();
+    expect(summary!.textContent).toContain("documentation landing page");
+    // Char count moved to a dedicated meta span.
+    const meta = toggle!.querySelector(".thinking-meta");
+    expect(meta).not.toBeNull();
+    expect(meta!.textContent).toContain(String(reasoning.length));
 
     // Content exists, hidden by default, carries the (escaped) reasoning
     const content = bubble!.querySelector(".thinking-content");
@@ -510,5 +542,181 @@ describe("healAssistantMessage — persisted-history repair", () => {
     // otherwise old conversations still render raw JSON.
     const callSites = (code.match(/healAssistantMessage\(msg\)/g) || []).length;
     expect(callSites).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ── renderActionTimeline DOM behavior: inline "⚡ Worked N steps" run block
+// (Gaps 1/2/4 — matches zo.computer). Exercises the real function extracted
+// from sidepanel.js against a richer DOM stub that supports getElementById +
+// dataset, which renderActionTimeline uses.
+describe("renderActionTimeline DOM behavior — inline run block", () => {
+  function extractFn(name: string): string {
+    const start = code.indexOf("function " + name + "(");
+    if (start === -1) throw new Error("fn not found: " + name);
+    let depth = 0, started = false, end = start;
+    for (let i = start; i < code.length; i++) {
+      if (code[i] === "{") { depth++; started = true; }
+      else if (code[i] === "}") { depth--; if (started && depth === 0) { end = i + 1; break; } }
+    }
+    return code.slice(start, end);
+  }
+
+  // DOM stub with dataset + getElementById + classList-ish class arrays.
+  class RunEl {
+    tag: string;
+    id = "";
+    children: RunEl[] = [];
+    parent: RunEl | null = null;
+    attrs: Record<string, string> = {};
+    classes: string[] = [];
+    _hidden = false;
+    text = "";
+    innerHTML = "";
+    dataset: Record<string, string> = {};
+    listeners: Record<string, Function> = {};
+    constructor(tag: string) { this.tag = tag; }
+    set className(v: string) { this.classes = v ? v.split(/\s+/).filter(Boolean) : []; }
+    get className() { return this.classes.join(" "); }
+    set textContent(v: string) { this.text = String(v ?? ""); this.innerHTML = ""; }
+    get textContent() { return this.text; }
+    set hidden(v: boolean) { this._hidden = !!v; }
+    get hidden() { return this._hidden; }
+    setAttribute(k: string, v: string) { this.attrs[k] = String(v); }
+    getAttribute(k: string) { return this.attrs[k] ?? null; }
+    appendChild(c: RunEl) { c.parent = this; this.children.push(c); return c; }
+    insertBefore(c: RunEl, ref: RunEl | null) {
+      c.parent = this;
+      const idx = ref ? this.children.indexOf(ref) : -1;
+      if (idx === -1) this.children.push(c); else this.children.splice(idx, 0, c);
+      return c;
+    }
+    addEventListener(ev: string, fn: Function) { this.listeners[ev] = fn; }
+    // Minimal classList shim (renderActionTimeline calls actionsBar.classList.remove).
+    get classList() {
+      const self = this;
+      return {
+        add(c: string) { if (!self.classes.includes(c)) self.classes.push(c); },
+        remove(c: string) { self.classes = self.classes.filter((x) => x !== c); },
+        contains(c: string) { return self.classes.includes(c); },
+        toggle(c: string, force?: boolean) {
+          const has = self.classes.includes(c);
+          const next = force === undefined ? !has : force;
+          if (next && !has) self.classes.push(c);
+          if (!next && has) self.classes = self.classes.filter((x) => x !== c);
+          return next;
+        },
+      };
+    }
+    querySelector(sel: string): RunEl | null {
+      const cls = sel.startsWith(".") ? sel.slice(1).split(".")[0] : null;
+      return this._find(cls);
+    }
+    _find(cls: string | null): RunEl | null {
+      for (const c of this.children) {
+        if (!cls || c.classes.includes(cls)) return c;
+        const found = c._find(cls);
+        if (found) return found;
+      }
+      return null;
+    }
+    querySelectorAll(sel: string): RunEl[] {
+      const cls = sel.startsWith(".") ? sel.slice(1) : null;
+      const out: RunEl[] = [];
+      const walk = (n: RunEl) => {
+        for (const c of n.children) {
+          if (!cls || c.classes.includes(cls)) out.push(c);
+          walk(c);
+        }
+      };
+      walk(this);
+      return out;
+    }
+    click() { if (this.listeners.click) (this.listeners.click as () => void)(); }
+  }
+
+  // Extract the `const ACTION_META = {...}` block (ends at its closing `};`).
+  function extractConst(name: string): string {
+    const start = code.indexOf("const " + name + " =");
+    if (start === -1) throw new Error("const not found: " + name);
+    let depth = 0, started = false, end = start;
+    for (let i = code.indexOf("{", start); i < code.length; i++) {
+      if (code[i] === "{") { depth++; started = true; }
+      else if (code[i] === "}") { depth--; if (started && depth === 0) { end = i + 2; break; } } // include trailing `;\n`
+    }
+    return code.slice(start, end);
+  }
+
+  // Build a sandbox with the DOM stubs + ACTION_META + the timeline helpers,
+  // run renderActionTimeline, and return the msgsEl/actionsBar for assertions.
+  function renderTimeline(pending: any[]) {
+    const msgsEl = new RunEl("div");
+    const actionsBar = new RunEl("div");
+    const sandbox: any = {
+      document: { createElement: (t: string) => new RunEl(t), getElementById: () => null },
+      pendingActions: pending,
+      actionsBar,
+      msgsEl,
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(
+      extractConst("ACTION_META") + "\n" +
+      extractFn("actionDetail") + "\n" + extractFn("actionKey") + "\n" +
+      extractFn("groupActions") + "\n" + extractFn("formatDuration") + "\n" +
+      extractFn("renderActionTimeline"),
+      sandbox,
+    );
+    sandbox.renderActionTimeline();
+    return { msgsEl, actionsBar };
+  }
+
+  function findRun(msgsEl: RunEl): RunEl {
+    const run = [...msgsEl.children].find((c) => c.classes.includes("msg-action-run"));
+    if (!run) throw new Error("no .msg-action-run rendered");
+    return run;
+  }
+
+  it("renders an inline .msg-action-run in the chat stream (not the bar)", () => {
+    const { msgsEl, actionsBar } = renderTimeline([
+      { type: "click", selector: "#a" },
+      { type: "done", response: "ok" },
+    ]);
+    expect(() => findRun(msgsEl)).not.toThrow();
+    const barHasRun = [...actionsBar.children].some((c) => c.classes.includes("msg-action-run"));
+    expect(barHasRun).toBe(false);
+  });
+
+  it("the run header is collapsed by default (aria-expanded=false, body hidden)", () => {
+    const { msgsEl } = renderTimeline([{ type: "click", selector: "#x" }]);
+    const run = findRun(msgsEl);
+    const header = run.children.find((c) => c.classes.includes("action-run-header"))!;
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    const body = run.children.find((c) => c.classes.includes("action-run-body"))!;
+    expect(body.hidden).toBe(true);
+  });
+
+  it("expanding the header reveals the body", () => {
+    const { msgsEl } = renderTimeline([{ type: "click", selector: "#x" }]);
+    const run = findRun(msgsEl);
+    const header = run.children.find((c) => c.classes.includes("action-run-header"))! as RunEl;
+    const body = run.children.find((c) => c.classes.includes("action-run-body"))!;
+    header.click();
+    expect(header.getAttribute("aria-expanded")).toBe("true");
+    expect(body.hidden).toBe(false);
+  });
+
+  it("groups consecutive identical actions into one card with a count badge", () => {
+    const { msgsEl } = renderTimeline([
+      { type: "click", selector: "#go" },
+      { type: "click", selector: "#go" },
+      { type: "click", selector: "#go" },
+      { type: "done", response: "ok" },
+    ]);
+    const cards = findRun(msgsEl).querySelectorAll(".action-card");
+    // 3 identical clicks collapse to 1 card + 1 done card = 2 cards total.
+    expect(cards.length).toBe(2);
+    // The stub's innerHTML setter keeps the markup as a string (no parsed
+    // children), so assert on the innerHTML content rather than querySelector.
+    expect(cards[0].innerHTML, "first group has a × 3 count badge").toContain("× 3");
+    expect(cards[1].innerHTML, "single done has no count badge").not.toContain("action-count");
   });
 });

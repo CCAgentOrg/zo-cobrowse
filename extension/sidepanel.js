@@ -854,6 +854,9 @@ function escapeHtml(s) {
 }
 
 // ---- Action Timeline (#03) ----
+// Renders an inline "⚡ Worked N steps · duration" run block in the chat stream
+// (matching zo.computer), with grouped cards inside. Repeated consecutive
+// actions collapse into a single card with a "× N" count.
 const ACTION_META = {
   click:    { icon: '👆', label: 'Click' },
   fill:     { icon: '✏️', label: 'Fill' },
@@ -869,40 +872,144 @@ function actionDetail(action) {
   return action.selector || action.url || action.value || action.ms || '';
 }
 
+/**
+ * Stable identity key for an action, used to detect consecutive repeats that
+ * should collapse into one timeline card (e.g. multiple clicks on the same
+ * selector). Two actions share a key iff they are operationally identical.
+ */
+function actionKey(action) {
+  if (!action || typeof action !== 'object') return '';
+  return [action.type, action.selector || '', action.url || '',
+          action.value || '', action.attribute || '',
+          action.direction || '', String(action.ms || '')].join('|');
+}
+
+/**
+ * Group consecutive identical actions into runs, matching zo.computer's
+ * "Ran command · 3 times" pattern. Returns objects of shape
+ * { action, count, indices: number[] } preserving original order; non-
+ * consecutive duplicates stay separate. Pure (no DOM deps) → unit-testable.
+ *
+ * @param {object[]} actions
+ * @returns {{ action: object, count: number, indices: number[] }[]}
+ */
+function groupActions(actions) {
+  if (!Array.isArray(actions)) return [];
+  const out = [];
+  for (let i = 0; i < actions.length; i++) {
+    const a = actions[i];
+    const key = actionKey(a);
+    const prev = out[out.length - 1];
+    if (prev && actionKey(prev.action) === key) {
+      prev.count++;
+      prev.indices.push(i);
+    } else {
+      out.push({ action: a, count: 1, indices: [i] });
+    }
+  }
+  return out;
+}
+
+// Format an elapsed duration in ms as a compact human string (e.g. "42s", "4m 57s").
+function formatDuration(ms) {
+  if (typeof ms !== 'number' || !isFinite(ms) || ms < 0) return '';
+  const totalSec = Math.round(ms / 1000);
+  if (totalSec < 1) return '<1s';
+  if (totalSec < 60) return `${totalSec}s`;
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return s ? `${m}m ${s}s` : `${m}m`;
+}
+
 function renderActionTimeline() {
   if (!pendingActions) return;
-  let timeline = actionsBar.querySelector('#action-timeline');
-  if (!timeline) {
-    timeline = document.createElement('div');
-    timeline.id = 'action-timeline';
-    actionsBar.appendChild(timeline);
-  }
-  timeline.innerHTML = '';
-  pendingActions.forEach((action, i) => {
-    const meta = ACTION_META[action.type] || { icon: '•', label: action.type };
+  // Render inline in the chat stream (not in the separate #actions-bar), so a
+  // run reads top-to-bottom as part of the turn like zo.computer. The bar's
+  // Run All / Skip buttons still drive execution via their own handlers.
+  let run = document.getElementById('action-run');
+  if (run) run.remove();
+  run = document.createElement('div');
+  run.id = 'action-run';
+  run.className = 'msg msg-action-run';
+
+  const header = document.createElement('button');
+  header.type = 'button';
+  header.className = 'action-run-header';
+  header.setAttribute('aria-expanded', 'false');
+  header.setAttribute('aria-label', 'Show action steps');
+  header.innerHTML =
+    '<span class="action-run-caret">▸</span>' +
+    '<span class="action-run-label">⚡ Working…</span>' +
+    '<span class="action-run-count"></span>' +
+    '<span class="action-run-duration"></span>';
+  header.addEventListener('click', () => {
+    const expanded = header.getAttribute('aria-expanded') === 'true';
+    header.setAttribute('aria-expanded', String(!expanded));
+    header.setAttribute('aria-label', expanded ? 'Show action steps' : 'Hide action steps');
+    const caret = header.querySelector('.action-run-caret');
+    if (caret) caret.textContent = expanded ? '▸' : '▾';
+    const body = run.querySelector('.action-run-body');
+    if (body) body.hidden = expanded;
+  });
+  run.appendChild(header);
+
+  const body = document.createElement('div');
+  body.className = 'action-run-body';
+  body.hidden = true;  // collapsed by default
+  const timeline = document.createElement('div');
+  timeline.id = 'action-timeline';
+  body.appendChild(timeline);
+  run.appendChild(body);
+
+  // Grouped cards: consecutive identical actions collapse to one card.
+  const groups = groupActions(pendingActions);
+  for (const g of groups) {
+    const meta = ACTION_META[g.action.type] || { icon: '•', label: g.action.type };
     const card = document.createElement('div');
     card.className = 'action-card pending';
-    card.dataset.index = i;
-    card.innerHTML = `
-      <span class="action-icon">${meta.icon}</span>
-      <span class="action-label">${meta.label}</span>
-      <span class="action-detail">${actionDetail(action)}</span>
-      <span class="action-status">pending</span>
-    `;
+    // Map every original index in this group to the same card so
+    // updateActionCard(i) resolves the group's card for any member action.
+    for (const idx of g.indices) card.dataset.index = card.dataset.index || String(idx);
+    card.dataset.indices = g.indices.join(',');
+    card.innerHTML =
+      `<span class="action-icon">${meta.icon}</span>` +
+      `<span class="action-label">${meta.label}</span>` +
+      `<span class="action-detail">${actionDetail(g.action)}</span>` +
+      (g.count > 1 ? `<span class="action-count">× ${g.count}</span>` : '') +
+      `<span class="action-status">pending</span>`;
     timeline.appendChild(card);
-  });
+  }
+
+  msgsEl.appendChild(run);
+  msgsEl.scrollTop = msgsEl.scrollHeight;
+  // Keep the control bar (Run All / Skip) visible during the run.
   actionsBar.classList.remove('hidden');
 }
 
 function updateActionCard(index, status, error) {
-  const timeline = actionsBar.querySelector('#action-timeline');
+  const timeline = document.getElementById('action-timeline');
   if (!timeline) return;
-  const card = timeline.querySelector(`.action-card[data-index="${index}"]`);
+  // A grouped card covers multiple original indices; match by membership.
+  const card = [...timeline.querySelectorAll('.action-card')].find((c) =>
+    (c.dataset.indices || '').split(',').map(Number).includes(index)
+  );
   if (!card) return;
   card.classList.remove('pending', 'running', 'done', 'error');
   card.classList.add(status);
   const statusEl = card.querySelector('.action-status');
   if (statusEl) statusEl.textContent = status === 'error' && error ? error : status;
+}
+
+// Update the inline run header summary (label + step count + duration).
+function updateActionRunHeader(label, count, durationMs) {
+  const run = document.getElementById('action-run');
+  if (!run) return;
+  const labelEl = run.querySelector('.action-run-label');
+  const countEl = run.querySelector('.action-run-count');
+  const durEl = run.querySelector('.action-run-duration');
+  if (labelEl && label) labelEl.textContent = label;
+  if (countEl && count) countEl.textContent = `· ${count} step${count === 1 ? '' : 's'}`;
+  if (durEl) durEl.textContent = durationMs != null ? `· ${formatDuration(durationMs)}` : '';
 }
 
 // ---- Execute pending actions ----
@@ -915,7 +1022,10 @@ async function runPendingActions() {
   runAllBtn.disabled = true;
   skipBtn.disabled = false;
 
+  const runStartTime = Date.now();
   renderActionTimeline();
+  // Live header: count includes the done action (matches "Worked N steps").
+  updateActionRunHeader('⚡ Working…', actions.length, null);
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const tabId = tab?.id;
@@ -943,7 +1053,9 @@ async function runPendingActions() {
       continue;
     }
     updateActionCard(i, 'running');
-    addMessage('action', `${ACTION_META[action.type]?.icon || '•'} ${action.type}: ${actionDetail(action)}`);
+    // No separate inline ".msg-action" message — the card in the run timeline
+    // is the inline record now (avoids the prior duplicate rendering).
+    const actionStart = Date.now();
     const result = await chrome.runtime.sendMessage({
       type: 'EXECUTE_ACTIONS',
       actions: [action],
@@ -959,6 +1071,11 @@ async function runPendingActions() {
     await new Promise((r) => setTimeout(r, 600));
     await refreshPageContext();
   }
+
+  const elapsed = Date.now() - runStartTime;
+  const completedCount = actions.length;
+  // Finalize the inline run header: "⚡ Worked N steps · <duration>".
+  updateActionRunHeader('⚡ Worked', completedCount, elapsed);
 
   pendingActions = null;
   pendingActionsReasoning = '';
@@ -1133,6 +1250,46 @@ function addMessageDOM(role, text) {
 // showing the reasoning field Zo returns alongside its actions. No-ops on
 // empty reasoning so non-reasoning modes (ask/visual) are unaffected.
 // Collapsed by default; click the header to expand.
+/**
+ * Derive a short, plain-text summary of a reasoning string for the collapsed
+ * 💭 Thought bubble header (matches zo.computer, which shows e.g.
+ * "Inspecting site responsiveness issues" rather than a char count).
+ *
+ * First sentence wins; otherwise the first ~80 chars. Markdown markers
+ * (#, *, `, >, -, leading list bullets) are stripped so the preview reads as
+ * prose. Pure (no DOM deps) so it's unit-testable directly.
+ *
+ * @param {string} text
+ * @param {number} [max=80]
+ * @returns {string}
+ */
+function reasoningSummary(text, max = 80) {
+  const raw = safeText(text);
+  if (!raw || !raw.trim()) return '';
+  // Strip markdown structural markers so the preview reads as prose.
+  const cleaned = raw
+    .replace(/^#{1,6}\s+/gm, '')      // headings
+    .replace(/^\s*[-*+]\s+/gm, '')    // list bullets
+    .replace(/^\s*>\s?/gm, '')        // blockquotes
+    .replace(/`{1,3}/g, '')           // inline/code fences
+    .replace(/\*\*?([^*]+)\*\*?/g, '$1') // bold
+    .replace(/__?([^_]+)__?/g, '$1')     // bold/italic _
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // links → text
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+  // First sentence (terminated by . ! ?) if it fits; else truncate.
+  const sentenceEnd = cleaned.search(/[.!?]\s/);
+  let summary;
+  if (sentenceEnd !== -1 && sentenceEnd + 1 <= max) {
+    summary = cleaned.slice(0, sentenceEnd + 1).trim();
+  } else {
+    summary = cleaned.slice(0, max).trim();
+    if (cleaned.length > max) summary += '…';
+  }
+  return summary;
+}
+
 function addReasoningBubble(parentMsgEl, reasoning) {
   if (!parentMsgEl) return;
   const text = safeText(reasoning);
@@ -1154,9 +1311,22 @@ function addReasoningBubble(parentMsgEl, reasoning) {
   caret.textContent = '▸';
   const label = document.createElement('span');
   label.className = 'thinking-label';
-  label.textContent = `💭 Thinking (${text.length} chars)`;
+  label.textContent = '💭 Thought';
   toggle.appendChild(caret);
   toggle.appendChild(label);
+  // Collapsed preview: a one-line gist of the reasoning (matches zo.computer's
+  // "Inspecting site responsiveness issues" header). Truncated with ellipsis via CSS.
+  const summary = reasoningSummary(text);
+  if (summary) {
+    const summaryEl = document.createElement('span');
+    summaryEl.className = 'thinking-summary';
+    summaryEl.textContent = `— ${summary}`;
+    toggle.appendChild(summaryEl);
+  }
+  const meta = document.createElement('span');
+  meta.className = 'thinking-meta';
+  meta.textContent = `${text.length} chars`;
+  toggle.appendChild(meta);
 
   const content = document.createElement('div');
   content.className = 'thinking-content';
