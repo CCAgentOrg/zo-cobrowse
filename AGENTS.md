@@ -14,6 +14,8 @@ Chrome MV3 extension + optional WebSocket backend that connects the browser to [
 - **`extension/lib/`** — pure ES modules with no `chrome.*`/DOM deps. `modes.js` (`BUILTIN_MODES`, `resolveMode`, `presetToMode`, `ACTION_SCHEMA_COMPACT` — the Mode system, single source of truth for prompt + context tier), `bang-commands.js` (`parseBangCommand()`, discriminated union on `kind`, each command carries a `mode` field), `config.js` (the `DEFAULTS` config object + storage keys). Unit-tested directly.
 - **`extension/options.html`/`.js`** — settings UI. Saves token, API URL, model, Zo.space endpoint to `chrome.storage.sync`. Test connection flow + "Reset to defaults".
 - **`backend/relay.ts`** — optional HTTP+WebSocket service for multi-participant sessions. Not required for single-user co-browsing.
+- **`extension/AGENTS.md`** — Zo API reference (endpoints, auth, SSE event types). Read before touching API calls in `background.js`.
+- **`skill/`** — the Zo-side companion to the extension: co-browse personas, preset library, and the action-schema protocol (`skill/SKILL.md`, `skill/references/presets.md`; presets sync via `skill/scripts/sync-presets.ts`). Presets feed the Mode system through `presetToMode` in `modes.js`.
 
 ## Key patterns
 
@@ -21,7 +23,7 @@ Chrome MV3 extension + optional WebSocket backend that connects the browser to [
 - **Streaming is the primary path** (`askZoStream` / `_askZoStreamImpl` in background ↔ `streamPort` / `handleStreamMessage` in sidepanel), hardened end-to-end: per-query `sessionId` isolation, `safePost()` that no-ops on dead ports, `port.onDisconnect` → marks `port._dead`, `isRetriableStreamError()` retries only transient errors and emits `STREAM_RECONNECT` before retrying, 60s thinking-indicator liveness timeout. The older non-streaming `askZo()` is retained as fallback. See `QA_REPORT.md` § "Streaming support" before touching this path.
 - **Conversation threading**: background.js stores `zoConversationId`, sends it as `conversation_id` to every `/zo/ask` call. Zo respects this for thread continuity.
 - **Graceful fallback**: content script (`chrome.tabs.sendMessage`) tried first for context/actions; falls back to `chrome.scripting.executeScript` if content script not loaded.
-- **No output_format in API calls**: Zo didn't support `array` type in the `output_format` schema. Instead, the prompt asks for JSON and the code parses it from the text response.
+- **No output_format in API calls**: Zo didn't support `array` type in the `output_format` schema. Instead, the prompt asks for JSON and the code parses it from the text response. Only `cobrowse` mode uses the JSON `{reasoning,actions}` envelope; read-only modes (`ask`/`research`/`summarize`/`extract`/`visual`) stream plain markdown.
 - **Text safety**: route all output through `addMessageDOM('assistant')` (escapes + markdown + `appendChild`); `safeText`/`String()` coercion at every text sink. Don't use `addMessage('bot')` — it skips markdown.
 - **Reasoning / thinking bubble**: the `reasoning` field Zo returns alongside `actions` is surfaced via `addReasoningBubble(parentMsgEl, reasoning)` in sidepanel.js — a collapsible "💭 Thinking" bubble (collapsed by default) inserted above the assistant message body, rendered through `markdownToHtml` + `safeText` (same safety as assistant messages). It no-ops on empty reasoning (so `ask`/`visual` modes are unaffected). Reasoning is persisted with the assistant message (`{role, text, reasoning, timestamp}`) and re-rendered from history. It arrives only in the final `STREAM_DONE` payload (no incremental streaming of reasoning).
 
@@ -90,6 +92,7 @@ When you add a feature: extend the relevant schema first, then write the code + 
 |------|------|
 | Change prompt/action schema | `extension/background.js` → `buildPrompt()` + `extension/lib/modes.js` → `ACTION_SCHEMA_COMPACT` |
 | Add/edit a Mode | `extension/lib/modes.js` → `BUILTIN_MODES` (add a schema test in `tests/modes.test.ts`) |
+| Edit Zo-side presets/personas | `skill/` (`skill/SKILL.md`, `skill/references/presets.md`) |
 | Add new action type | `extension/content.js` + `extension/background.js` → `executeDomAction()` |
 | Fix context capture | `extension/background.js` → `getActiveTabContext()` |
 | Change conversation display | `extension/sidepanel.js` → `addMessage()`, `sendQuery()` |
