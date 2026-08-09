@@ -1314,66 +1314,81 @@ function reasoningSummary(text, max = 80) {
   return summary;
 }
 
-function addReasoningBubble(parentMsgEl, reasoning) {
+// Inline reasoning, rendered above the assistant answer (Zo model).
+// Zo surfaces the model's thinking as prose interleaved with the work,
+// not a separate bubble. We mirror that:
+//   - short reasoning (<= INLINE_REASONING_MAX chars, single line) renders
+//     inline as muted prose directly above the answer — no collapse;
+//   - longer reasoning collapses into a "💭 Thought" trace header (like
+//     Zo's "Response interrupted — retried ▸" pattern) that expands to
+//     the full reasoning.
+// No-ops on empty reasoning so non-reasoning modes (ask/visual) are
+// unaffected. Idempotent: skips if a reasoning block is already present.
+const INLINE_REASONING_MAX = 120;
+
+function addReasoningBubble(parentMsgEl, reasoning, inlineMax = INLINE_REASONING_MAX) {
   if (!parentMsgEl) return;
   const text = safeText(reasoning);
   if (!text || !text.trim()) return;
 
-  // Don't add a duplicate bubble (e.g. on re-render)
-  if (parentMsgEl.querySelector('.msg-thinking-bubble')) return;
+  // Don't add a duplicate (e.g. on re-render from history)
+  if (parentMsgEl.querySelector('.msg-reasoning')) return;
 
-  const bubble = document.createElement('div');
-  bubble.className = 'msg-thinking-bubble';
+  const isInline = text.length <= inlineMax && !text.includes('\n');
 
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'thinking-toggle';
-  toggle.setAttribute('aria-expanded', 'false');
-  toggle.setAttribute('aria-label', 'Show reasoning');
-  const caret = document.createElement('span');
-  caret.className = 'thinking-caret';
-  caret.textContent = '▸';
-  const label = document.createElement('span');
-  label.className = 'thinking-label';
-  label.textContent = '💭 Thought';
-  toggle.appendChild(caret);
-  toggle.appendChild(label);
-  // Collapsed preview: a one-line gist of the reasoning (matches zo.computer's
-  // "Inspecting site responsiveness issues" header). Truncated with ellipsis via CSS.
-  const summary = reasoningSummary(text);
-  if (summary) {
-    const summaryEl = document.createElement('span');
-    summaryEl.className = 'thinking-summary';
-    summaryEl.textContent = `— ${summary}`;
-    toggle.appendChild(summaryEl);
+  const block = document.createElement('div');
+  block.className = isInline ? 'msg-reasoning msg-reasoning-inline' : 'msg-reasoning';
+
+  if (isInline) {
+    // Inline muted prose, no collapse.
+    block.innerHTML = markdownToHtml(text);
+  } else {
+    // Collapsible trace header.
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'reasoning-toggle';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-label', 'Show reasoning');
+    const caret = document.createElement('span');
+    caret.className = 'reasoning-caret';
+    caret.textContent = '▸';
+    const label = document.createElement('span');
+    label.className = 'reasoning-label';
+    label.textContent = '💭 Thought';
+    toggle.appendChild(caret);
+    toggle.appendChild(label);
+    // Collapsed preview: a one-line gist of the reasoning.
+    const summary = reasoningSummary(text);
+    if (summary) {
+      const summaryEl = document.createElement('span');
+      summaryEl.className = 'reasoning-summary';
+      summaryEl.textContent = `— ${summary}`;
+      toggle.appendChild(summaryEl);
+    }
+
+    const content = document.createElement('div');
+    content.className = 'reasoning-content';
+    content.hidden = true;
+    content.innerHTML = markdownToHtml(text);
+
+    toggle.addEventListener('click', () => {
+      const expanded = toggle.getAttribute('aria-expanded') === 'true';
+      toggle.setAttribute('aria-expanded', String(!expanded));
+      toggle.setAttribute('aria-label', expanded ? 'Show reasoning' : 'Hide reasoning');
+      caret.textContent = expanded ? '▸' : '▾';
+      content.hidden = expanded;
+    });
+
+    block.appendChild(toggle);
+    block.appendChild(content);
   }
-  const meta = document.createElement('span');
-  meta.className = 'thinking-meta';
-  meta.textContent = `${text.length} chars`;
-  toggle.appendChild(meta);
 
-  const content = document.createElement('div');
-  content.className = 'thinking-content';
-  content.hidden = true;
-  content.innerHTML = markdownToHtml(text);
-
-  toggle.addEventListener('click', () => {
-    const expanded = toggle.getAttribute('aria-expanded') === 'true';
-    toggle.setAttribute('aria-expanded', String(!expanded));
-    toggle.setAttribute('aria-label', expanded ? 'Show reasoning' : 'Hide reasoning');
-    caret.textContent = expanded ? '▸' : '▾';
-    content.hidden = expanded;
-  });
-
-  bubble.appendChild(toggle);
-  bubble.appendChild(content);
-
-  // Insert above the message body so it reads: thinking → answer
+  // Insert above the message body so it reads: reasoning → answer
   const body = parentMsgEl.querySelector('.msg-body');
   if (body) {
-    parentMsgEl.insertBefore(bubble, body);
+    parentMsgEl.insertBefore(block, body);
   } else {
-    parentMsgEl.insertBefore(bubble, parentMsgEl.firstChild);
+    parentMsgEl.insertBefore(block, parentMsgEl.firstChild);
   }
 }
 

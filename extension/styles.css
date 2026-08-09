@@ -805,15 +805,29 @@ input, textarea, select {
   font-size: 12px;
 }
 
-/* ── Collapsible reasoning ("thinking") bubble above assistant messages ── */
-.msg-thinking-bubble {
-  flex: 1 0 100%;        /* take the full row → wraps to its own line above .msg-body */
-  margin-bottom: 6px;
-  padding: 4px 0 4px 10px;
-  border-left: 2px solid var(--border-soft);
-  opacity: 0.9;
+/* ── Inline reasoning, above the assistant answer (Zo model) ──
+   Zo renders the model's thinking as prose interleaved with the work.
+   Short reasoning shows inline as muted prose; longer reasoning
+   collapses into a "💭 Thought" trace header (like Zo's
+   "Response interrupted — retried ▸" pattern). */
+.msg-reasoning {
+  width: 100%;
+  margin-bottom: 8px;
+  color: var(--zo-muted-foreground);
 }
-.thinking-toggle {
+/* Inline variant: muted prose, no collapse, no chrome. */
+.msg-reasoning-inline {
+  font-size: 12.5px;
+  line-height: 1.55;
+  font-style: italic;
+  opacity: 0.9;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+.msg-reasoning-inline p { margin-bottom: 4px; }
+.msg-reasoning-inline p:last-child { margin-bottom: 0; }
+
+.reasoning-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -823,62 +837,56 @@ input, textarea, select {
   margin: 0;
   cursor: pointer;
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--zo-muted-foreground);
   font-family: inherit;
 }
-.thinking-toggle:hover {
-  color: var(--text);
+.reasoning-toggle:hover {
+  color: var(--zo-foreground);
 }
-.thinking-toggle:focus-visible {
+.reasoning-toggle:focus-visible {
   outline: 2px solid var(--amber);
   outline-offset: 2px;
   border-radius: 3px;
 }
-.thinking-caret {
+.reasoning-caret {
   display: inline-block;
   width: 1em;
   text-align: center;
   transition: transform 0.15s ease;
   color: var(--text-faint);
 }
-.thinking-toggle[aria-expanded="true"] .thinking-caret {
+.reasoning-toggle[aria-expanded="true"] .reasoning-caret {
   transform: rotate(90deg);
 }
-.thinking-label {
+.reasoning-label {
   font-weight: 500;
   flex-shrink: 0;
 }
-/* One-line reasoning preview shown when the bubble is collapsed (matches
-   zo.computer's "Thought — Inspecting site responsiveness issues" header). */
-.thinking-summary {
+/* One-line reasoning preview shown when collapsed (matches zo.computer's
+   "Thought — Inspecting site responsiveness issues" header). */
+.reasoning-summary {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-muted);
+  color: var(--zo-muted-foreground);
   font-weight: 400;
   opacity: 0.85;
 }
-/* Char-count metadata; muted, sits after the summary when collapsed. */
-.thinking-meta {
-  flex-shrink: 0;
-  margin-left: auto;
-  color: var(--text-faint);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.thinking-content {
+.reasoning-content {
   margin-top: 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-soft);
   font-size: 12.5px;
   line-height: 1.55;
-  color: var(--text-muted);
+  color: var(--zo-muted-foreground);
   font-style: italic;
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
-.thinking-content p { margin-bottom: 6px; }
-.thinking-content p:last-child { margin-bottom: 0; }
-.thinking-content[hidden] { display: none; }
+.reasoning-content p { margin-bottom: 6px; }
+.reasoning-content p:last-child { margin-bottom: 0; }
+.reasoning-content[hidden] { display: none; }
 
 .msg-reconnecting {
   justify-content: flex-start;
