@@ -33,8 +33,15 @@ Send a message to Zo. Zo has full access to files, tools, integrations.
 ```
 
 **Streaming** (when `stream: true`): SSE events with `Content-Type: text/event-stream`.
-- Event types: `FrontendModelResponse` (text chunk in `data.content`), `End` (complete, has `data.output`), `Error` (`data.message`)
-- `x-conversation-id` response header has the conversation ID
+- `x-conversation-id` response header has the conversation ID.
+- **Real event types** (captured live 2026-08-09; see `tests/test-prompts/qa-notes.md`). The earlier-documented `FrontendModelResponse`/`End`/`Error` events are **never emitted** by the live API — the extension keeps handlers for them only to support synthetic test fixtures.
+  - `PartStartEvent` — starts a content part. `data: {event_kind:"part_start", index, part:{part_kind:"thinking|text|tool-call|tool-return", content:"<first piece>"|args}, previous_part_kind}`. The `part.content` is the first token of that part and must be routed by `part.part_kind` (otherwise the first word of every part is lost).
+  - `PartDeltaEvent` — incremental content delta (the workhorse). `data: {event_kind:"part_delta", index, delta:{content_delta:"<text>", part_delta_kind:"thinking|text"}}`. Route on `delta.part_delta_kind`: `"thinking"` is the live reasoning channel (index 0), `"text"` is the answer channel (index 1).
+  - `FunctionToolCallEvent` — a tool was invoked. `data: {event_kind:"function_tool_call", part:{tool_name, tool_call_id, args}}`. Surfaced as the "Explored" channel.
+  - `FunctionToolResultEvent` — a tool returned. `data: {event_kind:"function_tool_result", result:{content:{stdout,stderr,returncode}|string, outcome:"success"|"error", tool_call_id, tool_name}}`.
+  - `AgentRuntimeStreamChunk` — lifecycle metadata. `data: {type:"status"|"persisted", status, data:{message_id}}`. Not rendered (live reasoning + tool cards cover it).
+  - `completed` — **terminal** signal. `data: {status:"succeeded"|"failed", error}`. (Not `End`, not `[DONE]`.)
+- Cobrowse mode wraps the `{reasoning,actions}` JSON envelope in a ```` ```json ```` code fence; `background.js` strips exactly one whole-fence block before parsing. The action object may arrive as key-first (`{"click":{...}}`), type-first (`{"type":"click",...}`), or the non-spec `{"action":"click",...}` variant — `normalizeActions` maps all three.
 
 #### `GET /models/available`
 List models you can use (includes BYOK configs). Requires auth.

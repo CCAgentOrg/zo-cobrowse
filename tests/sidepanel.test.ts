@@ -89,14 +89,13 @@ describe("Zo-native message rendering", () => {
   });
 
   it("suppresses raw action-JSON during streaming (shows a placeholder)", () => {
-    // Co-browse streams {"actions":[...]} as text deltas; the handler must
-    // detect that shape and show a muted placeholder instead of rendering
-    // the raw JSON into the body. Guards against the "I see JSON in chat"
-    // regression for action responses.
-    expect(code).toMatch(/import\s*\{[^}]*looksLikeActionJson[^}]*\}\s*from\s*['"]\.\/lib\/intent\.js['"]/);
-    expect(code).toContain("isActionJson");
-    expect(code).toContain("Preparing actions");
-    expect(code).toContain("msg-streaming-actions");
+    // Chronological feed: raw action-JSON is no longer a separate concern —
+    // reasoning tokens stream as .msg-stream-thought, tool cards as
+    // .msg-stream-tool-card, and answer tokens as markdown. The old
+    // isActionJson / msg-streaming-actions placeholder was removed.
+    // This test now just ensures the chronological feed classes exist.
+    expect(code).toContain("msg-stream-thought");
+    expect(code).toContain("msg-stream-tool-card");
   });
 
   it("never falls back to the raw action-JSON as the final response text", () => {
@@ -270,12 +269,17 @@ describe("sidepanel thinking/reasoning bubble", () => {
   });
 
   it("attaches the bubble in the streaming STREAM_DONE path", () => {
-    expect(code).toContain("addReasoningBubble(streamSession.msgEl, msg.reasoning)");
+    // Chronological feed: STREAM_DONE doesn't call addReasoningBubble unless no
+    // chunks were streamed (fallback path). The reasoning is streamed inline as
+    // .msg-stream-thought tokens. This test now checks the chronological feed path.
+    expect(code).toContain("msg-stream-thought");
+    expect(code).toMatch(/case ['"]STREAM_DONE['"]/);
   });
 
   it("persists reasoning with the assistant message (streaming write path)", () => {
     expect(code).toContain("reasoning: reasoningVal");
-    expect(code).toContain("safeText(msg.reasoning) || undefined");
+    // Now includes streamed reasoning (streamSession.reasoningText) as fallback.
+    expect(code).toContain("msg.reasoning");
   });
 
   it("re-renders reasoning bubbles from history for assistant messages", () => {
@@ -295,6 +299,47 @@ describe("sidepanel thinking/reasoning bubble", () => {
     // Regression guard: reasoning is inserted INSIDE .msg, full-width, above
     // the answer body so it reads reasoning → answer.
     expect(css).toMatch(/\.msg-reasoning\s*\{[^}]*width:\s*100%/);
+  });
+});
+
+describe("sidepanel chronological streaming feed (Thought → Explored → Final)", () => {
+  it("handles STREAM_REASONING messages for live reasoning deltas", () => {
+    expect(code).toContain("case 'STREAM_REASONING'");
+    expect(code).toContain("msg-stream-thought");
+  });
+
+  it("handles STREAM_TOOL messages for live tool-call/result events", () => {
+    expect(code).toContain("case 'STREAM_TOOL'");
+    expect(code).toContain("msg-stream-tool-card");
+  });
+
+  it("renders tool cards with pending/done/error states in chronological order", () => {
+    expect(code).toContain("msg-stream-tool-icon");
+    expect(code).toContain("msg-stream-tool-name");
+    expect(code).toContain("msg-stream-tool-args");
+    expect(code).toContain("msg-stream-tool-result");
+    expect(code).toContain("msg-stream-tool-result-body");
+  });
+
+  it("STREAM_DONE adds TTS button and preserves chronological feed (no innerHTML overwrite)", () => {
+    // Chronological feed: STREAM_DONE must NOT overwrite the message body's innerHTML
+    // (which would break the chronological feed). It only adds TTS and falls back
+    // to addMessage if no chunks arrived.
+    expect(code).toMatch(/case ['"]STREAM_DONE['"]/);
+    expect(code).toContain("tts-btn");
+    // Should NOT contain the old grouped regions logic that set body.innerHTML
+    // in the STREAM_DONE case. Check that there's no body.innerHTML = assignment
+    // between STREAM_DONE case and the next case.
+    const streamDoneMatch = code.match(/case 'STREAM_DONE':([\s\S]*?)case\s+/);
+    const streamDoneBlock = streamDoneMatch ? streamDoneMatch[1] : '';
+    expect(streamDoneBlock).not.toMatch(/body\.innerHTML\s*=/);
+  });
+
+  it("persists reasoning from streamSession and msg.reasoning to conversation", () => {
+    // Chronological feed stores only reasoning (tools are in the body as cards).
+    expect(code).toContain("streamSession.reasoningText");
+    expect(code).toContain("msg.reasoning");
+    expect(code).toContain("reasoning: reasoningVal");
   });
 });
 

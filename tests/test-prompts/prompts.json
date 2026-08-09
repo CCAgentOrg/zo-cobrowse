@@ -1,0 +1,82 @@
+[
+  {
+    "id": "cobrowse-action",
+    "title": "Co-browse — action intent",
+    "mode": "cobrowse",
+    "query": "Click the first link on the page",
+    "tier": 2,
+    "expectJson": true,
+    "expectShape": "action-envelope-json",
+    "note": "Exercises: streaming JSON `{actions:[…]}` suppression by looksLikeActionJson; action normalization (key-first → type-first); done.response as fullText; action timeline rendering."
+  },
+  {
+    "id": "cobrowse-action-sequence",
+    "title": "Co-browse — multi-action sequence",
+    "mode": "cobrowse",
+    "query": "Fill the search box with 'Zo Computer' and click the search button",
+    "tier": 2,
+    "expectJson": true,
+    "expectShape": "action-envelope-json",
+    "note": "Exercises: multiple actions (fill + click); sequential action execution; done.response as final summary."
+  },
+  {
+    "id": "cobrowse-readonly",
+    "title": "Co-browse — read-only intent downgraded",
+    "mode": "cobrowse",
+    "query": "Summarize what this page is about",
+    "tier": 2,
+    "expectJson": false,
+    "expectShape": "plain-markdown",
+    "note": "Exercises: intent-aware prompt downgrade (detectIntent → shouldDowngradeToJsonDisabled). Even though mode is cobrowse (expectJson:true), the read-only query gets the PLAIN_RESPONSE_HINT instead of ACTION_SCHEMA_COMPACT, so Zo streams plain markdown, not `{actions:[…]}`."
+  },
+  {
+    "id": "ask",
+    "title": "Ask — quick question",
+    "mode": "ask",
+    "query": "What is the main topic of this page?",
+    "tier": 1,
+    "expectJson": false,
+    "expectShape": "plain-markdown",
+    "note": "Exercises: plain-markdown streaming (no action envelope); tier 1 context (visibleText only); concise answer style."
+  },
+  {
+    "id": "research",
+    "title": "Research — deep analysis",
+    "mode": "research",
+    "query": "Research the key claims and evidence on this page",
+    "tier": 1,
+    "expectJson": false,
+    "expectShape": "plain-markdown",
+    "note": "Exercises: longer text budget (4000); structured markdown output (headings, citations)."
+  },
+  {
+    "id": "summarize",
+    "title": "Summarize — concise summary",
+    "mode": "summarize",
+    "query": "Give me a brief summary of this page",
+    "tier": 1,
+    "expectJson": false,
+    "expectShape": "plain-markdown",
+    "note": "Exercises: short text budget (2000); bullet or paragraph output."
+  },
+  {
+    "id": "extract",
+    "title": "Extract — structured data",
+    "mode": "extract",
+    "query": "Extract all navigation links and headings into a table",
+    "tier": 2,
+    "expectJson": false,
+    "expectShape": "plain-markdown",
+    "note": "Exercises: tier 2 context (clickable elements with selectors); table/markdown output; expectJson:false so no JSON envelope wrapping."
+  },
+  {
+    "id": "visual",
+    "title": "Visual — screenshot description",
+    "mode": "visual",
+    "query": "Describe what's visible on the screen",
+    "tier": 3,
+    "expectJson": false,
+    "expectShape": "plain-markdown",
+    "note": "Exercises: tier 3 (screenshot context); vision/description output; smallest text budget (1000). Requires screenshot enabled."
+  }
+]

@@ -6,6 +6,7 @@ import {
   ACTION_SCHEMA_COMPACT,
   resolveMode,
   presetToMode,
+  normalizeActions,
 } from "../extension/lib/modes.js";
 import { ModeSchema, BUILTIN_MODE_IDS, BANG_MODE_IDS } from "./schemas/modes.js";
 
@@ -225,3 +226,37 @@ describe("BANG_MODE_IDS — bang command targets", () => {
     }
   });
 });
+
+describe("normalizeActions", () => {
+  it("passes through type-first canonical actions", () => {
+    const actions = [{ type: "click", selector: "#btn" }, { type: "fill", selector: "#inp", value: "x" }];
+    expect(normalizeActions(actions)).toEqual(actions);
+  });
+
+  it("converts key-first actions to type-first", () => {
+    const actions = [{ click: { selector: "#btn" } }, { fill: { selector: "#inp", value: "x" } }];
+    const normalized = normalizeActions(actions);
+    expect(normalized).toEqual([
+      { type: "click", selector: "#btn" },
+      { type: "fill", selector: "#inp", value: "x" },
+    ]);
+  });
+
+  it("handles the non-spec {\"action\":\"type\"} variant (real multi-action captures)", () => {
+    const actions = [{ action: "scroll", selector: "body", args: { direction: "down", amount: 200 } }];
+    const normalized = normalizeActions(actions);
+    expect(normalized).toEqual([{ type: "scroll", selector: "body", direction: "down", amount: 200 }]);
+  });
+
+  it("skips unknown shapes silently", () => {
+    const actions = [{ foo: "bar" }, { type: "unknown" }, null];
+    expect(normalizeActions(actions)).toEqual([]);
+  });
+
+  it("handles mixed known and unknown actions", () => {
+    const actions = [{ click: { selector: "#a" } }, { foo: "bar" }, { type: "fill", value: "x" }];
+    const normalized = normalizeActions(actions);
+    expect(normalized).toEqual([{ type: "click", selector: "#a" }, { type: "fill", value: "x" }]);
+  });
+});
+

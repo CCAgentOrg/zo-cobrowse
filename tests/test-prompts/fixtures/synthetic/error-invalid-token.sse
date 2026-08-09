@@ -1,0 +1,3 @@
+event: Error
+data: {"message":"401 – Invalid or missing API token. Verify your token at Settings → Advanced → Access Tokens."}
+

@@ -1,0 +1,1074 @@
+event: AgentRuntimeStreamChunk
+data: {"type":"status","delta":null,"tool_name":null,"status":"dispatching","error":null,"result":null,"data":null,"message_id":null,"runner_id":null}
+
+event: AgentRuntimeStreamChunk
+data: {"type":"persisted","delta":null,"tool_name":null,"status":null,"error":null,"result":null,"data":{"message_id":"pmxg1b70eesz"},"message_id":"pmxg1b70eesz","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}
+
+event: AgentRuntimeStreamChunk
+data: {"type":"status","delta":null,"tool_name":null,"status":"progress","error":null,"result":null,"data":{"message":"Thinking\u2026","phase":"model_request"},"message_id":null,"runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}
+
+event: PartStartEvent
+data: {"event_kind":"part_start","index":0,"part":{"content":"The","id":"reasoning_content","part_kind":"thinking","provider_details":null,"provider_name":"openai","signature":null},"previous_part_kind":null,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" user is presenting","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" me","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" with a co","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"-browsing","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" test scenario. They","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" want me to fill the search","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" box with 'Zo Computer","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"' and click the search button","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":", then respond with JSON","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" containing","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" actions.\n\nThis looks like a","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" structured","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" test prompt","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":". The page","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" is a test","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" page at example.com/test","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"-page. I should act","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" on the page using","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the browser tools.\n\nLet me","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" first","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" open the page to see it","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":", then fill the search","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" box and click the search button","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":".","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" Actually,","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the request format asks me to","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" respond with JSON {\"actions\":","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"[...]}.\n\nWait \u2014","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" this seems like","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" an automated agent","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" evaluation","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" harness","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":". The user query","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" format is","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":": \"Fill","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the search box with 'Zo","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" Computer' and click the search","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" button. Respond with JSON","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" {\"actions\":[...]","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"}. Actions: click{","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"selector} | fill{selector","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":",value} | extract","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"{selector","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":",attribute} | navigate{","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"url} | scroll{d","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"irection,amount?} |","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" wait{ms} | done","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"{response}.\"\n\nH","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"mm, this is a test","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"/bench","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"mark style prompt","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":". The instructions in the query","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" say to respond with","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" JSON of actions rather","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" than actually doing them","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":". But I","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"'m","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" an agent with browser","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" tools. There","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"'s","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" tension:","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the prompt asks","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" me to output","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" an action plan","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" as","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" JSON, but as the AI","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" assistant on","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" Zo","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":", I actually","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" have browser","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" tools (","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"open_webpage","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":", use_web","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"page, etc.).\n\nThe page","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" URL","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" is https://example.com/test","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"-page \u2014 example","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":".com doesn","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"'t have a test page with","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" search boxes","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":". It","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"'s clearly","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" a synthetic","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" test.","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" The","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" page content","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" is","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" provided in","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the prompt.\n\nGiven this","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" is a co","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"-brows","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"ing test,","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the expected behavior is to output","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the JSON action","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" list. The prompt explicitly","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" says \"Respond with JSON {\"","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"actions\":[...]}\". So","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the benchmark","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" expects","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" me to plan","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" actions","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":":","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" fill","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the search box with","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" 'Zo","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" Computer' and click the","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" search button.\n\nThere are two","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" elements:","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" input","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" \"","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"Search\u2026\" (#search-box","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":") and form","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" #search with field","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" input[name=\"q\"].","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" The search","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" box is","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" #search-box. The \"","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"search button\" \u2014 h","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"mm, the elements","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" list doesn't show an","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" explicit search button, but the","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" form has input","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"[name=\"q\"]. Maybe","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the search button is part","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" of the form,","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" not listed","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":". I","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" should include a click","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" on the search button.","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" Since it's not in","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the elements list, I","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" could click","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" form's submit","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" button or press","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" Enter.","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" But the","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" request","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" says \"click the search button","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"\" \u2014 I'll target","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the search button via","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" form. Perhaps","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" selector like","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" `form","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"#search button[type=\"","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"submit\"]`. Since there","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"'s no explicit button in the","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" elements list, the most defens","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"ible target","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" is","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the form","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" submit.","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" I could do","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" fill{","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"input","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"[name","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"=\"q\"]","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" or #search-box,","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" \"Zo Computer","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"\"} then click{form","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"#search button[type=\"","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"submit\"]} or press","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" enter","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":".\n\nGiven ambiguity","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":", a reasonable action","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" sequence:\n1. fill{\"","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"#search-box\", \"Zo","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" Computer\"}\n2. click{","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"form #","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"search button[type=\"submit","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"\"]} \u2014 or","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" maybe just click","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the search","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" button selector","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":".\n\nHmm, but should","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" I actually use","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" my","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" browser tools (open","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"_webpage","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" on example.com/test","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"-page)?","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" That page","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" doesn't exist on","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" real example.com. The prompt","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" is a synthetic test asking","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" for","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" JSON output.","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" The instructions are","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" explicit: \"Respond","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" with JSON {\"","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"actions\":[...]}\". This","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" looks like an","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" eval harness that","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" par","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"ses my","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" response as","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" JSON. I should comply","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" with the requested","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" output","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" format.\n\nThe","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" final response","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" instructions say to return","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" markdown text","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":", but this specific user request","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" explicitly overrides:","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" respond","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" with JSON. I","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" should respond","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" with the","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" JSON action","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" plan.\n\nI","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"'ll produce:\n\n","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"{\"actions\":[","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"{\"action","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"\":\"fill\",\"selector\":\"#","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"search-box\",\"value\":\"Zo","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" Computer\"},{\"action\":\"click","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"\",\"selector\":\"form","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"#search button[","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"type='submit']\"","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"}]}\n\nBut since","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" a","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" search button wasn","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"'t explicitly listed, maybe","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" I should target","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the form submit","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":". Alternatively","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":", the harness","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" may expect click","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" on the input or","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" press","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" Enter. Given \"","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"click","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the search button\", I","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"'ll use the form","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"'s","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" submit button. To","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" be safe, I","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" could use a selector","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" that's likely","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":": `#search","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" button[type=\"submit\"]","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"` or just `","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"form#search button`.","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" \n\n","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"Let me keep","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" it simple and","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" match the given element","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"/","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"selector","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" names","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":".","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" The","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" elements","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" list has input","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" #","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"search-box and","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" form #search. The click","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"able","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" search button would","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" be inside the form.","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" I'll write:\n\n{\"","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"actions\":[{\"action\":\"fill","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"\",\"selector\":\"#search-box","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"\",\"value\":\"Zo","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" Computer\"},{\"action\":\"click","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"\",\"selector\":\"form#search","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" button[type=\\\"","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"submit\\\"]\"},","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"{\"action\":\"done\",\"response","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"\":\"F","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"illed search","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" box with 'Zo Computer","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"' and clicked","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" search","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":".\"}]}\n\nHmm,","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" does done","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" take","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" response","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"? The schema","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" says done","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"{response}. I can","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" include it.\n\n","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"Actually, should","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" I actually","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" perform browser","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" actions? The instruction says \"","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"Act on the page to","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" fulfill the request\" but","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" then \"Respond with JSON\".","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" In","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" these co","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"-browse benchmark","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" prompts","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":", the expected output is the","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" JSON action list","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":". I","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"'ll comply with the JSON format","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":". I won't call browser","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" tools since the page","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" is synthetic","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" (example.com/test","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"-page doesn't exist in","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" reality) and the harness","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" expects","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" a","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" JSON plan","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":".\n\nLet me produce","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the JSON clean","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"ly. I","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"'ll use a f","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"enced code block or","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" raw","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" JSON? The instruction says respond","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" with JSON.","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" I'll output just","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" the JSON \u2014 plain","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":", in","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" a code block for","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" formatting","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":". Given","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" final_response","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" wants mark","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"down, but user","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" explicitly wants JSON. I'll","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" output the JSON directly","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":",","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" possibly in","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" a code block","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":".\n\n","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"I","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"'ll keep it minimal: the","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" JSON object","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":".","part_delta_kind":"thinking","provider_details":null,"provider_name":null,"signature_delta":null},"event_kind":"part_delta","index":0,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartStartEvent
+data: {"event_kind":"part_start","index":1,"part":{"content":"```","id":null,"part_kind":"text","provider_details":null,"provider_name":null},"previous_part_kind":"thinking","metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"json\n{\n","part_delta_kind":"text","provider_details":null,"provider_name":null},"event_kind":"part_delta","index":1,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"  \"actions\": [\n   ","part_delta_kind":"text","provider_details":null,"provider_name":null},"event_kind":"part_delta","index":1,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" {\"action\": \"fill\",","part_delta_kind":"text","provider_details":null,"provider_name":null},"event_kind":"part_delta","index":1,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" \"selector\": \"#search-box","part_delta_kind":"text","provider_details":null,"provider_name":null},"event_kind":"part_delta","index":1,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"\", \"value\": \"Zo","part_delta_kind":"text","provider_details":null,"provider_name":null},"event_kind":"part_delta","index":1,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" Computer\"},\n    {\"action\":","part_delta_kind":"text","provider_details":null,"provider_name":null},"event_kind":"part_delta","index":1,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" \"click\", \"selector\":","part_delta_kind":"text","provider_details":null,"provider_name":null},"event_kind":"part_delta","index":1,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" \"form#search button[","part_delta_kind":"text","provider_details":null,"provider_name":null},"event_kind":"part_delta","index":1,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"type=\\\"submit\\","part_delta_kind":"text","provider_details":null,"provider_name":null},"event_kind":"part_delta","index":1,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"\"]\"},\n    {\"action\":","part_delta_kind":"text","provider_details":null,"provider_name":null},"event_kind":"part_delta","index":1,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" \"done\", \"response\":","part_delta_kind":"text","provider_details":null,"provider_name":null},"event_kind":"part_delta","index":1,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" \"Filled the search box","part_delta_kind":"text","provider_details":null,"provider_name":null},"event_kind":"part_delta","index":1,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" with 'Zo Computer' and","part_delta_kind":"text","provider_details":null,"provider_name":null},"event_kind":"part_delta","index":1,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" clicked the search button.\"}\n","part_delta_kind":"text","provider_details":null,"provider_name":null},"event_kind":"part_delta","index":1,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"  ]\n}\n```","part_delta_kind":"text","provider_details":null,"provider_name":null},"event_kind":"part_delta","index":1,"metadata":{"zmid":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}}
+
+event: AgentRuntimeStreamChunk
+data: {"type":"persisted","delta":null,"tool_name":null,"status":null,"error":null,"result":null,"data":{"message_id":"iqry8y168tkm"},"message_id":"iqry8y168tkm","runner_id":"9d0734d7-3d45-4c8d-85f6-f9efb58c54ee"}
+
+event: completed
+data: {"status":"succeeded","error":null,"runner_id":null,"error_type":null,"failure_owner":null,"failure_kind":null}
+

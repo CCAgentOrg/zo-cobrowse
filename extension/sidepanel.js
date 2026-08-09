@@ -25,6 +25,7 @@ function startThinkingTimeout() {
       streamSession.active = false;
       streamSession.msgEl = null;
       streamSession.fullText = '';
+      streamSession.reasoningText = '';
     }
     if (typeof input !== 'undefined' && input) input.disabled = false;
     if (typeof sendBtn !== 'undefined' && sendBtn) sendBtn.disabled = false;
@@ -577,6 +578,7 @@ function renderCurrentConversation() {
     const m = msg.role === 'assistant' ? healAssistantMessage(msg) : msg;
     const el = addMessageDOM(m.role, m.text);
     if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning);
+    if (m.role === 'assistant' && m.tools) addExploredRegion(el, m.tools);
   }
 }
 
@@ -628,6 +630,7 @@ async function switchToConversation(id) {
       const m = msg.role === 'assistant' ? healAssistantMessage(msg) : msg;
       const el = addMessageDOM(m.role, m.text);
       if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning);
+      if (m.role === 'assistant' && m.tools) addExploredRegion(el, m.tools);
     }
   } else {
     addMessageDOM('system', 'Connected to Zo. Ask me about this page, or tell me what to do.');
@@ -1539,6 +1542,56 @@ function addReasoningBubble(parentMsgEl, reasoning, inlineMax = INLINE_REASONING
   }
 }
 
+// Render persisted explored tools (from history) as a static 🔍 Explored
+// region above the answer body. Mirrors the live STREAM_TOOL cards but is
+// non-interactive (cards are already resolved with their outcome).
+function addExploredRegion(parentMsgEl, tools) {
+  if (!parentMsgEl) return;
+  if (!Array.isArray(tools) || !tools.length) return;
+  if (parentMsgEl.querySelector('.msg-explored')) return; // idempotent
+  const block = document.createElement('div');
+  block.className = 'msg-explored msg-explored-static';
+  const label = document.createElement('div');
+  label.className = 'msg-explored-label';
+  label.textContent = '🔍 Explored';
+  const list = document.createElement('div');
+  list.className = 'msg-explored-list';
+  for (const t of tools) {
+    const card = document.createElement('div');
+    card.className = 'msg-tool-card ' + (t.outcome === 'error' ? 'msg-tool-error' : 'msg-tool-done');
+    const head = document.createElement('div');
+    head.className = 'msg-tool-head';
+    const icon = document.createElement('span');
+    icon.className = 'msg-tool-icon';
+    icon.textContent = t.outcome === 'error' ? '✗' : '✓';
+    const name = document.createElement('span');
+    name.className = 'msg-tool-name';
+    name.textContent = safeText(t.toolName) || 'tool';
+    head.appendChild(icon);
+    head.appendChild(name);
+    card.appendChild(head);
+    const result = safeText(t.result);
+    if (result) {
+      const details = document.createElement('details');
+      details.className = 'msg-tool-result';
+      const summary = document.createElement('summary');
+      summary.textContent = 'result';
+      const pre = document.createElement('div');
+      pre.className = 'msg-tool-result-body';
+      pre.textContent = result;
+      details.appendChild(summary);
+      details.appendChild(pre);
+      card.appendChild(details);
+    }
+    list.appendChild(card);
+  }
+  block.appendChild(label);
+  block.appendChild(list);
+  const body = parentMsgEl.querySelector('.msg-body');
+  if (body) parentMsgEl.insertBefore(block, body);
+  else parentMsgEl.appendChild(block);
+}
+
 // ---- Presets ----
 
 async function loadModes() {
@@ -1874,7 +1927,12 @@ function stopSpeaking() {
 let sendQuery = async function () { /* replaced at the end of this file */ };
 
 let streamPort = null;
-let streamSession = { active: false, sessionId: 0, msgEl: null, fullText: '', remainingActions: null };
+// Chronological streaming state. Instead of grouping by channel (Thought/
+// Explored/Final), we append every event in the order it arrives to the message
+// body — a live feed. The final STREAM_DONE may render a collapsed reasoning
+// summary bubble above the body if the user wants a compact view, but the
+// full reasoning stream is always visible in chronological order.
+let streamSession = { active: false, sessionId: 0, msgEl: null, fullText: '', reasoningText: '', remainingActions: null };
 
 // Last user query submitted — used by the error card's Retry button.
 let lastQuery = '';
@@ -1905,6 +1963,7 @@ function cancelStream() {
   if (streamPort) { try { streamPort.disconnect(); } catch {} streamPort = null; }
   streamSession.msgEl = null;
   streamSession.fullText = '';
+  streamSession.reasoningText = '';
   streamSession.remainingActions = null;
   if (typeof input !== 'undefined' && input) input.disabled = false;
   if (typeof sendBtn !== 'undefined' && sendBtn) { sendBtn.disabled = !input?.value?.trim(); }
@@ -1941,35 +2000,134 @@ function handleStreamMessage(msg) {
   // Ignore stale messages from previous sessions
   if (msg.sessionId && msg.sessionId !== streamSession.sessionId) return;
   switch (msg.type) {
+    case 'STREAM_REASONING': {
+      // Live thinking channel (PartDeltaEvent part_delta_kind:"thinking").
+      // Append to a collapsible reasoning container in chronological order.
+      clearThinkingTimeout();
+      msgsEl.querySelectorAll('.msg-reconnecting').forEach(el => el.remove());
+      if (!streamSession.active) return;
+      if (!streamSession.msgEl) {
+        const thinking = msgsEl.querySelector('.msg-thinking');
+        if (thinking) thinking.remove();
+        streamSession.msgEl = addMessageDOM('assistant', '');
+      }
+      streamSession.reasoningText = safeText(msg.text);
+      const body = streamSession.msgEl.querySelector('.msg-body');
+      if (body) {
+        // Lazily create a collapsible reasoning container
+        let reasoningContainer = body.querySelector('.msg-stream-reasoning');
+        if (!reasoningContainer) {
+          reasoningContainer = document.createElement('details');
+          reasoningContainer.className = 'msg-stream-reasoning';
+          reasoningContainer.open = false; // Collapsed by default
+          const summary = document.createElement('summary');
+          summary.className = 'msg-stream-reasoning-summary';
+          summary.textContent = '💭 Thought';
+          reasoningContainer.appendChild(summary);
+          const content = document.createElement('div');
+          content.className = 'msg-stream-reasoning-content';
+          reasoningContainer.appendChild(content);
+          body.appendChild(reasoningContainer);
+        }
+        // Append the new reasoning token to the content area
+        const content = reasoningContainer.querySelector('.msg-stream-reasoning-content');
+        if (content) {
+          const token = document.createElement('span');
+          token.className = 'msg-stream-thought';
+          token.textContent = safeText(msg.text);
+          content.appendChild(token);
+        }
+      }
+      break;
+    }
+    case 'STREAM_TOOL': {
+      // Live "Explored" channel — a tool was called or returned. Append as a
+      // card-like block in chronological order.
+      clearThinkingTimeout();
+      if (!streamSession.active) return;
+      if (!streamSession.msgEl) {
+        const thinking = msgsEl.querySelector('.msg-thinking');
+        if (thinking) thinking.remove();
+        streamSession.msgEl = addMessageDOM('assistant', '');
+      }
+      const body = streamSession.msgEl.querySelector('.msg-body');
+      if (!body) break;
+
+      if (msg.phase === 'call') {
+        const card = document.createElement('div');
+        card.className = 'msg-stream-tool-card';
+        card.dataset.callId = safeText(msg.callId) || '';
+        const head = document.createElement('div');
+        head.className = 'msg-stream-tool-head';
+        const icon = document.createElement('span');
+        icon.className = 'msg-stream-tool-icon';
+        icon.textContent = '▸';
+        const name = document.createElement('span');
+        name.className = 'msg-stream-tool-name';
+        name.textContent = safeText(msg.toolName) || 'tool';
+        head.appendChild(icon);
+        head.appendChild(name);
+        if (msg.args) {
+          const argsEl = document.createElement('span');
+          argsEl.className = 'msg-stream-tool-args';
+          argsEl.textContent = msg.args.length > 120 ? msg.args.slice(0, 120) + '…' : msg.args;
+          head.appendChild(argsEl);
+        }
+        card.appendChild(head);
+        body.appendChild(card);
+      } else if (msg.phase === 'result') {
+        // Match the pending call card (by callId, else the last pending card).
+        const callId = safeText(msg.callId);
+        let card = callId ? body.querySelector(`.msg-stream-tool-card[data-call-id="${CSS.escape(callId)}"]`) : null;
+        if (!card) {
+          const pending = body.querySelectorAll('.msg-stream-tool-card');
+          card = pending[pending.length - 1] || null;
+        }
+        if (card) {
+          const icon = card.querySelector('.msg-stream-tool-icon');
+          if (icon) icon.textContent = msg.outcome === 'error' ? '✗' : '✓';
+          card.classList.remove('msg-stream-tool-pending');
+          card.classList.add(msg.outcome === 'error' ? 'msg-stream-tool-error' : 'msg-stream-tool-done');
+          const result = safeText(msg.result);
+          if (result) {
+            const details = document.createElement('details');
+            details.className = 'msg-stream-tool-result';
+            const summary = document.createElement('summary');
+            summary.textContent = 'result';
+            const pre = document.createElement('div');
+            pre.className = 'msg-stream-tool-result-body';
+            pre.textContent = result;
+            details.appendChild(summary);
+            details.appendChild(pre);
+            card.appendChild(details);
+          }
+        }
+      }
+      break;
+    }
     case 'STREAM_CHUNK': {
       // First real progress — cancel the thinking timeout
       clearThinkingTimeout();
-      // Remove any stale reconnecting banner(s)
       msgsEl.querySelectorAll('.msg-reconnecting').forEach(el => el.remove());
-      // First chunk — remove thinking indicator, create assistant message
       if (!streamSession.active) return;
       // Co-browse streams the action envelope as text deltas: the raw JSON
-      // ({"actions":[{"click":...}]}) accumulates here. Never render it as
-      // prose — it reads as garbage to the user and is replaced by the
-      // executed actions + done.response once STREAM_DONE resolves. Show a
-      // compact placeholder until then.
+      // accumulates here. Never render it as prose; show a placeholder instead.
       const isActionJson = looksLikeActionJson(msg.text);
       if (!streamSession.msgEl) {
         const thinking = msgsEl.querySelector('.msg-thinking');
         if (thinking) thinking.remove();
-        if (isActionJson) {
-          streamSession.msgEl = addMessageDOM('assistant', '_Preparing actions…_');
-          streamSession.msgEl.classList.add('msg-streaming-actions');
-        } else {
-          streamSession.msgEl = addMessageDOM('assistant', safeText(msg.text));
-        }
+        streamSession.msgEl = addMessageDOM('assistant', isActionJson ? '_Preparing actions…_' : '');
         streamSession.fullText = safeText(msg.text);
       } else {
-        streamSession.fullText = safeText(msg.text);
+        streamSession.fullText += safeText(msg.text);
         const body = streamSession.msgEl.querySelector('.msg-body');
-        if (body) {
-          // Keep the placeholder while streaming actions; render prose deltas normally.
-          body.innerHTML = markdownToHtml(isActionJson ? '_Preparing actions…_' : safeText(msg.text));
+        if (body && !isActionJson) {
+          // During streaming: append plain text for immediate feedback.
+          // At STREAM_DONE, this will be replaced with fully-rendered markdown.
+          const tokenSpan = document.createElement('span');
+          tokenSpan.className = 'msg-streaming-text';
+          tokenSpan.textContent = safeText(msg.text);
+          body.appendChild(tokenSpan);
         }
       }
       break;
@@ -2020,18 +2178,23 @@ function handleStreamMessage(msg) {
         ? '_Done — see the action timeline above._'
         : candidateText;
 
-      // Finalize streaming message body. Always normalize to responseText
-      // (the canonical final text) so the rendered DOM never lingers on a
-      // partial streamed chunk. Structured actions are rendered separately
-      // by handleStreamActions (navigate adds its own message; dom actions
-      // render in the timeline), so this body holds the reasoning/done text.
+      // Chronological feed: the body already contains everything streamed in order
+      // (reasoning tokens → tool cards → answer tokens). At this point, replace
+      // the streaming text spans with fully-rendered markdown for proper formatting
+      // (tables, bold, headings, etc. need complete text to parse correctly).
       if (streamSession.msgEl) {
         const body = streamSession.msgEl.querySelector('.msg-body');
-        if (body && responseText) {
-          body.innerHTML = markdownToHtml(responseText);
+        if (body) {
+          const streamingTexts = body.querySelectorAll('.msg-streaming-text');
+          if (streamingTexts.length > 0 && streamSession.fullText) {
+            // Replace all streaming text spans with a single fully-rendered markdown block
+            const renderedHtml = markdownToHtml(streamSession.fullText);
+            streamingTexts.forEach(el => el.remove());
+            body.insertAdjacentHTML('beforeend', renderedHtml);
+          }
         }
-        // Add TTS button if not already present
-        if (!streamSession.msgEl.querySelector('.tts-btn') && responseText) {
+        // Add TTS button if not already present (only if there's actual content).
+        if (!streamSession.msgEl.querySelector('.tts-btn') && streamSession.msgEl.querySelector('.msg-body')?.textContent.trim()) {
           const ttsBtn = document.createElement('button');
           ttsBtn.className = 'tts-btn msg-tts-btn';
           ttsBtn.textContent = '🔊';
@@ -2042,8 +2205,6 @@ function handleStreamMessage(msg) {
           });
           streamSession.msgEl.appendChild(ttsBtn);
         }
-        // Render the reasoning field (if any) as a collapsible bubble above the body
-        addReasoningBubble(streamSession.msgEl, msg.reasoning);
       } else {
         // No streaming chunks — fallback to addMessage
         if (responseText) {
@@ -2066,7 +2227,8 @@ function handleStreamMessage(msg) {
       if (responseText) {
         const conv = getActiveConversation();
         if (conv) {
-          const reasoningVal = safeText(msg.reasoning) || undefined;
+          const reasoningVal = safeText(msg.reasoning) || safeText(streamSession.reasoningText) || undefined;
+          // Persist to conversation (chronological feed is already in the body; just save reasoning)
           conv.messages.push({ role: 'assistant', text: responseText, reasoning: reasoningVal, timestamp: Date.now() });
           if (conv.messages.length > 50) {
             conv.messages = conv.messages.slice(-50);
@@ -2076,7 +2238,6 @@ function handleStreamMessage(msg) {
       }
 
       // Handle structured actions (navigate, dom, done)
-      // handleStreamActions adds its own message for done actions
       const actions = msg.actions || [];
       if (actions.length > 0) {
         handleStreamActions(actions, msg.reasoning);
@@ -2088,6 +2249,7 @@ function handleStreamMessage(msg) {
       input.focus();
       streamSession.msgEl = null;
       streamSession.fullText = '';
+      streamSession.reasoningText = '';
       break;
     }
     case 'STREAM_ERROR': {
@@ -2108,6 +2270,7 @@ function handleStreamMessage(msg) {
       input.focus();
       streamSession.msgEl = null;
       streamSession.fullText = '';
+      streamSession.reasoningText = '';
       break;
     }
       case 'STREAM_RECONNECT_DONE': {
@@ -2302,6 +2465,7 @@ sendQuery = async function() {
     streamSession.active = true;
     streamSession.msgEl = null;
     streamSession.fullText = '';
+    streamSession.reasoningText = '';
     try {
       streamPort.postMessage({
         sessionId: thisSessionId,

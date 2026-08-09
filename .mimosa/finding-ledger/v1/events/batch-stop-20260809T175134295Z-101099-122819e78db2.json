@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "mimosa-finding-ledger-batch/v1",
+  "batchId": "stop-20260809T175134295Z-101099-122819e78db2",
+  "runId": "20260809T175134295Z-101099-122819e78db2",
+  "runStatus": "completed",
+  "coverage": {
+    "status": "complete",
+    "reasons": []
+  },
+  "source": {
+    "component": "zcode-hook",
+    "operationId": "Stop"
+  },
+  "revision": "26e0ff12e43d9d0e06b09802648dcce395e5d3b0",
+  "diffHash": "4463c7d73a37b14f8067848218b202fd749561fe891b6fb839ce6bf932737394",
+  "rulesVersion": "unavailable",
+  "sessionHash": "6fee889025aff218fb9f64c10a92e4ebae36e3c4e7dd4f78bd76ba164a156457",
+  "reportRef": ".mimosa/reports/task-review-sess_8ad952ed-8c9a-478f-948c-1c58f83b87d8-20260809T175134295Z-101099-122819e78db2.json",
+  "events": [],
+  "observedFindingIds": [
+    "mimosa-395f35f035fd64e90d31d447",
+    "mimosa-4e1d4aa730fa9fd17628b716",
+    "mimosa-c923074083a925df94b41b65",
+    "mimosa-0452d2c146295d15356618dc"
+  ],
+  "verifiedFiles": [
+    {
+      "file": "extension/sidepanel.js",
+      "direct": "complete",
+      "projectContext": "partial"
+    },
+    {
+      "file": "tests/sidepanel.test.ts",
+      "direct": "complete",
+      "projectContext": "partial"
+    }
+  ],
+  "recordedAt": "2026-08-09T17:51:34.984Z"
+}

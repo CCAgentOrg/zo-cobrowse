@@ -1,0 +1,3 @@
+event: Error
+data: {"message":"Zo API error: 404 — {\"error\":\"not_found\"}"}
+

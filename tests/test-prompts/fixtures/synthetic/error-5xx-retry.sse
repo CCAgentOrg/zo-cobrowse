@@ -1,0 +1,9 @@
+event: FrontendModelResponse
+data: {"content":"I'm processing your request…"}
+
+event: FrontendModelResponse
+data: {"content":"I encountered a temporary issue and need to retry."}
+
+event: Error
+data: {"message":"Upstream provider timeout — please retry."}
+

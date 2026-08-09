@@ -203,6 +203,18 @@ export function normalizeActions(actions) {
       }
     }
     if (!found) {
+      // Singular `{"action":"click",...}` variant — real multi-action captures
+      // emit this non-spec form (qa-notes.md §"Action envelope shape"). Map
+      // a top-level `action` naming a known type onto the canonical `type`.
+      if (typeof a.action === 'string' && ACTION_TYPE_NAMES.includes(a.action)) {
+        const { action, args, ...rest } = a;
+        // args may be an object (common) or absent; merge into the flat action.
+        const argsObj = (args && typeof args === 'object' && !Array.isArray(args)) ? args : {};
+        out.push({ type: action, ...argsObj, ...rest });
+        found = true;
+      }
+    }
+    if (!found) {
       // Unknown shape — skip rather than risk rendering raw JSON in the chat.
     }
   }

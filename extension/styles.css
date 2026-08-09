@@ -888,6 +888,223 @@ input, textarea, select {
 .reasoning-content p:last-child { margin-bottom: 0; }
 .reasoning-content[hidden] { display: none; }
 
+/* ── Live chronological streaming feed ─────────────────────────────────── */
+/* Collapsible reasoning container (auto-collapsed by default) */
+.msg-stream-reasoning {
+  margin: 8px 0;
+  border-left: 2px solid var(--border-soft);
+  background: color-mix(in srgb, var(--zo-muted-foreground) 5%, transparent);
+  border-radius: 0 6px 6px 0;
+  padding: 4px 8px;
+}
+.msg-stream-reasoning summary {
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  color: var(--zo-muted-foreground);
+  font-weight: 500;
+  list-style: none;
+  padding: 2px 4px;
+}
+.msg-stream-reasoning summary::-webkit-details-marker {
+  display: none;
+}
+.msg-stream-reasoning summary:hover {
+  color: var(--zo-foreground);
+}
+.msg-stream-reasoning-content {
+  padding: 4px 0 0 0;
+}
+/* Reasoning tokens streamed into the message body in chronological order. */
+.msg-stream-thought {
+  font-size: 12.5px;
+  line-height: 1.55;
+  font-style: italic;
+  color: var(--zo-muted-foreground);
+  opacity: 0.85;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+/* Streaming text placeholder (replaced with rendered markdown at STREAM_DONE) */
+.msg-streaming-text {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+/* Tool-call cards streamed into the body in chronological order. */
+.msg-stream-tool-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+  padding: 6px 10px;
+  border-left: 2px solid var(--border-soft);
+  background: color-mix(in srgb, var(--zo-muted-foreground) 5%, transparent);
+  border-radius: 0 6px 6px 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.msg-stream-tool-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.msg-stream-tool-icon {
+  flex-shrink: 0;
+  width: 1.1em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.msg-stream-tool-pending .msg-stream-tool-icon { color: var(--text-faint); }
+.msg-stream-tool-done .msg-stream-tool-icon { color: var(--zo-foreground); }
+.msg-stream-tool-error .msg-stream-tool-icon { color: var(--error, #c0392b); }
+.msg-stream-tool-name {
+  font-weight: 600;
+  font-family: var(--mono-font, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.msg-stream-tool-args {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-family: var(--mono-font, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+}
+.msg-stream-tool-result {
+  margin-top: 2px;
+  font-size: 11.5px;
+}
+.msg-stream-tool-result > summary {
+  cursor: pointer;
+  color: var(--text-faint);
+  font-style: italic;
+}
+.msg-stream-tool-result-body {
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: var(--bg, rgba(0,0,0,0.03));
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  font-family: var(--mono-font, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  color: var(--zo-muted-foreground);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+/* ── Live three-channel streaming (grouped by channel) ──────────────────────── */
+/* These styles are kept for backward compatibility but are no longer used
+   in the chronological feed. If grouped-by-channel rendering returns, these
+   rules provide the visual styling. */
+.msg-reasoning-stream {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--border-soft);
+  background: color-mix(in srgb, var(--zo-muted-foreground) 4%, transparent);
+  border-radius: 0 6px 6px 0;
+}
+.msg-reasoning-stream-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--zo-muted-foreground);
+  margin-bottom: 4px;
+}
+.msg-reasoning-stream-content {
+  font-size: 12.5px;
+  line-height: 1.55;
+  font-style: italic;
+  color: var(--zo-muted-foreground);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+.msg-reasoning-stream-content p { margin-bottom: 6px; }
+.msg-reasoning-stream-content p:last-child { margin-bottom: 0; }
+
+/* ── Live three-channel streaming: Explored (tool calls) ────────────────── */
+.msg-explored {
+  width: 100%;
+  margin-bottom: 8px;
+}
+.msg-explored-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--zo-muted-foreground);
+  margin-bottom: 4px;
+}
+.msg-explored-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.msg-tool-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--zo-muted-foreground) 5%, transparent);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.msg-tool-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.msg-tool-icon {
+  flex-shrink: 0;
+  width: 1.1em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.msg-tool-pending .msg-tool-icon { color: var(--text-faint); }
+.msg-tool-done .msg-tool-icon { color: var(--zo-foreground); }
+.msg-tool-error .msg-tool-icon { color: var(--error, #c0392b); }
+.msg-tool-name {
+  font-weight: 600;
+  font-family: var(--mono-font, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.msg-tool-args {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-family: var(--mono-font, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+}
+.msg-tool-result {
+  margin-top: 2px;
+  font-size: 11.5px;
+}
+.msg-tool-result > summary {
+  cursor: pointer;
+  color: var(--text-faint);
+  font-style: italic;
+}
+.msg-tool-result-body {
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: var(--bg, rgba(0,0,0,0.03));
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  font-family: var(--mono-font, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  color: var(--zo-muted-foreground);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
 .msg-reconnecting {
   justify-content: flex-start;
 }

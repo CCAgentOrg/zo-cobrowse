@@ -76,6 +76,42 @@ async function askZoStream(port, msg) {
 // (OpenAI delta.content, Anthropic delta.text, nested message.content, etc.)
 // and the docs don't fully specify it. Extract from any known field so a
 // valid response is never dropped and shown as "Done." (ticket #29).
+
+// Strip a single leading ```lang ... ``` code fence **only when the whole
+// string is one fenced block**. Zo's cobrowse mode wraps the JSON action
+// envelope in a ```json fence; without this, finishStream's JSON.parse fails
+// and the actions are silently dropped. Read-only modes emit markdown prose
+// that may contain inline code blocks — those must NOT be stripped, so the
+// guard is strict (one fence, nothing after the closing fence except ws).
+function stripCodeFence(str) {
+  if (typeof str !== 'string') return str;
+  const trimmed = str.trim();
+  const match = trimmed.match(/^```[a-zA-Z0-9]*\s*\n([\s\S]*?)\n```\s*$/);
+  return match ? match[1] : str;
+}
+
+// Summarize a FunctionToolResult payload for the "Explored" trace. Tool
+// results (esp. research/bash) can be huge; truncate to keep the side panel
+// readable. Preserves the success/error signal for the card status.
+function summarizeToolResult(result) {
+  if (result == null) return '';
+  if (typeof result === 'string') return result.slice(0, 300);
+  // Standard shape: { content: { stdout, stderr, returncode } | string, outcome }
+  const content = result.content;
+  let body = '';
+  if (typeof content === 'string') {
+    body = content;
+  } else if (content && typeof content === 'object') {
+    body = safeText(content.stdout || content.text || content.message || '');
+    if (content.stderr) body += (body ? '\n' : '') + safeText(content.stderr);
+  } else if (result.output != null) {
+    body = safeText(result.output);
+  } else {
+    try { body = JSON.stringify(result); } catch { body = safeText(result); }
+  }
+  return body.slice(0, 300);
+}
+
 function extractStreamContent(parsed) {
   if (parsed == null) return '';
   // Direct scalar fields (Zo canonical: content/output/text/response/message)
@@ -877,6 +913,17 @@ async function _askZoStreamImpl(port, msg) {
     const decoder = new TextDecoder();
     let buffer = '';
     let fullText = '';
+    // Three live channels, parsed from the real Zo SSE protocol (PartStartEvent
+    // / PartDeltaEvent / FunctionToolCall|ResultEvent / completed). See
+    // tests/test-prompts/qa-notes.md — the documented FrontendModelResponse/End
+    // protocol is never emitted by the live API; these are what it actually sends.
+    // - partKinds: maps a part `index` → 'thinking'|'text'|'tool-call'|'tool-return'
+    //   (PartStartEvent declares the kind; PartDeltaEvent may repeat it in
+    //   delta.part_delta_kind). Lets us route each delta to the right channel.
+    // - reasoningText: accumulated thinking-channel text, streamed live via
+    //   STREAM_REASONING and passed to finishStream so STREAM_DONE carries it.
+    const partKinds = {};
+    let reasoningText = '';
     // Stream-shape discovery: per-session union of fields seen for each SSE
     // `event:` type, plus any events we don't consume. The runtime shape is
     // genuinely unknown (previous captures never surfaced richer events like
@@ -933,7 +980,7 @@ async function _askZoStreamImpl(port, msg) {
                 }
               } catch {}
             }
-            finishStream(port, sid, endPayload);
+            finishStream(port, sid, endPayload, { reasoning: reasoningText });
             currentEventType = '';
             return;
           }
@@ -950,7 +997,14 @@ async function _askZoStreamImpl(port, msg) {
             return;
           }
 
-          // FrontendModelResponse (default — also catches any data: without event: prefix for compat)
+          // Terminal: real Zo streams end with `event: completed` (status
+          // succeeded/failed), NOT `End`. Treat as the canonical terminal.
+          if (currentEventType === 'completed') {
+            finishStream(port, sid, fullText, { reasoning: reasoningText });
+            currentEventType = '';
+            return;
+          }
+
           try {
             const parsed = JSON.parse(data);
             // Stream-shape discovery: fold this chunk's top-level field names
@@ -959,7 +1013,101 @@ async function _askZoStreamImpl(port, msg) {
             const key = currentEventType || '(no event)';
             eventShapes[key] = eventShapes[key] || new Set();
             Object.keys(parsed).forEach((k) => eventShapes[key].add(k));
-            // Extract text from any known field shape (Zo/OpenAI/Anthropic/nested).
+
+            // ── Real Zo protocol (see tests/test-prompts/qa-notes.md) ──────────
+            // PartStartEvent declares a new part's kind and carries its first
+            // content piece. Route that piece to the right channel immediately
+            // (otherwise the first token of every part is lost).
+            if (currentEventType === 'PartStartEvent') {
+              const part = parsed.part || {};
+              if (part.part_kind) partKinds[parsed.index] = part.part_kind;
+              const kind = part.part_kind || partKinds[parsed.index] || '';
+              const piece = safeText(part.content || part.args);
+              if (piece && kind) {
+                if (kind === 'thinking') {
+                  reasoningText += piece;
+                  // For chronological feed, send only the delta (not cumulative text)
+                  safePost(port, { sessionId: sid, type: 'STREAM_REASONING', text: piece });
+                } else if (kind === 'text') {
+                  fullText += piece;
+                  // For chronological feed, send only the delta (not cumulative text)
+                  // so the side panel can append each piece without repetition.
+                  safePost(port, { sessionId: sid, type: 'STREAM_CHUNK', text: piece });
+                }
+              }
+              currentEventType = '';
+              continue;
+            }
+            // PartDeltaEvent is the workhorse: incremental content with an
+            // explicit part_delta_kind ('thinking' for reasoning, 'text' for
+            // the answer). Routing on this kind is what keeps the three
+            // channels separate instead of concatenated into one fullText.
+            if (currentEventType === 'PartDeltaEvent') {
+              const delta = parsed.delta || {};
+              const kind = delta.part_delta_kind || partKinds[parsed.index] || '';
+              const piece = safeText(delta.content_delta);
+              if (piece && kind) {
+                if (kind === 'thinking') {
+                  reasoningText += piece;
+                  // For chronological feed, send only the delta (not cumulative text)
+                  safePost(port, { sessionId: sid, type: 'STREAM_REASONING', text: piece });
+                } else if (kind === 'text') {
+                  fullText += piece;
+                  // For chronological feed, send only the delta (not cumulative text)
+                  // so the side panel can append each piece without repetition.
+                  safePost(port, { sessionId: sid, type: 'STREAM_CHUNK', text: piece });
+                } else if (kind === 'tool-call' || kind === 'tool-return') {
+                  // Tool arg/result deltas stream into the tool-call part; the
+                  // structured FunctionTool events below carry the canonical
+                  // call/result, so delta pieces are folded into diagnostics
+                  // only (the side panel renders the structured card).
+                }
+              } else {
+                // Unknown shape — fall back to content extraction so a valid
+                // response is never dropped (OpenAI/Anthropic/etc. providers).
+                const content = extractStreamContent(parsed);
+                if (content) {
+                  fullText += content;
+                  safePost(port, { sessionId: sid, type: 'STREAM_CHUNK', text: content });
+                }
+              }
+              currentEventType = '';
+              continue;
+            }
+            // FunctionToolCallEvent — a tool was invoked. Surface as the
+            // "Explored" channel (🔍 in the side panel).
+            if (currentEventType === 'FunctionToolCallEvent' || (parsed.event_kind === 'function_tool_call')) {
+              const part = parsed.part || {};
+              safePost(port, {
+                sessionId: sid,
+                type: 'STREAM_TOOL',
+                phase: 'call',
+                callId: part.tool_call_id,
+                toolName: part.tool_name,
+                args: safeText(part.args),
+              });
+              currentEventType = '';
+              continue;
+            }
+            // FunctionToolResultEvent — a tool returned. Mark the card done/error.
+            if (currentEventType === 'FunctionToolResultEvent' || (parsed.event_kind === 'function_tool_result')) {
+              const result = parsed.result || {};
+              const part = parsed.part || {};
+              safePost(port, {
+                sessionId: sid,
+                type: 'STREAM_TOOL',
+                phase: 'result',
+                callId: part.tool_call_id || result.tool_call_id,
+                toolName: part.tool_name || result.tool_name,
+                outcome: result.outcome || (result.error ? 'error' : 'success'),
+                result: summarizeToolResult(result),
+              });
+              currentEventType = '';
+              continue;
+            }
+
+            // ── Documented protocol (synthetic fixtures) + legacy fallback ─────
+            // FrontendModelResponse / data-only / OpenAI / Anthropic shapes.
             const content = extractStreamContent(parsed);
             if (content) {
               fullText += content;
@@ -969,13 +1117,13 @@ async function _askZoStreamImpl(port, msg) {
             if (parsed.done || parsed.finish_reason || parsed.type === 'final' || parsed.type === 'complete' || parsed.type === 'End') {
               if (parsed.output && !fullText) fullText = safeText(parsed.output);
               else if (parsed.type === 'End' && parsed.reasoning && !fullText) fullText = safeText(parsed);
-              finishStream(port, sid, fullText);
+              finishStream(port, sid, fullText, { reasoning: reasoningText });
               return;
             }
           } catch {
             // Plain text SSE (e.g. [DONE])
             if (data === '[DONE]') {
-              finishStream(port, sid, fullText);
+              finishStream(port, sid, fullText, { reasoning: reasoningText });
               return;
             }
             fullText += safeText(data);
@@ -986,7 +1134,7 @@ async function _askZoStreamImpl(port, msg) {
     }
 
     // Stream ended (no End event received — graceful fallback)
-    finishStream(port, sid, fullText);
+    finishStream(port, sid, fullText, { reasoning: reasoningText });
   } catch (err) {
     safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: `Connection failed: ${err.message}` });
     throw err; // let the retry wrapper decide
@@ -1016,7 +1164,7 @@ function emitStreamDiagnostic(port, sid) {
   sessionEventShapes = null;
 }
 
-function finishStream(port, sid, output) {
+function finishStream(port, sid, output, extra = {}) {
   let reasoning = '';
   let actions = [];
   let rawOutput = '';
@@ -1032,8 +1180,12 @@ function finishStream(port, sid, output) {
     actions = normalizeActions(normalizedOutput.actions);
     rawOutput = safeText(JSON.stringify(normalizedOutput));
   } else if (typeof normalizedOutput === 'string') {
+    // Cobrowse wraps the {reasoning,actions} envelope in a ```json fence
+    // (see qa-notes.md). Strip exactly one whole-fence block before parsing;
+    // a non-fenced or prose answer is left untouched.
+    const fencedStripped = stripCodeFence(normalizedOutput);
     try {
-      const parsed = JSON.parse(normalizedOutput);
+      const parsed = JSON.parse(fencedStripped);
       if (parsed && typeof parsed === 'object') {
         reasoning = parsed.reasoning || '';
         actions = normalizeActions(parsed.actions);
@@ -1048,6 +1200,14 @@ function finishStream(port, sid, output) {
       // answers were only surfaced via reasoning and otherwise became "Done.").
       plainText = normalizedOutput;
     }
+  }
+
+  // Live-streamed reasoning (from PartDeltaEvent thinking deltas) wins over
+  // any envelope reasoning — it is the real per-token thinking channel and
+  // arrives incrementally. Envelope reasoning is a fallback for the legacy
+  // {reasoning,actions} object path.
+  if (extra && extra.reasoning) {
+    reasoning = safeText(extra.reasoning) || reasoning;
   }
 
   // Build the user-facing fullText from the resolved response.
