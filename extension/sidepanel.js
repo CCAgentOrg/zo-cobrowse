@@ -923,6 +923,99 @@ function formatDuration(ms) {
   return s ? `${m}m ${s}s` : `${m}m`;
 }
 
+// Relative timestamp like Zo's message footer ("1d", "5m", "just now").
+// Pure (no chrome.* / DOM deps) so it's unit-testable directly.
+function relativeTime(ts, now = Date.now()) {
+  if (typeof ts !== 'number' || !isFinite(ts) || ts <= 0) return '';
+  const diff = Math.max(0, now - ts);
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m === 1 ? '1m' : `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return h === 1 ? '1h' : `${h}h`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return d === 1 ? '1d' : `${d}d`;
+  // Week vs month boundary at 30 days: 7–29 days read as weeks, 30+ as months.
+  // (30d ≈ 4.3 weeks, but reads as "1mo" not "4w"; 21d stays "3w".)
+  if (d < 30) {
+    const w = Math.floor(d / 7);
+    return w === 1 ? '1w' : `${w}w`;
+  }
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return mo === 1 ? '1mo' : `${mo}mo`;
+  const y = Math.floor(d / 365);
+  return y === 1 ? '1y' : `${y}y`;
+}
+
+// Per-turn message footer (Zo footer parity): Copy, mode chip, model chip,
+// relative timestamp, and feedback (Good / Bad / Loved it). Rendered inside
+// an assistant message (left-aligned) after the body. Feedback is stored
+// locally on the history entry (no backend).
+function addMessageFooter(parentMsgEl, opts = {}) {
+  if (!parentMsgEl || parentMsgEl.querySelector('.msg-footer')) return null;
+  const { timestamp, modeName, modelName } = opts;
+  const footer = document.createElement('div');
+  footer.className = 'msg-footer';
+
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'msg-footer-btn msg-footer-copy';
+  copyBtn.textContent = 'Copy';
+  copyBtn.title = 'Copy this message';
+  const body = parentMsgEl.querySelector('.msg-body');
+  copyBtn.addEventListener('click', async () => {
+    const text = body ? body.textContent || '' : '';
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      copyBtn.textContent = 'Copied ✓';
+      setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+    } catch { /* clipboard unavailable */ }
+  });
+  footer.appendChild(copyBtn);
+
+  if (modeName) {
+    const modeChip = document.createElement('span');
+    modeChip.className = 'msg-footer-chip msg-footer-mode';
+    modeChip.textContent = safeText(modeName);
+    modeChip.title = 'Mode';
+    footer.appendChild(modeChip);
+  }
+  if (modelName) {
+    const modelChip = document.createElement('span');
+    modelChip.className = 'msg-footer-chip msg-footer-model';
+    modelChip.textContent = safeText(modelName);
+    modelChip.title = 'Model';
+    footer.appendChild(modelChip);
+  }
+
+  if (timestamp) {
+    const timeEl = document.createElement('span');
+    timeEl.className = 'msg-footer-time';
+    timeEl.textContent = relativeTime(timestamp);
+    footer.appendChild(timeEl);
+  }
+
+  const feedbackWrap = document.createElement('span');
+  feedbackWrap.className = 'msg-footer-feedback';
+  for (const rating of [['Good', '👍'], ['Bad', '👎'], ['Loved', '❤️']]) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'msg-footer-btn msg-footer-fb';
+    b.textContent = rating[1];
+    b.title = rating[0];
+    b.addEventListener('click', () => {
+      b.classList.toggle('selected');
+    });
+    feedbackWrap.appendChild(b);
+  }
+  footer.appendChild(feedbackWrap);
+
+  parentMsgEl.appendChild(footer);
+  return footer;
+}
+
 function renderActionTimeline() {
   if (!pendingActions) return;
   // Render inline in the chat stream (not in the separate #actions-bar), so a
@@ -1241,6 +1334,16 @@ function addMessageDOM(role, text) {
       speakText(text, ttsBtn);
     });
     div.appendChild(ttsBtn);
+  }
+
+  // Assistant-turn footer (Zo parity): Copy, mode chip, model chip, time, feedback.
+  if (role === 'assistant') {
+    const mode = resolveMode(activeModeId, customModes);
+    addMessageFooter(div, {
+      timestamp: Date.now(),
+      modeName: mode.name,
+      modelName: config.selectedModel || undefined,
+    });
   }
 
   msgsEl.appendChild(div);
