@@ -219,21 +219,26 @@ describe("sidepanel thinking/reasoning bubble", () => {
     expect(code).toContain("function addReasoningBubble");
   });
 
-  it("renders a collapsible bubble (toggle + hidden content, collapsed by default)", () => {
-    expect(code).toContain("msg-thinking-bubble");
-    expect(code).toContain("thinking-toggle");
-    expect(code).toContain("thinking-content");
+  it("renders short reasoning inline as muted prose (Zo model)", () => {
+    // Short reasoning (<= INLINE_REASONING_MAX, single line) renders inline,
+    // no collapse — mirrors Zo's interleaved thinking prose.
+    expect(code).toContain("INLINE_REASONING_MAX");
+    expect(code).toContain("msg-reasoning-inline");
+    expect(css).toContain(".msg-reasoning-inline");
+  });
+
+  it("renders longer reasoning as a collapsible trace header (Zo model)", () => {
+    expect(code).toContain("reasoning-toggle");
+    expect(code).toContain("reasoning-content");
     expect(code).toContain('aria-expanded');
     expect(code).toContain("content.hidden = true");
   });
 
-  it("shows a one-line summary in the collapsed header (Gap 3, matches zo.computer)", () => {
-    // The label is now "💭 Thought" plus a reasoningSummary() preview, not a
-    // bare char count.
+  it("shows a one-line summary in the collapsed header (matches zo.computer)", () => {
     expect(code).toContain("function reasoningSummary");
     expect(code).toContain("'💭 Thought'");
-    expect(code).toContain("thinking-summary");
-    expect(css).toContain(".thinking-summary");
+    expect(code).toContain("reasoning-summary");
+    expect(css).toContain(".reasoning-summary");
   });
 
   it("no-ops on empty reasoning so non-reasoning modes are unaffected", () => {
@@ -255,25 +260,22 @@ describe("sidepanel thinking/reasoning bubble", () => {
   });
 
   it("re-renders reasoning bubbles from history for assistant messages", () => {
-    // Render loops heal each assistant msg (key-first blob repair) into `m`,
-    // then attach the reasoning bubble from the healed message.
     expect(code).toContain("if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning)");
   });
 
-  it("styles the bubble, toggle, and content", () => {
-    expect(css).toContain(".msg-thinking-bubble");
-    expect(css).toContain(".thinking-toggle");
-    expect(css).toContain(".thinking-content");
-    expect(css).toContain(".thinking-caret");
-    expect(css).toContain('.thinking-toggle[aria-expanded="true"] .thinking-caret');
-    expect(css).toContain(".thinking-content[hidden]");
+  it("styles the reasoning block, toggle, and content", () => {
+    expect(css).toContain(".msg-reasoning");
+    expect(css).toContain(".reasoning-toggle");
+    expect(css).toContain(".reasoning-content");
+    expect(css).toContain(".reasoning-caret");
+    expect(css).toContain('.reasoning-toggle[aria-expanded="true"] .reasoning-caret');
+    expect(css).toContain(".reasoning-content[hidden]");
   });
 
-  it("stacks the bubble above the body (flex-wrap + full-width bubble)", () => {
-    // Regression guard: the bubble is inserted INSIDE a .msg (display:flex row),
-    // so it must take the full row to wrap onto its own line above .msg-body.
-    expect(css).toContain("flex-wrap: wrap");
-    expect(css).toMatch(/\.msg-thinking-bubble\s*\{[^}]*flex:\s*1 0 100%/);
+  it("places the reasoning block above the body (full-width, above .msg-body)", () => {
+    // Regression guard: reasoning is inserted INSIDE .msg, full-width, above
+    // the answer body so it reads reasoning → answer.
+    expect(css).toMatch(/\.msg-reasoning\s*\{[^}]*width:\s*100%/);
   });
 });
 
@@ -375,6 +377,7 @@ describe("addReasoningBubble DOM behavior", () => {
     // Provide document.createElement to the stub.
     sandbox.document = { createElement: (t: string) => new El(t) };
     vm.runInContext(
+      "const INLINE_REASONING_MAX = 120;\n" +
       extractFn("safeText") + "\n" +
       extractFn("reasoningSummary") + "\n" +
       extractFn("escapeHtml") + "\n" +
@@ -388,9 +391,8 @@ describe("addReasoningBubble DOM behavior", () => {
     return sandbox.addReasoningBubble;
   }
 
-  it("inserts a collapsed bubble ABOVE .msg-body and reveals it on toggle", () => {
+  it("renders SHORT reasoning inline ABOVE .msg-body (no collapse)", () => {
     const addReasoningBubble = loadAddReasoningBubble();
-    // Build the same shape addMessageDOM produces: div.msg.msg-assistant > div.msg-body
     const msg = new El("div");
     msg.className = "msg msg-assistant";
     const body = new El("div");
@@ -400,45 +402,58 @@ describe("addReasoningBubble DOM behavior", () => {
     const reasoning = "The page is a basic documentation landing page.";
     addReasoningBubble(msg, reasoning);
 
-    // Bubble inserted as a child, BEFORE the body
-    const bubble = msg.querySelector(".msg-thinking-bubble");
-    expect(bubble).not.toBeNull();
-    expect(bubble!.parent).toBe(msg);
-    expect(msg.children[0]).toBe(bubble);
+    // Inline block inserted before the body, carries the escaped reasoning.
+    const block = msg.querySelector(".msg-reasoning-inline");
+    expect(block).not.toBeNull();
+    expect(block!.parent).toBe(msg);
+    expect(msg.children[0]).toBe(block);
     expect(msg.children[1]).toBe(body);
+    expect(block!.innerHTML).toContain("documentation landing page");
+    // No toggle on the inline variant.
+    expect(block!.querySelector(".reasoning-toggle")).toBeNull();
+  });
 
-    // Toggle header: label is now "💭 Thought", with a summary preview line
-    // and a separate char-count meta span (Gap 3, matches zo.computer).
-    const toggle = bubble!.querySelector(".thinking-toggle");
+  it("renders LONG reasoning as a collapsible trace ABOVE .msg-body", () => {
+    const addReasoningBubble = loadAddReasoningBubble();
+    const msg = new El("div");
+    msg.className = "msg msg-assistant";
+    msg.appendChild(Object.assign(new El("div"), { className: "msg-body" }));
+
+    // > 120 chars and/or multi-line → collapsible trace header.
+    const reasoning =
+      "First I will inspect the page structure to understand the layout, " +
+      "then I will identify the primary navigation and any forms present, " +
+      "and finally I will decide which action best answers the user query.";
+    addReasoningBubble(msg, reasoning);
+
+    const block = msg.querySelector(".msg-reasoning");
+    expect(block).not.toBeNull();
+    expect(msg.children[0]).toBe(block);
+
+    // Toggle header: "💭 Thought" label + summary preview, collapsed by default.
+    const toggle = block!.querySelector(".reasoning-toggle");
     expect(toggle).not.toBeNull();
     expect(toggle!.getAttribute("aria-expanded")).toBe("false");
-    expect(toggle!.querySelector(".thinking-label")!.textContent).toContain("Thought");
-    // The one-line summary preview reflects the reasoning content.
-    const summary = toggle!.querySelector(".thinking-summary");
+    expect(toggle!.querySelector(".reasoning-label")!.textContent).toContain("Thought");
+    const summary = toggle!.querySelector(".reasoning-summary");
     expect(summary).not.toBeNull();
-    expect(summary!.textContent).toContain("documentation landing page");
-    // Char count moved to a dedicated meta span.
-    const meta = toggle!.querySelector(".thinking-meta");
-    expect(meta).not.toBeNull();
-    expect(meta!.textContent).toContain(String(reasoning.length));
 
-    // Content exists, hidden by default, carries the (escaped) reasoning
-    const content = bubble!.querySelector(".thinking-content");
+    // Content hidden by default, carries the escaped reasoning.
+    const content = block!.querySelector(".reasoning-content");
     expect(content).not.toBeNull();
     expect(content!.hidden).toBe(true);
-    expect(content!.innerHTML).toContain("documentation landing page");
+    expect(content!.innerHTML).toContain("inspect the page structure");
 
-    // Click → expands: aria-expanded flips, content unhidden
+    // Click → expands: aria-expanded flips, content unhidden; click again collapses.
     toggle!.click();
     expect(toggle!.getAttribute("aria-expanded")).toBe("true");
     expect(content!.hidden).toBe(false);
-    // Click again → collapses
     toggle!.click();
     expect(toggle!.getAttribute("aria-expanded")).toBe("false");
     expect(content!.hidden).toBe(true);
   });
 
-  it("no-ops on empty/whitespace reasoning (no bubble added)", () => {
+  it("no-ops on empty/whitespace reasoning (no block added)", () => {
     const addReasoningBubble = loadAddReasoningBubble();
     const msg = new El("div");
     msg.className = "msg msg-assistant";
@@ -451,7 +466,7 @@ describe("addReasoningBubble DOM behavior", () => {
     addReasoningBubble(msg, undefined);
 
     expect(msg.children.length).toBe(before); // unchanged
-    expect(msg.querySelector(".msg-thinking-bubble")).toBeNull();
+    expect(msg.querySelector(".msg-reasoning")).toBeNull();
   });
 
   it("no-ops when parentMsgEl is null/falsy", () => {
@@ -460,7 +475,7 @@ describe("addReasoningBubble DOM behavior", () => {
     expect(() => addReasoningBubble(undefined, "reasoning")).not.toThrow();
   });
 
-  it("does not duplicate the bubble on a second call", () => {
+  it("does not duplicate the reasoning block on a second call", () => {
     const addReasoningBubble = loadAddReasoningBubble();
     const msg = new El("div");
     msg.className = "msg msg-assistant";
@@ -469,10 +484,10 @@ describe("addReasoningBubble DOM behavior", () => {
     addReasoningBubble(msg, "reason one");
     addReasoningBubble(msg, "reason two");
 
-    const bubbles = msg.querySelectorAll(".msg-thinking-bubble");
-    expect(bubbles.length).toBe(1);
-    // First reasoning wins (guard short-circuits the second call)
-    expect(bubbles[0].querySelector(".thinking-content")!.innerHTML).toContain("reason one");
+    const blocks = msg.querySelectorAll(".msg-reasoning");
+    expect(blocks.length).toBe(1);
+    // First reasoning wins (guard short-circuits the second call).
+    expect(blocks[0].innerHTML).toContain("reason one");
   });
 });
 
