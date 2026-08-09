@@ -47,17 +47,27 @@ describe("BUILTIN_MODES — schema conformance", () => {
 });
 
 describe("BUILTIN_MODES — tier invariants", () => {
-  it("cobrowse + extract are ELEMENTS tier (2) and expect JSON actions", () => {
+  it("cobrowse is ELEMENTS tier (2) and is the ONLY mode expecting JSON actions", () => {
     expect(BUILTIN_MODES.cobrowse.contextTier).toBe(TIER.ELEMENTS);
     expect(BUILTIN_MODES.cobrowse.expectJson).toBe(true);
+    // Read-only modes no longer wrap answers in the {actions} envelope —
+    // they stream plain markdown (matches zo.computer's chat UI).
     expect(BUILTIN_MODES.extract.contextTier).toBe(TIER.ELEMENTS);
-    expect(BUILTIN_MODES.extract.expectJson).toBe(true);
+    expect(BUILTIN_MODES.extract.expectJson).toBe(false);
   });
 
   it("ask + summarize + research are TEXT tier (1)", () => {
     expect(BUILTIN_MODES.ask.contextTier).toBe(TIER.TEXT);
     expect(BUILTIN_MODES.summarize.contextTier).toBe(TIER.TEXT);
     expect(BUILTIN_MODES.research.contextTier).toBe(TIER.TEXT);
+  });
+
+  it("all read-only modes (ask/research/summarize/extract/visual) stream plain markdown", () => {
+    for (const id of ["ask", "research", "summarize", "extract", "visual"]) {
+      expect(BUILTIN_MODES[id].expectJson, `${id} should be plain markdown`).toBe(false);
+    }
+    // cobrowse drives the browser, so it alone keeps structured actions.
+    expect(BUILTIN_MODES.cobrowse.expectJson).toBe(true);
   });
 
   it("visual is SCREENSHOT tier (3) and does not expect JSON", () => {
@@ -94,6 +104,15 @@ describe("ACTION_SCHEMA_COMPACT", () => {
   it("is much shorter than the legacy commented JSON block (sanity)", () => {
     // The old schema block was ~600 chars / ~130 tokens. Compact should be well under.
     expect(ACTION_SCHEMA_COMPACT.length).toBeLessThan(300);
+  });
+
+  it("demands ACTIONS only — not a {reasoning, actions} envelope (declubbing)", () => {
+    // The old envelope asked for {"reasoning":"...","actions":[...]}, which
+    // made the model club thinking + answer into one JSON blob. Now we only
+    // request actions; reasoning streams separately (or not at all).
+    expect(ACTION_SCHEMA_COMPACT).toContain('"actions"');
+    expect(ACTION_SCHEMA_COMPACT).not.toContain('"reasoning"');
+    expect(ACTION_SCHEMA_COMPACT).not.toContain('{"reasoning"');
   });
 });
 

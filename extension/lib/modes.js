@@ -8,8 +8,14 @@
  * Compact action protocol — shipped only when a Mode sets expectJson:true.
  * One line vs the old ~130-token commented JSON block.
  */
+// Only cobrowse needs structured actions (click/fill/navigate) to drive the
+// browser. It requests an actions array only — NOT a {reasoning,actions}
+// envelope — because demanding reasoning inside the JSON is what made the
+// model club thinking + answer into one blob (the "raw JSON in chat" bug).
+// Reasoning streams as its own channel from the backend when available and
+// is rendered into a separate Thought bubble; it is never asked for here.
 export const ACTION_SCHEMA_COMPACT =
-  'Respond with JSON {"reasoning":"...","actions":[...]}. ' +
+  'Respond with JSON {"actions":[...]}. ' +
   'Actions: click{selector} | fill{selector,value} | extract{selector,attribute} | ' +
   'navigate{url} | scroll{direction,amount?} | wait{ms} | done{response}.';
 
@@ -63,7 +69,9 @@ export const BUILTIN_MODES = {
     instructions: 'Extract key claims, data, named entities, sources, dates, and contradictions. Organize with clear headings.',
     contextTier: TIER.TEXT,
     textBudget: 4000,
-    expectJson: true,
+    // Read-only: streams plain markdown (no JSON envelope) so the answer
+    // renders as prose, not a wrapped blob — matches Zo's own chat UI.
+    expectJson: false,
     builtin: true,
   },
   summarize: {
@@ -74,7 +82,7 @@ export const BUILTIN_MODES = {
     instructions: 'Produce a concise summary: 3-5 bullets or a short paragraph. Cover the main argument, key evidence, and conclusion.',
     contextTier: TIER.TEXT,
     textBudget: 2000,
-    expectJson: true,
+    expectJson: false,
     builtin: true,
   },
   extract: {
@@ -82,10 +90,13 @@ export const BUILTIN_MODES = {
     name: 'Extract',
     icon: '📥',
     systemPrompt: "You are Zo — the user's data extraction assistant. Extract structured data from the page into clean tables or JSON.",
-    instructions: 'Extract all structured data: tables, lists, contacts, prices, dates, links. Be exhaustive.',
+    instructions: 'Extract all structured data: tables, lists, contacts, prices, dates, links. Be exhaustive. Output the extracted data directly as markdown tables or a JSON code block.',
     contextTier: TIER.ELEMENTS,
     textBudget: 4000,
-    expectJson: true,
+    // Read-only: streams plain markdown. The extracted data can still be
+    // JSON/tables as CONTENT — just not wrapped in the {reasoning,actions}
+    // action envelope, which caused the raw-JSON-in-chat bug.
+    expectJson: false,
     builtin: true,
   },
   visual: {
