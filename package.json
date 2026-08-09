@@ -10,6 +10,8 @@
     "check-icons": "bash scripts/check-release.sh",
     "check-prereqs": "bash scripts/check-release.sh",
     "lint": "bash scripts/check-release.sh",
+    "verify": "bash scripts/verify.sh",
+    "setup-hooks": "bash scripts/install-hooks.sh",
     "package": "cd extension && zip -r ../zo-cobrowse.zip . -x '*.git*' -x '*.DS_Store'"
   },
   "devDependencies": {

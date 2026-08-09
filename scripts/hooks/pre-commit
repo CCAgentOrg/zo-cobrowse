@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Zo Co-browse — pre-commit verification gate (loop engineering).
+# Runs the full `bun run verify` (tests + lint + transpile) before every commit.
+# This is a HARD gate: a failing verification aborts the commit.
+# Bypass deliberately: `git commit --no-verify`.
+#
+# Installed implicitly when core.hooksPath points at scripts/hooks:
+#   bun run setup-hooks     (runs scripts/install-hooks.sh)
+
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)"
+[ -n "$ROOT" ] && cd "$ROOT"
+
+if [ ! -f package.json ]; then
+  echo "pre-commit: no package.json at repo root — skipping verification" >&2
+  exit 0
+fi
+
+echo "pre-commit: running \`bun run verify\` (tests + lint + transpile)…"
+if ! bun run verify; then
+  echo "pre-commit: ✗ verification FAILED — fix the issues above, or bypass with 'git commit --no-verify'" >&2
+  exit 1
+fi
+echo "pre-commit: ✓ verification passed"
+exit 0
