@@ -156,11 +156,12 @@ The options page currently shows "fetching..." until a token is saved. Using the
 
 When a persona has its own `model` field, selecting that persona should automatically switch the model selector. Currently we only read `p.name` and `p.id`.
 
-## Design System: "The Observatory" (2026-07-05)
+## Design System: Zo-native chat surface (2026-08-09)
 
-- **Dark palette:** Midnight blue (#0b0e1e) base, deep cobalt (#0f1428) cards, amber (#c47f20) accents, indigo (#6c5ce7) secondary
-- **Light palette:** Cream (#f4f1ea) base, warm white (#fcfaf5) cards, amber (#b8860b) accents, slate (#5a5f7a) secondary
-- **Fonts:** Fraunces (display), Figtree (UI), JetBrains Mono (code) — all loaded from Google Fonts
+- **Conversation surface mirrors zo.computer:** Hanken Grotesk on a neutral oklch-derived palette. Brand amber is retained for header chrome only; messages use the `--zo-*` tokens so the chat reads like the native Zo UI.
+- **Zo-neutral tokens** (`--zo-sidebar`/`-foreground`/`-primary`/`-accent`/`-muted-foreground`/`-border`/`-border-primary`): defined in every theme block (`:root`, `[data-theme="dark|light|sepia|forest|ocean"]`), each mapped to the shadcn role equivalents used by Zo's own UI.
+- **Fonts:** Hanken Grotesk (UI + display, **bundled locally** at `extension/assets/fonts/` — MV3 CSP-safe, no external `font-src`), JetBrains Mono (code; `@import` is a non-blocking enhancement under MV3's default `style-src 'self'`, falls back to `ui-monospace`).
+- **Chat container model:** `#messages` uses Zo's spacing (`gap: 24px` / `padding: 32px 20px`), `.msg` is capped at `max-width: 768px` (`max-w-3xl`) and centered — matching `#chat-scroll-content`.
 - **Theme toggle:** `data-theme` attribute on `<html>` — empty = system, "light" = light, "dark" = dark
 - **System theme:** `prefers-color-scheme` media query respected when `data-theme=""`
 - **Theme persistence:** `chrome.storage.sync` key `cobrowse_theme`
