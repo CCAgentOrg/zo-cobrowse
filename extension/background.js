@@ -9,6 +9,7 @@ import {
   DEFAULT_MODE_ID,
   normalizeActions,
 } from './lib/modes.js';
+import { shouldDowngradeToJsonDisabled } from './lib/intent.js';
 
 function safePost(port, msg) {
   if (!port || port._dead) return false;
@@ -544,8 +545,21 @@ function buildPrompt(mode, pageContext, userQuery) {
   }
 
   parts.push('', `## User Request`, safeText(userQuery), '');
-  parts.push(mode.instructions);
-  parts.push(mode.expectJson ? ACTION_SCHEMA_COMPACT : PLAIN_RESPONSE_HINT);
+
+  // Intent-aware downgrade: if this is an action (JSON) mode but the query is
+  // a read-only intent ("Summarize", "What is this page?", "Explain the
+  // pricing"), answer in plain markdown instead of forcing the action
+  // envelope. The action schema + the action-oriented instruction are swapped
+  // for read-only equivalents so Zo replies as prose, not {actions:[...]}.
+  const jsonDisabled = shouldDowngradeToJsonDisabled(mode, userQuery);
+  const wantJson = mode.expectJson && !jsonDisabled;
+  if (jsonDisabled) {
+    parts.push('Answer the request directly using the page content provided.');
+    parts.push(PLAIN_RESPONSE_HINT);
+  } else {
+    parts.push(mode.instructions);
+    parts.push(wantJson ? ACTION_SCHEMA_COMPACT : PLAIN_RESPONSE_HINT);
+  }
   return parts.join('\n');
 }
 
