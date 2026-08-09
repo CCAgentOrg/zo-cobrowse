@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 import * as vm from "node:vm";
+import { normalizeActions } from "../extension/lib/modes.js";
 
 const SIDEPANEL_PATH = resolve(import.meta.dir, "../extension/sidepanel.js");
 const code = readFileSync(SIDEPANEL_PATH, "utf-8");
@@ -209,7 +210,9 @@ describe("sidepanel thinking/reasoning bubble", () => {
   });
 
   it("re-renders reasoning bubbles from history for assistant messages", () => {
-    expect(code).toContain("if (msg.role === 'assistant' && msg.reasoning) addReasoningBubble(el, msg.reasoning)");
+    // Render loops heal each assistant msg (key-first blob repair) into `m`,
+    // then attach the reasoning bubble from the healed message.
+    expect(code).toContain("if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning)");
   });
 
   it("styles the bubble, toggle, and content", () => {
@@ -416,5 +419,96 @@ describe("addReasoningBubble DOM behavior", () => {
     expect(bubbles.length).toBe(1);
     // First reasoning wins (guard short-circuits the second call)
     expect(bubbles[0].querySelector(".thinking-content")!.innerHTML).toContain("reason one");
+  });
+});
+
+// ── healAssistantMessage: fixes persisted history saved before the
+// action-normalization fix (where the raw {reasoning, actions} JSON blob was
+// stored as msg.text and re-rendered as raw JSON on every conversation load).
+describe("healAssistantMessage — persisted-history repair", () => {
+  function braceEnd(src: string, start: number): number {
+    let depth = 0, started = false;
+    for (let i = start; i < src.length; i++) {
+      if (src[i] === "{") { depth++; started = true; }
+      else if (src[i] === "}") { depth--; if (started && depth === 0) return i + 1; }
+    }
+    return start;
+  }
+  function loadHealer() {
+    const safeStart = code.indexOf("function safeText(");
+    const safeEnd = braceEnd(code, safeStart);
+    const healStart = code.indexOf("function healAssistantMessage(");
+    const healEnd = braceEnd(code, healStart);
+    const sandbox: any = { normalizeActions };
+    vm.createContext(sandbox);
+    vm.runInContext(code.slice(safeStart, safeEnd) + "\n" + code.slice(healStart, healEnd), sandbox);
+    if (typeof sandbox.healAssistantMessage !== "function") {
+      throw new Error("failed to load healAssistantMessage");
+    }
+    return sandbox.healAssistantMessage as (msg: any) => any;
+  }
+
+  it("heals a persisted key-first {reasoning, actions} blob into text + reasoning", () => {
+    const heal = loadHealer();
+    // Exactly the shape that leaked into history before the fix.
+    const leaked = {
+      role: 'assistant',
+      text: JSON.stringify({
+        reasoning: "The page failed to load. No content to extract.",
+        actions: [{ done: { response: "The page refused the connection." } }],
+      }),
+      timestamp: 1,
+    };
+    const healed = heal(leaked);
+    expect(healed.text).toBe("The page refused the connection.");
+    expect(healed.reasoning).toBe("The page failed to load. No content to extract.");
+    expect(healed.healed).toBe(true);
+    // The raw JSON must be gone from the rendered text.
+    expect(healed.text).not.toContain('"reasoning"');
+    expect(healed.text).not.toContain('"actions"');
+  });
+
+  it("passes a normal assistant message's text/reasoning through unchanged", () => {
+    const heal = loadHealer();
+    const normal = { role: 'assistant', text: '## Summary\n\nNo links here.', reasoning: 'thoughts', timestamp: 2 };
+    const out = heal(normal);
+    // Non-JSON text is returned as-is (text + reasoning preserved, not repaired).
+    expect(out.text).toBe(normal.text);
+    expect(out.reasoning).toBe(normal.reasoning);
+  });
+
+  it("preserves existing reasoning when healing (doesn't clobber)", () => {
+    const heal = loadHealer();
+    const msg = {
+      role: 'assistant',
+      text: JSON.stringify({ reasoning: 'parsed-out reasoning', actions: [{ done: { response: 'ans' } }] }),
+      reasoning: 'already-stored reasoning',
+      timestamp: 3,
+    };
+    const out = heal(msg);
+    expect(out.reasoning).toBe('already-stored reasoning');
+  });
+
+  it("does not treat non-JSON text or unrelated JSON as a leaked payload", () => {
+    const heal = loadHealer();
+    const plain = { role: 'assistant', text: 'Just a normal answer.', timestamp: 4 };
+    expect(heal(plain).text).toBe('Just a normal answer.');
+    // JSON object without reasoning/actions signature → not a leaked payload.
+    const otherJson = { role: 'assistant', text: JSON.stringify({ foo: 1, bar: 2 }), timestamp: 5 };
+    expect(heal(otherJson).text).toBe(JSON.stringify({ foo: 1, bar: 2 }));
+  });
+
+  it("returns non-assistant messages untouched", () => {
+    const heal = loadHealer();
+    const user = { role: 'user', text: JSON.stringify({ reasoning: 'x', actions: [] }), timestamp: 6 };
+    expect(heal(user)).toBe(user);
+    expect(heal(null)).toBe(null);
+  });
+
+  it("the render-from-history loops route assistant messages through healAssistantMessage", () => {
+    // Source guard: both history render loops must call healAssistantMessage,
+    // otherwise old conversations still render raw JSON.
+    const callSites = (code.match(/healAssistantMessage\(msg\)/g) || []).length;
+    expect(callSites).toBeGreaterThanOrEqual(2);
   });
 });

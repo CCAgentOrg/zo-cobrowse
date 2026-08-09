@@ -499,6 +499,33 @@ function getActiveConversation() {
   return conversations[activeId] || null;
 }
 
+/**
+ * Heal an assistant message persisted before the action-normalization fix.
+ * Old code saved the raw `{reasoning, actions}` JSON blob as `msg.text` when
+ * Zo returned key-first actions; those messages re-render as raw JSON forever,
+ * even after the parse-path fix. This detects such blobs and splits them back
+ * into the done.response (as text) + reasoning, so old conversations render
+ * correctly on load. New messages already carry the resolved text/reasoning
+ * and pass through unchanged. Non-JSON text is returned as-is.
+ */
+function healAssistantMessage(msg) {
+  if (!msg || msg.role !== 'assistant') return msg;
+  const text = typeof msg.text === 'string' ? msg.text : '';
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return msg;
+  let parsed;
+  try { parsed = JSON.parse(trimmed); } catch { return msg; }
+  if (!parsed || typeof parsed !== 'object') return msg;
+  // Only treat it as a leaked payload if it has the signature fields.
+  if (!('reasoning' in parsed) && !('actions' in parsed)) return msg;
+  const actions = normalizeActions(parsed.actions);
+  const doneAction = actions.find(a => a.type === 'done');
+  const healedText = safeText(doneAction?.response) || safeText(parsed.reasoning) || text;
+  const healedReasoning = msg.reasoning || safeText(parsed.reasoning) || undefined;
+  // Mark so we don't re-parse every render.
+  return { ...msg, text: healedText, reasoning: healedReasoning, healed: true };
+}
+
 function createNewConversation() {
   const id = generateId();
   conversations[id] = {
@@ -540,8 +567,9 @@ function renderCurrentConversation() {
     return;
   }
   for (const msg of conv.messages) {
-    const el = addMessageDOM(msg.role, msg.text);
-    if (msg.role === 'assistant' && msg.reasoning) addReasoningBubble(el, msg.reasoning);
+    const m = msg.role === 'assistant' ? healAssistantMessage(msg) : msg;
+    const el = addMessageDOM(m.role, m.text);
+    if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning);
   }
 }
 
@@ -590,8 +618,9 @@ async function switchToConversation(id) {
   const conv = getActiveConversation();
   if (conv && conv.messages.length > 0) {
     for (const msg of conv.messages) {
-      const el = addMessageDOM(msg.role, msg.text);
-      if (msg.role === 'assistant' && msg.reasoning) addReasoningBubble(el, msg.reasoning);
+      const m = msg.role === 'assistant' ? healAssistantMessage(msg) : msg;
+      const el = addMessageDOM(m.role, m.text);
+      if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning);
     }
   } else {
     addMessageDOM('system', 'Connected to Zo. Ask me about this page, or tell me what to do.');
