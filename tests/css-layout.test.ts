@@ -113,3 +113,30 @@ describe("Zo-native design system tokens", () => {
     expect(block).toContain("margin-inline: auto");
   });
 });
+
+describe("Zo-native message bubbles", () => {
+  // User = composer-shell (neutral bg + primary-tinted border + shadow,
+  // right-aligned). Assistant = bare prose (transparent, no border, 65ch).
+  it("user message is a Zo composer-shell (neutral bg + primary border + shadow)", () => {
+    const block = ruleBlock(".msg-user .msg-body");
+    expect(block).toContain("var(--zo-sidebar)");
+    expect(block).toContain("var(--zo-border-primary)");
+    expect(block).toContain("box-shadow");
+    // alignment lives on the row container, not the body
+    expect(ruleBlock(".msg-user")).toContain("justify-content: flex-end");
+  });
+
+  it("assistant message is bare prose (transparent, no border, 65ch measure)", () => {
+    const block = ruleBlock(".msg-assistant .msg-body");
+    expect(block).toContain("background: transparent");
+    expect(block).toContain("border: none");
+    expect(block).toContain("max-width: 65ch");
+    expect(block).toContain("user-select: text");
+  });
+
+  it("has the mention-pill style for page/file references", () => {
+    const block = ruleBlock(".msg-mention");
+    expect(block).toContain("var(--zo-accent)");
+    expect(block).toContain("var(--font-code)");
+  });
+});

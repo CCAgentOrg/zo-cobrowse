@@ -41,9 +41,7 @@ describe("sidepanel model/persona selectors", () => {
     const html = readFileSync(htmlPath, "utf-8");
     expect(html).toContain('id="model-select"');
     expect(html).toContain('id="persona-select"');
-  });
-
-  it("fetches models and personas from background", () => {
+  });  it("fetches models and personas from background", () => {
     expect(code).toContain('LIST_MODELS');
     expect(code).toContain('LIST_PERSONAS');
     expect(code).toContain('config.selectedModel');
@@ -64,6 +62,30 @@ describe("sidepanel model/persona selectors", () => {
   it("maps model_name/label from API response", () => {
     expect(code).toContain('m.model_name');
     expect(code).toContain('m.label');
+  });
+});
+
+describe("Zo-native message rendering", () => {
+  // Guards the Phase-2 changes: user messages render markdown (not plain
+  // textContent) so composer-shell prose + mention pills work, and a
+  // page-context mention pill is attached on the send path.
+  it("addMessageDOM renders markdown for user messages too (Zo composer prose)", () => {
+    // Previously user bodies used textContent; now all roles go through
+    // markdownToHtml. Assert the unified branch + that no role is left
+    // on the plain-text path.
+    expect(code).toMatch(/body\.innerHTML = markdownToHtml\(text\)/);
+    expect(code).not.toMatch(/role === 'assistant' \|\| role === 'system' \|\| role === 'thinking'/);
+  });
+
+  it("defines appendMentionPill (Zo file-mention badge helper)", () => {
+    expect(code).toContain("function appendMentionPill");
+    expect(code).toContain("msg-mention");
+    expect(code).toContain("msg-mention-label");
+  });
+
+  it("attaches a page-context mention pill on the main send path", () => {
+    expect(code).toContain("currentContext && (currentContext.title || currentContext.url)");
+    expect(code).toContain("appendMentionPill(userBody");
   });
 });
 
