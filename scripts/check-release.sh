@@ -46,8 +46,9 @@ echo ""
 echo -e "${BOLD}console.log in prod${NC}"
 produced=$(grep -rn 'console\.log' extension/ --include='*.js' 2>/dev/null | grep -v '/icons/' | grep -v '/lib/' || true)
 if [ -n "$produced" ]; then
-  echo -e "  ${YELLOW}⚠ Found $(echo "$produced" | wc -l) occurrences${NC}"
+  echo -e "  ${RED}✗ Found $(echo "$produced" | wc -l) occurrences${NC}"
   echo "$produced" | sed 's/^/    /'
+  fail=1
 else
   echo -e "  ${GREEN}✓ None found${NC}"
 fi
