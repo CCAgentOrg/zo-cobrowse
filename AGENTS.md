@@ -11,7 +11,7 @@ Chrome MV3 extension + optional WebSocket backend that connects the browser to [
 - **`extension/background.js`** — entry point for the service worker. All Zo API communication, message routing, config persistence, conversation_id tracking. Key functions: `getActiveTabContext(tabId, tier, modeId)` (CDP eval fast-path via `debugger` perm; capture is **tier-gated** — 0=url only, 1=+text, 2=+clickable+forms w/ selectors, 3=+screenshot), `buildPrompt(mode, pageContext, userQuery)` (single shared prompt assembler), `askZoStream()`/`_askZoStreamImpl()` (primary streaming path), `askZo()` (non-streaming fallback), `executeActions()`, `testConnection()`, `generateMode()` (LLM custom-Mode generator). Top-level helpers: `safePost()`, `isRetriableStreamError()`.
 - **`extension/content.js`** — injected into web pages. `captureContext()` extracts URL/title/visibleText/formFields/clickable elements. `executeDomAction()` runs click/fill/extract/scroll/wait/navigate/done in the DOM. Communicates via `chrome.runtime.onMessage` (`CAPTURE_CONTEXT`, `EXECUTE_ACTION`).
 - **`extension/sidepanel.js`** — chat UI (~65KB, largest file). Manages conversation history (stored in `chrome.storage.local`, key `zo_cobrowse_history`, max 50 messages). Streaming path: `streamPort` / `handleStreamMessage`, guarded by a per-query `streamSession.sessionId`. Sends `ASK_ZO` (with `modeId` + `customModes`), `GET_PAGE_CONTEXT` (with `tier`), `NEW_CONVERSATION`, `EXECUTE_ACTIONS` to background. Auto-runs pending actions returned by Zo. Mode lifecycle: `loadModes` / `applyMode` / `rebuildModeOptions` / `startModeCreation`.
-- **`extension/lib/`** — pure ES modules with no `chrome.*`/DOM deps. `modes.js` (`BUILTIN_MODES`, `resolveMode`, `presetToMode`, `ACTION_SCHEMA_COMPACT` — the Mode system, single source of truth for prompt + context tier), `bang-commands.js` (`parseBangCommand()`, discriminated union on `kind`, each command carries a `mode` field), `config.js` (the `DEFAULTS` config object + storage keys). Unit-tested directly.
+- **`extension/lib/`** — pure ES modules with no `chrome.*`/DOM deps. `modes.js` (`BUILTIN_MODES`, `resolveMode`, `presetToMode`, `ACTION_SCHEMA_COMPACT` — the Mode system, single source of truth for prompt + context tier), `bang-commands.js` (`parseBangCommand()`, discriminated union on `kind`, each command carries a `mode` field), `intent.js` (`detectIntent()`, `shouldDowngradeToJsonDisabled()` — classifies a free-text query as action vs read-only so Co-browse mode answers read-only intents like "Summarize" in plain markdown instead of forcing the JSON action envelope), `config.js` (the `DEFAULTS` config object + storage keys). Unit-tested directly.
 - **`extension/options.html`/`.js`** — settings UI. Saves token, API URL, model, Zo.space endpoint to `chrome.storage.sync`. Test connection flow + "Reset to defaults".
 - **`backend/relay.ts`** — optional HTTP+WebSocket service for multi-participant sessions. Not required for single-user co-browsing.
 - **`extension/AGENTS.md`** — Zo API reference (endpoints, auth, SSE event types). Read before touching API calls in `background.js`.
@@ -48,7 +48,7 @@ bun run package       # zip extension/ → zo-cobrowse.zip
 
 [![CI](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml/badge.svg)](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml)
 
-**274 tests across 19 files (0 failures, 783 expect() calls).** Every extension JS file transpiles cleanly via `bun build` (checked by `bun run verify` and CI). The committed pre-commit hook (`scripts/hooks/pre-commit`) runs `bun run verify` before every commit as a hard gate — bypass with `git commit --no-verify`. CI runs the same checks on every branch push + PR to `main`; tags `v*` trigger the dormant Release workflow (`release.yml`). Adding a feature means adding/updating the corresponding test file under `tests/`. See `QA_REPORT.md` for the audit history.
+**362 tests across 20 files (0 failures, 926 expect() calls).** Every extension JS file transpiles cleanly via `bun build` (checked by `bun run verify` and CI). The committed pre-commit hook (`scripts/hooks/pre-commit`) runs `bun run verify` before every commit as a hard gate — bypass with `git commit --no-verify`. CI runs the same checks on every branch push + PR to `main`; tags `v*` trigger the dormant Release workflow (`release.yml`). Adding a feature means adding/updating the corresponding test file under `tests/`. See `QA_REPORT.md` for the audit history.
 
 ## Ticket & feature status
 
@@ -90,7 +90,7 @@ When you add a feature: extend the relevant schema first, then write the code + 
 
 | Task | File |
 |------|------|
-| Change prompt/action schema | `extension/background.js` → `buildPrompt()` + `extension/lib/modes.js` → `ACTION_SCHEMA_COMPACT` |
+| Change prompt/action schema | `extension/background.js` → `buildPrompt()` + `extension/lib/modes.js` → `ACTION_SCHEMA_COMPACT` + `extension/lib/intent.js` → `detectIntent()` (action-vs-read classification that downgrades JSON modes for read-only queries) |
 | Add/edit a Mode | `extension/lib/modes.js` → `BUILTIN_MODES` (add a schema test in `tests/modes.test.ts`) |
 | Edit Zo-side presets/personas | `skill/` (`skill/SKILL.md`, `skill/references/presets.md`) |
 | Add new action type | `extension/content.js` + `extension/background.js` → `executeDomAction()` |
