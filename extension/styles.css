@@ -920,6 +920,21 @@ input, textarea, select {
   color: var(--red);
   font-size: 12px;
 }
+/* Zo error card: "Response interrupted" heading + technical detail + Retry */
+.error-card-title {
+  font-weight: 600;
+  color: var(--red);
+  margin-bottom: 4px;
+}
+.error-card-detail {
+  color: var(--text-muted);
+  font-family: var(--font-code);
+  font-size: 11px;
+  word-break: break-word;
+  margin-bottom: 8px;
+}
+.error-card-actions { margin-top: 2px; }
+.error-card-retry { font-size: 11px; }
 
 /* ── Message body content ── */
 .msg-body p { margin-bottom: 8px; }

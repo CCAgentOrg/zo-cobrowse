@@ -364,10 +364,16 @@ function bindEvents() {
     chrome.storage.sync.set({ zoPersonaId: personaSelect.value });
   });
 
-  // Send
+  // Send (disabled while the input is empty, like Zo's Send button)
+  const syncSendBtn = () => { sendBtn.disabled = !input.value.trim() || actionRunning; };
+  input.addEventListener('input', syncSendBtn);
+  input.addEventListener('keyup', syncSendBtn);
+  syncSendBtn();
   sendBtn.addEventListener('click', () => { sendQuery(); });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(); }
+    // Esc cancels an in-flight stream (Zo: "Press Esc to stop").
+    if (e.key === 'Escape' && streamSession.active) { cancelStream(); e.preventDefault(); }
   });
 
   // Mic button — STT
@@ -1014,6 +1020,41 @@ function addMessageFooter(parentMsgEl, opts = {}) {
 
   parentMsgEl.appendChild(footer);
   return footer;
+}
+
+// Zo-style error card: "Response interrupted" heading + the technical detail
+// (status/model/body) + a Retry button that re-sends the last query. Rendered
+// as a normal .msg so it flows in the chat and is persisted like other errors.
+function addErrorCard(errorText, onRetry) {
+  const div = document.createElement('div');
+  div.className = 'msg msg-error';
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+
+  const title = document.createElement('div');
+  title.className = 'error-card-title';
+  title.textContent = 'Response interrupted';
+
+  const detail = document.createElement('div');
+  detail.className = 'error-card-detail';
+  detail.textContent = safeText(errorText) || 'An unexpected error occurred.';
+
+  const actionsEl = document.createElement('div');
+  actionsEl.className = 'error-card-actions';
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.className = 'btn btn-sm btn-primary error-card-retry';
+  retry.textContent = '↻ Retry';
+  retry.addEventListener('click', () => { if (onRetry) onRetry(); });
+  actionsEl.appendChild(retry);
+
+  body.appendChild(title);
+  body.appendChild(detail);
+  body.appendChild(actionsEl);
+  div.appendChild(body);
+  msgsEl.appendChild(div);
+  msgsEl.scrollTop = msgsEl.scrollHeight;
+  return div;
 }
 
 function renderActionTimeline() {
@@ -1835,6 +1876,35 @@ let sendQuery = async function () { /* replaced at the end of this file */ };
 let streamPort = null;
 let streamSession = { active: false, sessionId: 0, msgEl: null, fullText: '', remainingActions: null };
 
+// Last user query submitted — used by the error card's Retry button.
+let lastQuery = '';
+
+// Re-submit the last query (used by the Retry button on the error card).
+// Bypasses the empty-input guard since the value lives in the label, not the box.
+async function sendQueryFromLabel(label) {
+  const text = safeText(label).trim();
+  if (!text) return;
+  input.value = text;
+  await sendQuery();
+}
+
+// Cancel the in-flight stream (Zo's "Press Esc to stop"). Disconnects the
+// port, clears the session, removes any thinking indicator, and re-enables
+// input so the panel is never stuck.
+function cancelStream() {
+  if (!streamSession.active) return;
+  streamSession.active = false;
+  clearThinkingTimeout();
+  const thinking = msgsEl?.querySelector('.msg-thinking');
+  if (thinking) thinking.remove();
+  if (streamPort) { try { streamPort.disconnect(); } catch {} streamPort = null; }
+  streamSession.msgEl = null;
+  streamSession.fullText = '';
+  streamSession.remainingActions = null;
+  if (typeof input !== 'undefined' && input) input.disabled = false;
+  if (typeof sendBtn !== 'undefined' && sendBtn) { sendBtn.disabled = !input?.value?.trim(); }
+}
+
 function connectStreamingPort() {
   try {
     const port = chrome.runtime.connect({ name: 'cobrowse-stream' });
@@ -2024,7 +2094,10 @@ function handleStreamMessage(msg) {
       streamSession.active = false;
       const thinking = msgsEl.querySelector('.msg-thinking');
       if (thinking) thinking.remove();
-      addMessage('error', msg.error);
+      // Zo error card: "Response interrupted" + technical detail + Retry.
+      addErrorCard(msg.error, () => {
+        if (lastQuery) sendQueryFromLabel(lastQuery);
+      });
       input.disabled = false;
       sendBtn.disabled = false;
       input.focus();
@@ -2090,6 +2163,7 @@ function handleStreamActions(actions, reasoning) {
 sendQuery = async function() {
   const query = input.value.trim();
   if (!query || actionRunning) return;
+  lastQuery = query;
   input.value = '';
   input.disabled = true;
   sendBtn.disabled = true;
@@ -2201,7 +2275,7 @@ sendQuery = async function() {
       appendMentionPill(userBody, host);
     }
   }
-  addMessage('thinking', 'Zo is thinking...');
+  addMessage('thinking', 'Zo is thinking. Press Esc to stop.');
   startThinkingTimeout();
 
   // Resolve the Mode for this turn: a bang command can override the active
@@ -2318,12 +2392,3 @@ sendQuery = async function() {
   sendBtn.disabled = false;
   input.focus();
 };
-function cancelStream() {
-  if (streamSession.active) {
-    streamSession.active = false;
-    streamSession.msgEl = null;
-    streamSession.fullText = '';
-    input.disabled = false;
-    sendBtn.disabled = false;
-  }
-}
