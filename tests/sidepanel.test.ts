@@ -87,6 +87,25 @@ describe("Zo-native message rendering", () => {
     expect(code).toContain("currentContext && (currentContext.title || currentContext.url)");
     expect(code).toContain("appendMentionPill(userBody");
   });
+
+  it("suppresses raw action-JSON during streaming (shows a placeholder)", () => {
+    // Co-browse streams {"actions":[...]} as text deltas; the handler must
+    // detect that shape and show a muted placeholder instead of rendering
+    // the raw JSON into the body. Guards against the "I see JSON in chat"
+    // regression for action responses.
+    expect(code).toMatch(/import\s*\{[^}]*looksLikeActionJson[^}]*\}\s*from\s*['"]\.\/lib\/intent\.js['"]/);
+    expect(code).toContain("isActionJson");
+    expect(code).toContain("Preparing actions");
+    expect(code).toContain("msg-streaming-actions");
+  });
+
+  it("never falls back to the raw action-JSON as the final response text", () => {
+    // STREAM_DONE must not surface the streamed JSON as the assistant body
+    // when done.response is absent: skip the fullText fallback when actions
+    // are present.
+    expect(code).toContain("hasActions");
+    expect(code).toMatch(/hasActions \? '' : safeText\(msg\.fullText\)/);
+  });
 });
 
 describe("sidepanel history view", () => {

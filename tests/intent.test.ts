@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { detectIntent, shouldDowngradeToJsonDisabled } from "../extension/lib/intent.js";
+import { detectIntent, shouldDowngradeToJsonDisabled, looksLikeActionJson } from "../extension/lib/intent.js";
 
 /**
  * Pure-logic tests for the Co-browse intent downgrade.
@@ -145,5 +145,35 @@ describe("shouldDowngradeToJsonDisabled — mode gating", () => {
     expect(shouldDowngradeToJsonDisabled(null, "Summarize")).toBe(false);
     expect(shouldDowngradeToJsonDisabled(undefined, "Summarize")).toBe(false);
     expect(shouldDowngradeToJsonDisabled({}, "Summarize")).toBe(false);
+  });
+});
+
+describe("looksLikeActionJson — suppress raw action-JSON during streaming", () => {
+  it("detects a partial action envelope streaming in", () => {
+    expect(looksLikeActionJson('{"actions":')).toBe(true);
+    expect(looksLikeActionJson('{"actions":[{"click":{"selector":"#x"}}')).toBe(true);
+    expect(looksLikeActionJson('  {"actions" : [')).toBe(true);
+  });
+
+  it("detects a complete action envelope", () => {
+    expect(looksLikeActionJson('{"actions":[{"click":{"selector":"a"}}]}')).toBe(true);
+  });
+
+  it("does not flag plain prose (even JSON-looking markdown)", () => {
+    expect(looksLikeActionJson('Here is the summary.')).toBe(false);
+    expect(looksLikeActionJson('The config is {"name":"zo"}')).toBe(false);
+    expect(looksLikeActionJson('')).toBe(false);
+    expect(looksLikeActionJson('   ')).toBe(false);
+  });
+
+  it("does not flag other JSON objects without an actions key", () => {
+    expect(looksLikeActionJson('{"reasoning":"because..."}')).toBe(false);
+    expect(looksLikeActionJson('{"foo":1}')).toBe(false);
+  });
+
+  it("coerces non-string input safely", () => {
+    expect(looksLikeActionJson(null as unknown as string)).toBe(false);
+    expect(looksLikeActionJson(undefined as unknown as string)).toBe(false);
+    expect(looksLikeActionJson(123 as unknown as string)).toBe(false);
   });
 });
