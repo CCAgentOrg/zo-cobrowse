@@ -179,6 +179,14 @@ describe("background Mode system", () => {
     expect(code).toContain("contextTier");
   });
 
+  it("gates the action-schema behind mode.expectJson (no leak for read-only modes)", () => {
+    // buildPrompt must push ACTION_SCHEMA_COMPACT only when mode.expectJson
+    // is true; otherwise it pushes the plain-markdown hint. This is the line
+    // that prevents "Respond with JSON {actions}" from leaking into prompts
+    // for ask/research/summarize/extract/visual/custom modes.
+    expect(code).toContain("mode.expectJson ? ACTION_SCHEMA_COMPACT : PLAIN_RESPONSE_HINT");
+  });
+
   it("uses tier-gated context capture in getActiveTabContext", () => {
     expect(code).toContain("getActiveTabContext");
     expect(code).toContain("contextTier");
