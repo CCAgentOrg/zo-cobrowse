@@ -1719,6 +1719,16 @@ body.options-page {
    "Explored N steps Ns" tool-trace card). Rendered as a .msg in the chat
    stream, collapsed by default, holding the grouped action cards inside
    .action-run-body. */
+
+/* Placeholder shown while Co-browse streams the action envelope as raw JSON
+   ({"actions":[...]}). The JSON is suppressed (it reads as garbage live and
+   is replaced by the executed actions + done.response on STREAM_DONE); this
+   muted italic hint fills the body until then. */
+.msg-streaming-actions .msg-body {
+  color: var(--zo-muted-foreground);
+  font-style: italic;
+  opacity: 0.85;
+}
 .msg-action-run {
   display: flex;
   flex-direction: column;

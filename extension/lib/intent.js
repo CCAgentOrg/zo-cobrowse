@@ -135,3 +135,28 @@ export function shouldDowngradeToJsonDisabled(mode, query) {
   if (!mode || !mode.expectJson) return false;
   return detectIntent(query) === 'read';
 }
+
+/**
+ * Does this streaming text fragment look like the raw JSON action envelope
+ * (i.e. Co-browse mode streaming {actions:[...]} as text deltas)? Used to
+ * suppress rendering it as prose while streaming — otherwise the user sees
+ * raw JSON (`{"actions":[{"click":...`) build up live before STREAM_DONE
+ * resolves it into executed actions + the done.response.
+ *
+ * Detects a JSON prefix that opens an object and reaches an `"actions"` key,
+ * without requiring the (still-incomplete) string to parse. False positives
+ * are harmless: a real prose answer never starts with `{"` and mentions
+ * `"actions"` as a JSON key.
+ *
+ * Pure (no chrome.* / DOM deps).
+ *
+ * @param {string} text
+ * @returns {boolean}
+ */
+export function looksLikeActionJson(text) {
+  const t = typeof text === 'string' ? text.trimStart() : '';
+  if (!t.startsWith('{')) return false;
+  // Reached the "actions" key while still inside the opening object. Matches
+  // both partial (`{"actions":`) and complete (`{"actions":[...]}`) envelopes.
+  return /"\s*actions\s*"\s*:/.test(t);
+}

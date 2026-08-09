@@ -2,6 +2,7 @@
 
 import { parseBangCommand, BANG_COMMANDS } from './lib/bang-commands.js';
 import { BUILTIN_MODES, DEFAULT_MODE_ID, resolveMode, presetToMode, normalizeActions } from './lib/modes.js';
+import { looksLikeActionJson } from './lib/intent.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -1769,16 +1770,28 @@ function handleStreamMessage(msg) {
       msgsEl.querySelectorAll('.msg-reconnecting').forEach(el => el.remove());
       // First chunk — remove thinking indicator, create assistant message
       if (!streamSession.active) return;
+      // Co-browse streams the action envelope as text deltas: the raw JSON
+      // ({"actions":[{"click":...}]}) accumulates here. Never render it as
+      // prose — it reads as garbage to the user and is replaced by the
+      // executed actions + done.response once STREAM_DONE resolves. Show a
+      // compact placeholder until then.
+      const isActionJson = looksLikeActionJson(msg.text);
       if (!streamSession.msgEl) {
         const thinking = msgsEl.querySelector('.msg-thinking');
         if (thinking) thinking.remove();
-        streamSession.msgEl = addMessageDOM('assistant', safeText(msg.text));
+        if (isActionJson) {
+          streamSession.msgEl = addMessageDOM('assistant', '_Preparing actions…_');
+          streamSession.msgEl.classList.add('msg-streaming-actions');
+        } else {
+          streamSession.msgEl = addMessageDOM('assistant', safeText(msg.text));
+        }
         streamSession.fullText = safeText(msg.text);
       } else {
         streamSession.fullText = safeText(msg.text);
         const body = streamSession.msgEl.querySelector('.msg-body');
         if (body) {
-          body.innerHTML = markdownToHtml(safeText(msg.text));
+          // Keep the placeholder while streaming actions; render prose deltas normally.
+          body.innerHTML = markdownToHtml(isActionJson ? '_Preparing actions…_' : safeText(msg.text));
         }
       }
       break;
@@ -1814,9 +1827,20 @@ function handleStreamMessage(msg) {
       streamSession.active = false;
       // Remove any stale thinking indicator
 
-      // Extract response text for non-action plain-text streaming
+      // Extract response text for non-action plain-text streaming.
+      // When the response carried actions, prefer the done.response and skip
+      // any fallback that is the raw action-JSON envelope (which would leak
+      // {"actions":[...]} into the chat body when done.response is absent).
       const doneAction = (msg.actions || []).find(a => a.type === 'done');
-      const responseText = safeText(doneAction?.response) || safeText(msg.fullText) || safeText(streamSession.fullText) || safeText(msg.reasoning) || '';
+      const hasActions = (msg.actions || []).some(a => a.type !== 'done' && a.type !== 'navigate');
+      const candidateText = safeText(doneAction?.response)
+        || (hasActions ? '' : safeText(msg.fullText))
+        || (hasActions ? '' : safeText(streamSession.fullText))
+        || safeText(msg.reasoning)
+        || '';
+      const responseText = hasActions && !candidateText
+        ? '_Done — see the action timeline above._'
+        : candidateText;
 
       // Finalize streaming message body. Always normalize to responseText
       // (the canonical final text) so the rendered DOM never lingers on a
