@@ -220,3 +220,41 @@ describe("formatDuration — compact elapsed-time formatting", () => {
     expect(formatDuration(600000)).toBe("10m");
   });
 });
+
+// ── Zo tool-trace card parity (Phase 4) ──
+// The cobrowse action timeline is re-skinned as a Zo-style collapsible
+// tool-trace card ("Performed N actions · <duration>"). These guard the
+// structural + label changes against regressions.
+describe("action tool-trace card — Zo parity", () => {
+  const sidepanel = readFileSync(SIDEPANEL_PATH, "utf-8");
+  const cssPath = resolve(import.meta.dir, "../extension/styles.css");
+  const css = readFileSync(cssPath, "utf-8");
+
+  it("uses Zo vocabulary for the run header (Performed …, not Worked)", () => {
+    expect(sidepanel).toContain("Performed actions");
+    expect(sidepanel).toContain("Performing actions…");
+    // The old "Worked" wording is gone.
+    expect(sidepanel).not.toContain("⚡ Worked");
+    expect(sidepanel).not.toContain("⚡ Working");
+  });
+
+  it("the run block is capped + centered on the same rail as messages", () => {
+    const idx = css.indexOf(".msg-action-run");
+    const braceStart = css.indexOf("{", idx);
+    const braceEnd = css.indexOf("}", braceStart);
+    const block = css.slice(braceStart, braceEnd);
+    expect(block).toContain("max-width: 768px");
+    expect(block).toContain("margin-inline: auto");
+  });
+
+  it("cards + header use the Zo-neutral palette tokens", () => {
+    const cardIdx = css.indexOf(".action-card {");
+    const cardBlock = css.slice(cardIdx, css.indexOf("}", cardIdx) + 1);
+    expect(cardBlock).toContain("var(--zo-border)");
+    expect(cardBlock).toContain("var(--zo-accent)");
+
+    const headIdx = css.indexOf(".action-run-header {");
+    const headBlock = css.slice(headIdx, css.indexOf("}", headIdx) + 1);
+    expect(headBlock).toContain("var(--zo-muted-foreground)");
+  });
+});

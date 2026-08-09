@@ -172,11 +172,11 @@ describe("sidepanel Mode system", () => {
   });
 
   it("renders the timeline as an inline run block + groups repeats + tracks duration (Gaps 1/2/4)", () => {
-    // Inline "⚡ Worked N steps · duration" run block in the chat stream.
+    // Inline "⚡ Performed N actions · duration" tool-trace card in the chat stream.
     expect(code).toContain("function groupActions");
     expect(code).toContain("msg-action-run");
     expect(code).toContain("action-run-header");
-    expect(code).toContain("⚡ Worked");
+    expect(code).toContain("⚡ Performed actions");
     expect(code).toContain("function formatDuration");
     // Duration is captured at run start/end.
     expect(code).toMatch(/runStartTime = Date\.now\(\)/);
@@ -582,7 +582,7 @@ describe("healAssistantMessage — persisted-history repair", () => {
   });
 });
 
-// ── renderActionTimeline DOM behavior: inline "⚡ Worked N steps" run block
+// ── renderActionTimeline DOM behavior: inline "⚡ Performed N actions" tool-trace card
 // (Gaps 1/2/4 — matches zo.computer). Exercises the real function extracted
 // from sidepanel.js against a richer DOM stub that supports getElementById +
 // dataset, which renderActionTimeline uses.
