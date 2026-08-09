@@ -1091,7 +1091,8 @@ input, textarea, select {
 #chat-view {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1 1 0;          /* fill remaining space after the sticky top region */
+  min-height: 0;       /* allow #messages to scroll instead of growing the shell */
   position: relative;
 }
 
