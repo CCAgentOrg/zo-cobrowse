@@ -854,9 +854,10 @@ function escapeHtml(s) {
 }
 
 // ---- Action Timeline (#03) ----
-// Renders an inline "⚡ Worked N steps · duration" run block in the chat stream
-// (matching zo.computer), with grouped cards inside. Repeated consecutive
-// actions collapse into a single card with a "× N" count.
+// Renders an inline "⚡ Performed N actions · <duration>" tool-trace card in
+// the chat stream (Zo's "Explored N steps Ns" analog), with grouped cards
+// inside. Repeated consecutive actions collapse into a single card with a
+// "× N" count.
 const ACTION_META = {
   click:    { icon: '👆', label: 'Click' },
   fill:     { icon: '✏️', label: 'Fill' },
@@ -939,7 +940,7 @@ function renderActionTimeline() {
   header.setAttribute('aria-label', 'Show action steps');
   header.innerHTML =
     '<span class="action-run-caret">▸</span>' +
-    '<span class="action-run-label">⚡ Working…</span>' +
+    '<span class="action-run-label">⚡ Performing actions…</span>' +
     '<span class="action-run-count"></span>' +
     '<span class="action-run-duration"></span>';
   header.addEventListener('click', () => {
@@ -1024,8 +1025,8 @@ async function runPendingActions() {
 
   const runStartTime = Date.now();
   renderActionTimeline();
-  // Live header: count includes the done action (matches "Worked N steps").
-  updateActionRunHeader('⚡ Working…', actions.length, null);
+  // Live header: count includes the done action.
+  updateActionRunHeader('⚡ Performing actions…', actions.length, null);
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const tabId = tab?.id;
@@ -1074,8 +1075,9 @@ async function runPendingActions() {
 
   const elapsed = Date.now() - runStartTime;
   const completedCount = actions.length;
-  // Finalize the inline run header: "⚡ Worked N steps · <duration>".
-  updateActionRunHeader('⚡ Worked', completedCount, elapsed);
+  // Finalize the inline run header: "⚡ Performed N actions · <duration>"
+  // (Zo's "Explored N steps Ns" analog).
+  updateActionRunHeader('⚡ Performed actions', completedCount, elapsed);
 
   pendingActions = null;
   pendingActionsReasoning = '';
