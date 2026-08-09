@@ -360,6 +360,11 @@ describe("finishStream preserves reasoning into STREAM_DONE", () => {
       safePost: (port: any, msg: any) => { port.postMessage(msg); },
       // finishStream calls normalizeActions (imported from lib/modes.js).
       normalizeActions,
+      // finishStream ends by emitting a stream-shape diagnostic; a no-op here
+      // (the real one lives in background.js and just console.debug + posts a
+      // STREAM_DIAGNOSTIC message we don't need in these unit tests).
+      sessionEventShapes: null,
+      emitStreamDiagnostic: () => {},
     };
     vm.createContext(sandbox);
     vm.runInContext(safeSlice + "\n" + fsSlice, sandbox);
@@ -402,7 +407,13 @@ describe("finishStream preserves reasoning into STREAM_DONE", () => {
     const fsEnd = braceEnd(bgSource, fsStart);
     const spStart = bgSource.indexOf("function safePost(");
     const spEnd = braceEnd(bgSource, spStart);
-    const sandbox: any = { normalizeActions };
+    const sandbox: any = {
+      normalizeActions,
+      // finishStream ends by emitting a stream-shape diagnostic; provide the
+      // (no-op) helper + module var so the extracted function runs.
+      sessionEventShapes: null,
+      emitStreamDiagnostic: () => {},
+    };
     vm.createContext(sandbox);
     vm.runInContext(
       bgSource.slice(spStart, spEnd) + "\n" +
