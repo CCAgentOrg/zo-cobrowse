@@ -1,0 +1,45 @@
+name: Release
+
+# Continuous delivery for tagged releases. Dormant until a `v*` tag is pushed:
+#   git tag v0.2.0 && git push origin v0.2.0
+# This workflow re-verifies the tree, builds the extension zip, and publishes
+# a GitHub Release (with auto-generated notes) attaching the zip.
+# Can also be triggered manually via "Run workflow" (workflow_dispatch).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Verify (tests + lint + transpile)
+        run: bun run verify
+
+      - name: Create extension package
+        run: |
+          mkdir -p dist
+          cp -r extension dist/zo-cobrowse
+          cd dist && zip -r ../zo-cobrowse.zip zo-cobrowse/
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: zo-cobrowse.zip
+          generate_release_notes: true
+          fail_on_unmatched_files: true

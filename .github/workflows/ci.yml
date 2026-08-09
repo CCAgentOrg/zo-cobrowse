@@ -1,10 +1,18 @@
 name: CI
 
+# Runs on every branch push (so active work branches like `Rewritet` get
+# the same gate), plus PRs into `main` and manual runs. Release creation is
+# handled by a separate tag-triggered workflow (see .github/workflows/release.yml).
+
 on:
   push:
-    branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -23,27 +31,17 @@ jobs:
       - name: Run tests
         run: bun test
 
-      - name: Validate schemas
-        run: |
-          echo "=== Message types ==="
-          grep -c "MessageType" tests/schemas/messages.ts
-          echo "=== Bang commands ==="
-          bun run --eval "
-            import { readFileSync } from 'fs';
-            const src = readFileSync('tests/schemas/bang-commands.ts', 'utf-8');
-            const zMatch = src.match(/z\.union\(\[([^\]]+)\]/);
-            const count = src.match(/z\.union/g);
-            console.log('Bang command schemas:', count ? count.length : 0);
-          "
-          echo "=== Config schema ==="
-          test -f tests/schemas/config.ts && echo "config.ts OK" || echo "MISSING config.ts"
-          echo "=== Manifest schema ==="
-          test -f tests/schemas/manifest.ts && echo "manifest.ts OK" || echo "MISSING manifest.ts"
-
-      - name: Validate extension JS
+      - name: Transpile check (every extension entry point)
         run: |
           for f in extension/*.js; do
-            node --check "$f" && echo "OK: $f" || exit 1
+            bun build "$f" --outdir /tmp/zo-build-check >/dev/null || { echo "TRANSPILE FAIL: $f"; exit 1; }
+            echo "OK: $f"
+          done
+
+      - name: Validate contract schemas present
+        run: |
+          for s in config manifest messages actions bang-commands; do
+            test -f "tests/schemas/$s.ts" && echo "schema OK: $s.ts" || { echo "MISSING schema: $s.ts"; exit 1; }
           done
 
   lint:
@@ -56,7 +54,10 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Run linter
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run release checks
         run: bun run lint
 
   package:
@@ -76,10 +77,4 @@ jobs:
         with:
           name: zo-cobrowse-extension
           path: zo-cobrowse.zip
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/v')
-        with:
-          files: zo-cobrowse.zip
-          generate_release_notes: true
+          if-no-files-found: error
