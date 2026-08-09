@@ -263,7 +263,7 @@ Test each:
 
 ## 24. Build & Package
 
-- [ ] `bun test` passes all 140 tests
+- [ ] `bun run verify` passes (274 tests / 0 fail + release + transpile checks)
 - [ ] `bun run package` creates `zo-cobrowse.zip`
 - [ ] Zip loads correctly in Chrome via "Load unpacked"
 - [ ] Zip size is reasonable (< 5MB)
@@ -274,9 +274,10 @@ Test each:
 - **Stream reconnection**: Added STREAM_RECONNECT message type in both background.js and sidepanel.js, with CSS for reconnection indicator
 - **Screenshot capture stability**: Added error handling for tab capture failures, format option passthrough for JPEG
 - **Sidepanel HTML syntax**: Fixed hardcoded extension ID references and invalid boolean attributes
-- **Test suite**: Expanded from 83 to 140 tests across 13 files, including error handling, action execution, settings persistence, and remaining coverage
+- **Test suite**: Expanded from 83 to 274 tests across 19 files (0 failures, 783 expect calls)
 - **Centralized config**: Extracted config defaults and validation into extension/lib/config.js
 - **Shared chrome mock**: Mocks extracted to tests/helpers/chrome-mock.ts
+- **Loop engineering**: `bun run verify` gate + pre-commit hook (see CONTRIBUTING.md)
 
 ## Known Issues (remaining) (Not Blocking)
 

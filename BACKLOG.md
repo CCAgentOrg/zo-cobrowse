@@ -1,14 +1,19 @@
 # Zo Co-browse — Backlog
 
-> Updated 2026-08-08. All QA-report findings from the 2026-08-08 round are **resolved**
+> Updated 2026-08-09. All QA-report findings from the 2026-08-08 round are **resolved**
 > (see `QA_REPORT.md` remediation log). Remaining items are feature work.
+> An **infrastructure round** (2026-08-09) added the loop-engineering gate, CI on
+> all branches, and a dormant release workflow — see below.
 
 ## Current state
 
-- **Branch:** `Rewritet` (clean), 9 remediation commits `b31f3de` → `e036b81`
-- **Tests:** ✅ **147 pass / 0 fail** (was 81/9 before this round)
+- **Branch:** `Rewritet` (clean), 18 commits ahead of `main`
+- **Tests:** ✅ **274 pass / 0 fail** (19 files, 783 expect() calls)
+- **Loop engineering:** `bun run verify` gate + committed hard-gate pre-commit hook (`bun run setup-hooks` to install)
+- **CI/CD:** CI runs on every branch push + PR to `main` (tests + transpile + release checks + zip artifact); `.github/workflows/release.yml` is dormant until a `v*` tag is pushed
 - **Streaming:** hardened end-to-end (sessionId isolation, port-disconnect safety, retry correctness, 60s liveness timeout)
 - **P0/P1/P2/P3 QA findings:** all closed (P2-31 deferred by design — see below)
+- **Release:** version + tag **pending** — flagged as more issues to address before tagging (see `CHANGELOG.md` `[Unreleased]`)
 
 ## ✅ Completed this round
 

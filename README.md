@@ -126,11 +126,14 @@ AGENTS.md                   # Project routing for AI agents
 
 ## Development
 
-Reload from `chrome://extensions` after edits. Run tests:
+Reload from `chrome://extensions` after edits. Verify before every commit:
 
 ```bash
-bun test        # 140 tests across 13 test files + 5 schema files
-bun test:watch  # Watch mode
+bun install        # once — installs zod + bun-types
+bun run setup-hooks # once — installs the pre-commit verification gate
+bun run verify     # tests + release checks + transpile check (also runs pre-commit)
+bun test           # 274 tests across 19 test files + 5 schema files
+bun test:watch     # Watch mode
 ```
 
 ## Why This Pattern

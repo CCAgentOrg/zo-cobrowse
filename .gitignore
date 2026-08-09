@@ -11,5 +11,8 @@ brainstorming/
 # Skill runtime symlink (created by install)
 skill/installed
 
-bun.lock
+# Local package output (bun run package). The bundled zip is never committed.
+zo-cobrowse.zip
+
+# bun.lock is intentionally tracked for deterministic CI installs.
 database/

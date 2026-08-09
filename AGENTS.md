@@ -38,13 +38,15 @@ From `manifest.json`:
 ```bash
 bun test              # run the suite (also: npm test)
 bun test --watch      # watch mode (npm run test:watch)
-npm run lint          # release-readiness checks → scripts/check-release.sh
-npm run package       # zip extension/ → zo-cobrowse.zip
+bun run verify        # loop-engineering gate → scripts/verify.sh (tests + lint + transpile)
+bun run setup-hooks   # one-time: installs the committed pre-commit gate (scripts/install-hooks.sh)
+bun run lint          # release-readiness checks → scripts/check-release.sh
+bun run package       # zip extension/ → zo-cobrowse.zip
 ```
 
 [![CI](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml/badge.svg)](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml)
 
-**210 tests across 16 files (0 failures, 621 expect() calls).** Every extension JS file transpiles cleanly via `bun build`. Adding a feature means adding/updating the corresponding test file under `tests/`. See `QA_REPORT.md` for the audit history.
+**274 tests across 19 files (0 failures, 783 expect() calls).** Every extension JS file transpiles cleanly via `bun build` (checked by `bun run verify` and CI). The committed pre-commit hook (`scripts/hooks/pre-commit`) runs `bun run verify` before every commit as a hard gate — bypass with `git commit --no-verify`. CI runs the same checks on every branch push + PR to `main`; tags `v*` trigger the dormant Release workflow (`release.yml`). Adding a feature means adding/updating the corresponding test file under `tests/`. See `QA_REPORT.md` for the audit history.
 
 ## Ticket & feature status
 

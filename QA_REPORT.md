@@ -16,6 +16,16 @@
 
 9 atomic commits on `Rewritet` from `b31f3de` → `e036b81`.
 
+> **2026-08-09 — Infrastructure round (no code changes, all green replay):**
+> `bun run verify` aggregate gate (`scripts/verify.sh` = tests → release checks →
+> per-entry `bun build` transpile) + a committed **hard-gate pre-commit hook**
+> (`bun run setup-hooks` installs; `git commit --no-verify` bypasses). CI
+> (`.github/workflows/ci.yml`) now runs on **every branch push** + PR to `main`
+> and replaces the weaker `node --check` loop with a `bun build` transpile check;
+> release publishing moved out of CI into a dormant, tag-triggered
+> `.github/workflows/release.yml`. Suite: **274 tests / 0 fail** (19 files,
+> 783 expects). See `CHANGELOG.md` `[Unreleased]`.
+
 ## Test suite
 
 ```
