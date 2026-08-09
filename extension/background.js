@@ -877,6 +877,14 @@ async function _askZoStreamImpl(port, msg) {
     const decoder = new TextDecoder();
     let buffer = '';
     let fullText = '';
+    // Stream-shape discovery: per-session union of fields seen for each SSE
+    // `event:` type, plus any events we don't consume. The runtime shape is
+    // genuinely unknown (previous captures never surfaced richer events like
+    // tool traces / sources / streaming reasoning). This collector makes it
+    // observable: log once per stream + forward in STREAM_DONE.diagnostic so
+    // the side panel can surface it and we can close the gap.
+    const eventShapes = {};
+    sessionEventShapes = eventShapes;
 
     let currentEventType = '';
     while (true) {
@@ -945,12 +953,12 @@ async function _askZoStreamImpl(port, msg) {
           // FrontendModelResponse (default — also catches any data: without event: prefix for compat)
           try {
             const parsed = JSON.parse(data);
-            // One-time diagnostic: log the first real chunk's event + fields so
-            // the actual Zo/model SSE shape is observable. The repo has never
-            // captured a real chunk; this makes field mismatches debuggable.
-            if (!fullText) {
-              try { console.debug('[zo-cobrowse] first SSE chunk:', { event: currentEventType, fields: Object.keys(parsed) }); } catch {}
-            }
+            // Stream-shape discovery: fold this chunk's top-level field names
+            // into the per-event union for this session. Also record events we
+            // otherwise ignore (tool_use/sources/citation/... if any).
+            const key = currentEventType || '(no event)';
+            eventShapes[key] = eventShapes[key] || new Set();
+            Object.keys(parsed).forEach((k) => eventShapes[key].add(k));
             // Extract text from any known field shape (Zo/OpenAI/Anthropic/nested).
             const content = extractStreamContent(parsed);
             if (content) {
@@ -983,6 +991,29 @@ async function _askZoStreamImpl(port, msg) {
     safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: `Connection failed: ${err.message}` });
     throw err; // let the retry wrapper decide
   }
+}
+
+// Per-session stream-shape collector (see _askZoStreamImpl). finishStream
+// reads + clears it so the STREAM_DONE envelope can carry a diagnostic of the
+// events/fields Zo actually emitted. Module-level because finishStream is
+// reached from many terminal branches in the stream loop.
+let sessionEventShapes = null;
+
+/**
+ * Emit a shape-diagnostic in STREAM_DONE (and console) describing the SSE
+ * events/fields Zo actually produced this stream. This is how we learn whether
+ * richer content (tool traces, sources, streaming reasoning) is available but
+ * currently unparsed — the repo has never captured a real rich chunk.
+ */
+function emitStreamDiagnostic(port, sid) {
+  if (!sessionEventShapes || !Object.keys(sessionEventShapes).length) return;
+  const diagnostic = {};
+  for (const [ev, fields] of Object.entries(sessionEventShapes)) {
+    diagnostic[ev] = Array.from(fields).sort();
+  }
+  try { console.debug('[zo-cobrowse] stream shape:', diagnostic); } catch {}
+  safePost(port, { sessionId: sid, type: 'STREAM_DIAGNOSTIC', diagnostic });
+  sessionEventShapes = null;
 }
 
 function finishStream(port, sid, output) {
@@ -1031,6 +1062,8 @@ function finishStream(port, sid, output) {
     actions,
     fullText,
   });
+  // Stream-shape discovery: surface which events/fields Zo actually emitted.
+  emitStreamDiagnostic(port, sid);
 }
 
 async function askZo(pageContext, userQuery, modelName, personaId, modeId, customModes) {

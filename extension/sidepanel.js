@@ -1879,6 +1879,11 @@ let streamSession = { active: false, sessionId: 0, msgEl: null, fullText: '', re
 // Last user query submitted — used by the error card's Retry button.
 let lastQuery = '';
 
+// Latest STREAM_DIAGNOSTIC: the SSE event→fields map Zo emitted for the last
+// stream. Kept for richer-content rendering (tool traces / sources / streaming
+// reasoning); not shown to the user.
+let streamShape = null;
+
 // Re-submit the last query (used by the Retry button on the error card).
 // Bypasses the empty-input guard since the value lives in the label, not the box.
 async function sendQueryFromLabel(label) {
@@ -2122,6 +2127,13 @@ function handleStreamMessage(msg) {
       }
       reconn.querySelector('.msg-body').textContent = '➳ Reconnecting... attempt ' + msg.attempt + ' of ' + msg.maxRetries;
       reconn.scrollIntoView({ behavior: 'smooth' });
+      break;
+    }
+    case 'STREAM_DIAGNOSTIC': {
+      // Stream-shape discovery: Zo tells us which SSE events/fields it emitted.
+      // Recorded for richer-content rendering (tool traces, sources, streaming
+      // reasoning); not shown in the chat stream (the user shouldn't see it).
+      streamShape = msg.diagnostic || null;
       break;
     }
   }
