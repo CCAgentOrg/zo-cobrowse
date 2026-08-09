@@ -17,6 +17,7 @@
   "devDependencies": {
     "acorn": "^8.14.0",
     "bun-types": "latest",
+    "happy-dom": "^20.11.2",
     "zod": "^4.4.3"
   }
 }
