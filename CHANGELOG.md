@@ -5,12 +5,11 @@ All notable changes to Zo Co-browse are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [v0.0.2] - 2026-08-10
 
-> The upcoming stable release is staged on the `Rewritet` branch (18 commits
-> ahead of `main`, all green: **494 tests / 0 fail**). The version number and
-> tag are decided at release time — see `BACKLOG.md`. Once tagged, rename this
-> section `[Unreleased]` → `[vX.Y.Z]` and move the compare link below.
+Stable release: streaming stability + conversation-experience work promoted
+from `dev` (PR #18) with the VitePress docs site (PR #19). Suite: **534 tests /
+0 fail** (24 files, 1381 expect calls).
 
 ### Added
 - **Repo maintenance rules + git-flow model** — formalized a `dev` (integration)
@@ -66,7 +65,7 @@ and this project uses [Semantic Versioning](https://semver.org/).
   actions are normalized so reasoning bubbles + done text render.
 
 ### Tests / QA
-- Suite grown from 81 → **494 tests / 0 fail** (23 files, 1240 expect calls).
+- Suite grown from 81 → **534 tests / 0 fail** (24 files, 1381 expect calls).
 - New test files: `action-timeline`, `normalize-actions`, `css-layout`,
   `sse-parsing`, `strict-module`, plus options/reset and shortcut-docs coverage.
 - Full P0–P3 audit round closed — see `QA_REPORT.md` for the remediation log.
@@ -77,4 +76,4 @@ context menu, keyboard shortcuts, bang commands, screenshots, DuckDB, skills,
 automations, save-page, onboarding, presets, themes, omnibox, relay) is inline
 in the git history; versioned sections begin at the first tagged release.*
 
-[Unreleased]: https://github.com/CCAgentOrg/zo-cobrowse/compare/main...Rewritet
+[v0.0.2]: https://github.com/CCAgentOrg/zo-cobrowse/compare/v0.0.1-alpha...v0.0.2

@@ -1,5 +1,7 @@
 # #36 — Unhandled streamPort.postMessage Error Leaves UI Stuck
 
+**Status:** ⚠️ **Duplicate of #28** — see `ticket-28-unhandled-port-exception.md` (canonical). Kept for history.
+
 **Date:** 2026-07-26  
 **Severity:** 🔴 P1 — If port disconnects between availability check and postMessage, UI freezes  
 **Labels:** `bug`, `critical`, `error-handling`

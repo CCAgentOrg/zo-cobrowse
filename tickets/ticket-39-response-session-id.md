@@ -1,5 +1,7 @@
 # #39 — Missing sessionId in Response Messages Causes Cross-Session Leakage
 
+**Status:** ⚠️ **Duplicate of #30** — see `ticket-30-missing-sessionid.md` (canonical). Kept for history.
+
 **Date:** 2026-07-26  
 **Severity:** 🟡 P2 — Rapid queries mix responses across sessions  
 **Labels:** `bug`, `streaming`, `state-management`
