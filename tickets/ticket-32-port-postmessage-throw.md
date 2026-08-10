@@ -1,5 +1,7 @@
 # #32 — streamPort.postMessage Can Throw with No Error Handling
 
+**Status:** ⚠️ **Duplicate of #28** — see `ticket-28-unhandled-port-exception.md` (canonical). Kept for history.
+
 **Date:** 2026-07-26  
 **Severity:** 🔴 P0 — Port disconnect between guard and postMessage permanently disables UI  
 **Labels:** `bug`, `critical`, `stability`

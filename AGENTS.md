@@ -58,7 +58,7 @@ bun run package       # zip extension/ → zo-cobrowse.zip
 
 [![CI](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml/badge.svg)](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml)
 
-**494 tests across 23 files (0 failures, 1240 expect() calls).** Every extension JS file transpiles cleanly via `bun build` (checked by `bun run verify` and CI). The committed pre-commit hook (`scripts/hooks/pre-commit`) runs `bun run verify` before every commit as a hard gate — bypass with `git commit --no-verify`. CI runs the same checks on every branch push + PRs into both `main` and `dev`; tags `v*` trigger the dormant Release workflow (`release.yml`). Adding a feature means adding/updating the corresponding test file under `tests/`. See `QA_REPORT.md` for the audit history.
+**534 tests across 24 files (0 failures, 1381 expect() calls).** Every extension JS file transpiles cleanly via `bun build` (checked by `bun run verify` and CI). The committed pre-commit hook (`scripts/hooks/pre-commit`) runs `bun run verify` before every commit as a hard gate — bypass with `git commit --no-verify`. CI runs the same checks on every branch push + PRs into both `main` and `dev`; tags `v*` trigger the dormant Release workflow (`release.yml`). Adding a feature means adding/updating the corresponding test file under `tests/`. See `QA_REPORT.md` for the audit history.
 
 ## Ticket & feature status
 

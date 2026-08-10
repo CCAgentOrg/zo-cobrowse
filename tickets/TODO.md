@@ -1,6 +1,6 @@
 # Zo Co-browse — Consolidated TODO
 
-**Last updated**: 2026-07-13
+**Last updated**: 2026-08-10
 
 Priorities ranked by **Zo affinity** — how uniquely each feature leverages Zo Computer's platform (automations, skills, datasets, multi-model BYOK, DuckDB, workspace). Build the moat first, catch up on parity later.
 
@@ -67,11 +67,11 @@ Priorities ranked by **Zo affinity** — how uniquely each feature leverages Zo 
 | — | Settings persistence tests | — | `tests/settings-persistence.test.ts` — 16 tests |
 | — | Coverage tests | — | `tests/remaining-coverage.test.ts` — 6 tests |
 | — | Privacy policy | — | `PRIVACY.md` |
-| — | 140 tests passing | — | All tests pass |
+| — | 534 tests passing | — | All tests pass |
 
 ---
 
 ## Release Checklist
 
-- [ ] Git tag + GitHub release
+- [x] Git tag + GitHub release (v0.0.2, 2026-08-10)
 - [ ] Chrome Web Store submission (after P0 items done)

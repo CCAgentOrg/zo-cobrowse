@@ -1,6 +1,6 @@
 # Zo Co-browse — Backlog
 
-> Updated 2026-08-09. All QA-report findings from the 2026-08-08 round are **resolved**
+> Updated 2026-08-10. All QA-report findings from the 2026-08-08 round are **resolved**
 > (see `QA_REPORT.md` remediation log). Remaining items are feature work.
 > An **infrastructure round** (2026-08-09) added the loop-engineering gate, CI on
 > all branches, and a dormant release workflow — see below.
@@ -8,12 +8,12 @@
 ## Current state
 
 - **Branches:** `Rewritet` merged → `main` (fast-forward, 22 commits); working tree clean
-- **Tests:** ✅ **494 pass / 0 fail** (23 files, 1240 expect() calls)
+- **Tests:** ✅ **534 pass / 0 fail** (24 files, 1381 expect() calls)
 - **Loop engineering:** `bun run verify` gate + committed hard-gate pre-commit hook (`bun run setup-hooks` to install)
-- **CI/CD:** CI runs on every branch push + PR to `main` (tests + transpile + release checks + zip artifact); `.github/workflows/release.yml` is dormant until a `v*` tag is pushed
+- **CI/CD:** CI runs on every branch push + PR to `main` (tests + transpile + release checks + zip artifact); `.github/workflows/release.yml` publishes `v*` tag releases (used for v0.0.2)
 - **Streaming:** hardened end-to-end (sessionId isolation, port-disconnect safety, retry correctness, 60s liveness timeout)
 - **P0/P1/P2/P3 QA findings:** all closed (P2-31 deferred by design — see below)
-- **Release:** version + tag **pending** — flagged as more issues to address before tagging (see `CHANGELOG.md` `[Unreleased]`)
+- **Release:** ✅ **v0.0.2** tagged + GitHub release published (2026-08-10) with the extension zip. Next milestone: Chrome Web Store submission (#11)
 
 ## ✅ Completed this round
 
