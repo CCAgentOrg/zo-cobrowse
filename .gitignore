@@ -14,6 +14,10 @@ skill/installed
 # Local package output (bun run package). The bundled zip is never committed.
 zo-cobrowse.zip
 
+# VitePress docs site build/cache output (npm run docs:build). Never committed.
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
 # bun.lock is intentionally tracked for deterministic CI installs.
 database/
 

@@ -1,0 +1,68 @@
+name: Docs
+
+# Build the VitePress documentation site (docs/) and deploy it to GitHub Pages.
+# Runs on every push to `main` that touches docs/, plus manual runs. Deploys to
+# https://ccagentorg.github.io/zo-cobrowse/ using the Actions-based Pages
+# pipeline (OIDC, no PAT) — independent of ci.yml and release.yml.
+#
+# Note: the repo's Pages source must be set to "GitHub Actions" in
+# Settings → Pages for this deploy step to be able to publish.
+
+on:
+  push:
+    branches: [main]
+    # Only rebuild when docs actually change — extension/test commits don't
+    # need a docs rebuild.
+    paths:
+      - 'docs/**'
+  workflow_dispatch:
+
+# Allow one pipeline at a time; don't cancel an in-progress deploy when a new
+# one is queued, so the published site is never left in a half-built state.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install VitePress (isolated docs toolchain)
+        working-directory: docs
+        run: npm ci
+
+      - name: Build the docs site
+        working-directory: docs
+        run: npm run docs:build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/.vitepress/dist
+          retention-days: 5
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
