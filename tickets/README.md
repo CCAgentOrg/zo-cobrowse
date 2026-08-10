@@ -4,6 +4,11 @@ Scoped tickets with acceptance criteria for yet-to-be-implemented features, deri
 
 All tickets have been created as GitHub Issues at: https://github.com/CCAgentOrg/zo-cobrowse/issues
 
+> **2026-08-10:** Feature tickets #01–#15 map to the GitHub issues above (shipped ones closed in v0.0.2).
+> Fix/audit tickets #16–#39 are tracked **in-repo only** (not GitHub issues); triplicate follow-ups were
+> collapsed into canonical tickets #27 / #28 / #30, and the ticket-25/26 audit dumps now live in
+> `tickets/archive/`.
+
 ## Tickets by Phase
 
 ### [P2] Everywhere, Layered — Quick wins, biggest competitive gaps

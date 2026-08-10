@@ -1,5 +1,7 @@
 # #35 — askZoStream Sends STREAM_RECONNECT on First Attempt
 
+**Status:** ⚠️ **Duplicate of #27** — see `ticket-27-false-reconnect-ui.md` (canonical). Kept for history.
+
 **Date:** 2026-07-26  
 **Severity:** 🟡 P2 — User-visible cosmetic bug, confuses users  
 **Labels:** `bug`, `ui`, `cosmetic`

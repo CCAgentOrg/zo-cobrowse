@@ -26,6 +26,10 @@
 > `.github/workflows/release.yml`. Suite: **274 tests / 0 fail** (19 files,
 > 783 expects). See `CHANGELOG.md` `[Unreleased]`.
 
+> **2026-08-10 — v0.0.2 released:** manifest bumped to `0.0.2` (the initial
+> v0.0.2 release shipped a `0.0.1` manifest; corrected by re-running the tag
+> workflow). Suite: **534 tests / 0 fail** (24 files, 1381 expects).
+
 ## Test suite
 
 ```

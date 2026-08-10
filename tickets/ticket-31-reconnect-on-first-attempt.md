@@ -1,5 +1,7 @@
 # #31 — STREAM_RECONNECT Fires on First Attempt (Not a Retry)
 
+**Status:** ⚠️ **Duplicate of #27** — see `ticket-27-false-reconnect-ui.md` (canonical). Kept for history.
+
 **Date:** 2026-07-26  
 **Severity:** 🟡 P3 — Cosmetic: sidepanel shows "Reconnecting... attempt 1 of 3" on every query  
 **Labels:** `bug`, `cosmetic`

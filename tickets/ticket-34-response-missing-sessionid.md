@@ -1,5 +1,7 @@
 # #34 — Response Messages Missing sessionId (Stale Session Leak)
 
+**Status:** ⚠️ **Duplicate of #30** — see `ticket-30-missing-sessionid.md` (canonical). Kept for history.
+
 **Date:** 2026-07-26  
 **Severity:** 🔴 P1 — Stale responses from previous sessions can corrupt active UI  
 **Labels:** `bug`, `protocol`, `data-race`
