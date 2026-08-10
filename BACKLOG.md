@@ -8,7 +8,7 @@
 ## Current state
 
 - **Branches:** `Rewritet` merged → `main` (fast-forward, 22 commits); working tree clean
-- **Tests:** ✅ **274 pass / 0 fail** (19 files, 783 expect() calls)
+- **Tests:** ✅ **494 pass / 0 fail** (23 files, 1240 expect() calls)
 - **Loop engineering:** `bun run verify` gate + committed hard-gate pre-commit hook (`bun run setup-hooks` to install)
 - **CI/CD:** CI runs on every branch push + PR to `main` (tests + transpile + release checks + zip artifact); `.github/workflows/release.yml` is dormant until a `v*` tag is pushed
 - **Streaming:** hardened end-to-end (sessionId isolation, port-disconnect safety, retry correctness, 60s liveness timeout)

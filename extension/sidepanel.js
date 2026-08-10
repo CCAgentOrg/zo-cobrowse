@@ -21,11 +21,13 @@ function startThinkingTimeout() {
     thinkingTimeout = null;
     const thinking = msgsEl?.querySelector('.msg-thinking');
     if (thinking) thinking.remove();
+    stopStreamTimer();
     if (streamSession.active) {
       streamSession.active = false;
       streamSession.msgEl = null;
       streamSession.fullText = '';
       streamSession.reasoningText = '';
+      streamSession.startTime = 0;
     }
     if (typeof input !== 'undefined' && input) input.disabled = false;
     if (typeof sendBtn !== 'undefined' && sendBtn) sendBtn.disabled = false;
@@ -134,6 +136,7 @@ let pendingActionsReasoning = '';   // reasoning to attach to the done-answer bu
 let currentContext = null;
 let actionRunning = false;
 let isHistoryView = false;
+let cachedModels = [];      // cache LIST_MODELS response for label lookup
 
 // ---- STT state ----
 let recognition = null;
@@ -576,7 +579,8 @@ function renderCurrentConversation() {
   }
   for (const msg of conv.messages) {
     const m = msg.role === 'assistant' ? healAssistantMessage(msg) : msg;
-    const el = addMessageDOM(m.role, m.text);
+    const opts = m.role === 'assistant' ? { timestamp: m.timestamp, durationMs: m.durationMs } : {};
+    const el = addMessageDOM(m.role, m.text, opts);
     if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning);
     if (m.role === 'assistant' && m.tools) addExploredRegion(el, m.tools);
   }
@@ -628,7 +632,8 @@ async function switchToConversation(id) {
   if (conv && conv.messages.length > 0) {
     for (const msg of conv.messages) {
       const m = msg.role === 'assistant' ? healAssistantMessage(msg) : msg;
-      const el = addMessageDOM(m.role, m.text);
+      const opts = m.role === 'assistant' ? { timestamp: m.timestamp, durationMs: m.durationMs } : {};
+      const el = addMessageDOM(m.role, m.text, opts);
       if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning);
       if (m.role === 'assistant' && m.tools) addExploredRegion(el, m.tools);
     }
@@ -799,6 +804,7 @@ async function fetchModelsAndPersonas() {
 
   const modelsResp = await chrome.runtime.sendMessage({ type: 'LIST_MODELS' });
   if (modelsResp?.success && Array.isArray(modelsResp.models)) {
+    cachedModels = modelsResp.models; // Cache for label lookup in message footer
     modelSelect.innerHTML = '<option value="">Default model</option>';
     for (const m of modelsResp.models) {
       const opt = document.createElement('option');
@@ -809,6 +815,7 @@ async function fetchModelsAndPersonas() {
       modelSelect.appendChild(opt);
     }
   } else {
+    cachedModels = [];
     modelSelect.innerHTML = '<option value="">Models unavailable</option>';
   }
 
@@ -963,7 +970,7 @@ function relativeTime(ts, now = Date.now()) {
 // locally on the history entry (no backend).
 function addMessageFooter(parentMsgEl, opts = {}) {
   if (!parentMsgEl || parentMsgEl.querySelector('.msg-footer')) return null;
-  const { timestamp, modeName, modelName } = opts;
+  const { timestamp, modeName, modelName, durationMs } = opts;
   const footer = document.createElement('div');
   footer.className = 'msg-footer';
 
@@ -994,7 +1001,9 @@ function addMessageFooter(parentMsgEl, opts = {}) {
   if (modelName) {
     const modelChip = document.createElement('span');
     modelChip.className = 'msg-footer-chip msg-footer-model';
-    modelChip.textContent = safeText(modelName);
+    // Look up label from cached models, fallback to modelName
+    const modelDisplay = cachedModels.find(m => (m.model_name || m.id) === modelName)?.label || modelName;
+    modelChip.textContent = safeText(modelDisplay);
     modelChip.title = 'Model';
     footer.appendChild(modelChip);
   }
@@ -1002,24 +1011,11 @@ function addMessageFooter(parentMsgEl, opts = {}) {
   if (timestamp) {
     const timeEl = document.createElement('span');
     timeEl.className = 'msg-footer-time';
-    timeEl.textContent = relativeTime(timestamp);
+    // Relative timestamp + total request duration (e.g. "just now · 4s").
+    const dur = formatDuration(durationMs);
+    timeEl.textContent = dur ? `${relativeTime(timestamp)} · ${dur}` : relativeTime(timestamp);
     footer.appendChild(timeEl);
   }
-
-  const feedbackWrap = document.createElement('span');
-  feedbackWrap.className = 'msg-footer-feedback';
-  for (const rating of [['Good', '👍'], ['Bad', '👎'], ['Loved', '❤️']]) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'msg-footer-btn msg-footer-fb';
-    b.textContent = rating[1];
-    b.title = rating[0];
-    b.addEventListener('click', () => {
-      b.classList.toggle('selected');
-    });
-    feedbackWrap.appendChild(b);
-  }
-  footer.appendChild(feedbackWrap);
 
   parentMsgEl.appendChild(footer);
   return footer;
@@ -1352,7 +1348,7 @@ function markdownToHtml(md) {
   return html;
 }
 
-function addMessageDOM(role, text) {
+function addMessageDOM(role, text, opts = {}) {
   text = safeText(text);
   const div = document.createElement('div');
   div.className = `msg msg-${role}`;
@@ -1380,13 +1376,18 @@ function addMessageDOM(role, text) {
     div.appendChild(ttsBtn);
   }
 
-  // Assistant-turn footer (Zo parity): Copy, mode chip, model chip, time, feedback.
-  if (role === 'assistant') {
+  // Assistant-turn footer (Zo parity): Copy / mode / model / time.
+  // Suppressed while streaming (`opts.streaming`) — the live processing
+  // timer takes its place and the full footer is rendered at STREAM_DONE.
+  // History re-render passes `opts.timestamp` / `opts.durationMs` so
+  // reloaded messages keep their original time + total request duration.
+  if (role === 'assistant' && !opts.streaming) {
     const mode = resolveMode(activeModeId, customModes);
     addMessageFooter(div, {
-      timestamp: Date.now(),
+      timestamp: opts.timestamp || Date.now(),
       modeName: mode.name,
       modelName: config.selectedModel || undefined,
+      durationMs: opts.durationMs,
     });
   }
 
@@ -1932,7 +1933,31 @@ let streamPort = null;
 // body — a live feed. The final STREAM_DONE may render a collapsed reasoning
 // summary bubble above the body if the user wants a compact view, but the
 // full reasoning stream is always visible in chronological order.
-let streamSession = { active: false, sessionId: 0, msgEl: null, fullText: '', reasoningText: '', remainingActions: null };
+let streamSession = { active: false, sessionId: 0, msgEl: null, fullText: '', reasoningText: '', remainingActions: null, startTime: 0 };
+
+// Live "processing" timer: ticks the elapsed time on the in-flight assistant
+// bubble's first line until STREAM_DONE replaces it with the real footer
+// (which carries the relative timestamp + the total duration).
+let streamTimerInterval = null;
+function startStreamTimer(msgEl) {
+  stopStreamTimer();
+  if (!msgEl) return;
+  let line = msgEl.querySelector('.msg-processing-timer');
+  if (!line) {
+    line = document.createElement('div');
+    line.className = 'msg-processing-timer';
+    msgEl.appendChild(line);
+  }
+  const tick = () => {
+    const elapsed = Date.now() - streamSession.startTime;
+    line.textContent = `◷ ${formatDuration(elapsed)} — processing…`;
+  };
+  tick();
+  streamTimerInterval = setInterval(tick, 200);
+}
+function stopStreamTimer() {
+  if (streamTimerInterval) { clearInterval(streamTimerInterval); streamTimerInterval = null; }
+}
 
 // Last user query submitted — used by the error card's Retry button.
 let lastQuery = '';
@@ -1958,6 +1983,7 @@ function cancelStream() {
   if (!streamSession.active) return;
   streamSession.active = false;
   clearThinkingTimeout();
+  stopStreamTimer();
   const thinking = msgsEl?.querySelector('.msg-thinking');
   if (thinking) thinking.remove();
   if (streamPort) { try { streamPort.disconnect(); } catch {} streamPort = null; }
@@ -1965,6 +1991,7 @@ function cancelStream() {
   streamSession.fullText = '';
   streamSession.reasoningText = '';
   streamSession.remainingActions = null;
+  streamSession.startTime = 0;
   if (typeof input !== 'undefined' && input) input.disabled = false;
   if (typeof sendBtn !== 'undefined' && sendBtn) { sendBtn.disabled = !input?.value?.trim(); }
 }
@@ -1982,6 +2009,7 @@ function connectStreamingPort() {
         if (streamSession.active) {
           streamSession.active = false;
           clearThinkingTimeout();
+          stopStreamTimer();
           const thinking = msgsEl?.querySelector('.msg-thinking');
           if (thinking) thinking.remove();
           if (typeof input !== 'undefined' && input) input.disabled = false;
@@ -2009,7 +2037,8 @@ function handleStreamMessage(msg) {
       if (!streamSession.msgEl) {
         const thinking = msgsEl.querySelector('.msg-thinking');
         if (thinking) thinking.remove();
-        streamSession.msgEl = addMessageDOM('assistant', '');
+        streamSession.msgEl = addMessageDOM('assistant', '', { streaming: true });
+        startStreamTimer(streamSession.msgEl);
       }
       streamSession.reasoningText = safeText(msg.text);
       const body = streamSession.msgEl.querySelector('.msg-body');
@@ -2048,7 +2077,8 @@ function handleStreamMessage(msg) {
       if (!streamSession.msgEl) {
         const thinking = msgsEl.querySelector('.msg-thinking');
         if (thinking) thinking.remove();
-        streamSession.msgEl = addMessageDOM('assistant', '');
+        streamSession.msgEl = addMessageDOM('assistant', '', { streaming: true });
+        startStreamTimer(streamSession.msgEl);
       }
       const body = streamSession.msgEl.querySelector('.msg-body');
       if (!body) break;
@@ -2116,7 +2146,8 @@ function handleStreamMessage(msg) {
       if (!streamSession.msgEl) {
         const thinking = msgsEl.querySelector('.msg-thinking');
         if (thinking) thinking.remove();
-        streamSession.msgEl = addMessageDOM('assistant', isActionJson ? '_Preparing actions…_' : '');
+        streamSession.msgEl = addMessageDOM('assistant', isActionJson ? '_Preparing actions…_' : '', { streaming: true });
+        startStreamTimer(streamSession.msgEl);
         streamSession.fullText = safeText(msg.text);
       } else {
         streamSession.fullText += safeText(msg.text);
@@ -2138,6 +2169,7 @@ function handleStreamMessage(msg) {
       // Remove any stale thinking indicator regardless of active state
       const staleThinking = msgsEl.querySelector('.msg-thinking');
       if (staleThinking) staleThinking.remove();
+      stopStreamTimer();
 
       if (!streamSession.active) {
         // Stream was cancelled or port disconnected, but we still have a response —
@@ -2223,13 +2255,30 @@ function handleStreamMessage(msg) {
         }
       }
 
+      // Finalize: stop the live processing timer and render the full footer
+      // (Copy / mode / model / timestamp · total-duration) on the streamed bubble.
+      const doneDuration = streamSession.startTime ? Date.now() - streamSession.startTime : 0;
+      stopStreamTimer();
+      const doneTimestamp = Date.now();
+      if (streamSession.msgEl) {
+        const timerLine = streamSession.msgEl.querySelector('.msg-processing-timer');
+        if (timerLine) timerLine.remove();
+        const mode = resolveMode(activeModeId, customModes);
+        addMessageFooter(streamSession.msgEl, {
+          timestamp: doneTimestamp,
+          modeName: mode.name,
+          modelName: config.selectedModel || undefined,
+          durationMs: doneDuration,
+        });
+      }
+
       // Persist to conversation
       if (responseText) {
         const conv = getActiveConversation();
         if (conv) {
           const reasoningVal = safeText(msg.reasoning) || safeText(streamSession.reasoningText) || undefined;
           // Persist to conversation (chronological feed is already in the body; just save reasoning)
-          conv.messages.push({ role: 'assistant', text: responseText, reasoning: reasoningVal, timestamp: Date.now() });
+          conv.messages.push({ role: 'assistant', text: responseText, reasoning: reasoningVal, timestamp: doneTimestamp, durationMs: doneDuration || undefined });
           if (conv.messages.length > 50) {
             conv.messages = conv.messages.slice(-50);
           }
@@ -2254,6 +2303,7 @@ function handleStreamMessage(msg) {
     }
     case 'STREAM_ERROR': {
       clearThinkingTimeout();
+      stopStreamTimer();
       if (!streamSession.active) return;
       // Remove any stale reconnecting banner
       const reconnErr = msgsEl.querySelector('.msg-reconnecting');
@@ -2261,6 +2311,11 @@ function handleStreamMessage(msg) {
       streamSession.active = false;
       const thinking = msgsEl.querySelector('.msg-thinking');
       if (thinking) thinking.remove();
+      // Drop the partial assistant bubble (if any) so the processing timer line doesn't linger.
+      if (streamSession.msgEl) {
+        const timerLine = streamSession.msgEl.querySelector('.msg-processing-timer');
+        if (timerLine) timerLine.remove();
+      }
       // Zo error card: "Response interrupted" + technical detail + Retry.
       addErrorCard(msg.error, () => {
         if (lastQuery) sendQueryFromLabel(lastQuery);
@@ -2271,6 +2326,7 @@ function handleStreamMessage(msg) {
       streamSession.msgEl = null;
       streamSession.fullText = '';
       streamSession.reasoningText = '';
+      streamSession.startTime = 0;
       break;
     }
       case 'STREAM_RECONNECT_DONE': {
@@ -2466,6 +2522,7 @@ sendQuery = async function() {
     streamSession.msgEl = null;
     streamSession.fullText = '';
     streamSession.reasoningText = '';
+    streamSession.startTime = Date.now();
     try {
       streamPort.postMessage({
         sessionId: thisSessionId,

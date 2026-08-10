@@ -8,7 +8,7 @@ and this project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 > The upcoming stable release is staged on the `Rewritet` branch (18 commits
-> ahead of `main`, all green: **274 tests / 0 fail**). The version number and
+> ahead of `main`, all green: **494 tests / 0 fail**). The version number and
 > tag are decided at release time — see `BACKLOG.md`. Once tagged, rename this
 > section `[Unreleased]` → `[vX.Y.Z]` and move the compare link below.
 
@@ -60,7 +60,7 @@ and this project uses [Semantic Versioning](https://semver.org/).
   actions are normalized so reasoning bubbles + done text render.
 
 ### Tests / QA
-- Suite grown from 81 → **274 tests / 0 fail** (19 files, 783 expect calls).
+- Suite grown from 81 → **494 tests / 0 fail** (23 files, 1240 expect calls).
 - New test files: `action-timeline`, `normalize-actions`, `css-layout`,
   `sse-parsing`, `strict-module`, plus options/reset and shortcut-docs coverage.
 - Full P0–P3 audit round closed — see `QA_REPORT.md` for the remediation log.

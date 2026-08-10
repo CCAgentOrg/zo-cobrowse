@@ -686,6 +686,9 @@ input, textarea, select {
   gap: 24px;
   padding: 32px 20px 20px;
   background: var(--bg-chat);
+  /* Ensure messages container fills available space */
+  min-height: 0;
+  height: 100%;
 }
 
 .msg {
@@ -1502,9 +1505,10 @@ input, textarea, select {
 #chat-view {
   display: flex;
   flex-direction: column;
-  flex: 1 1 0;          /* fill remaining space after the sticky top region */
-  min-height: 0;       /* allow #messages to scroll instead of growing the shell */
+  flex: 1 1 auto;       /* fill remaining space after the sticky top region */
+  min-height: 0;        /* allow #messages to scroll instead of growing the shell */
   position: relative;
+  overflow: hidden;     /* prevent content from expanding beyond container */
 }
 
 .shell {
@@ -1513,6 +1517,7 @@ input, textarea, select {
   height: 100%;
   position: relative;
   background: var(--bg-deep);
+  overflow: hidden;     /* ensure content doesn't overflow */
 }
 
 .hidden { display: none !important; }
@@ -2086,6 +2091,32 @@ body.options-page {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   color: var(--text-faint);
+}
+
+/* Live "processing" timer shown on the in-flight assistant bubble until the
+   final footer (timestamp + total duration) renders at STREAM_DONE. */
+.msg-processing-timer {
+  margin-top: 4px;
+  padding-left: 2px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--zo-muted-foreground);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.msg-processing-timer::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amber);
+  animation: msg-processing-pulse 1s ease-in-out infinite;
+}
+@keyframes msg-processing-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
 }
 .msg-footer-feedback {
   margin-left: auto;

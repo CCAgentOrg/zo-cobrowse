@@ -304,12 +304,13 @@ describe("message footer — Zo parity", () => {
   const css = readFileSync(cssPath, "utf-8");
   const sidepanel = readFileSync(SIDEPANEL_PATH, "utf-8");
 
-  it("renders a footer with Copy / mode / model / time / feedback", () => {
+  it("renders a footer with Copy / mode / model / time (no feedback)", () => {
     expect(sidepanel).toContain("function addMessageFooter");
     expect(sidepanel).toContain("msg-footer-copy");
     expect(sidepanel).toContain("msg-footer-mode");
     expect(sidepanel).toContain("msg-footer-model");
-    expect(sidepanel).toContain("msg-footer-feedback");
+    // Feedback icons removed - no longer present in footer
+    expect(sidepanel).not.toContain("msg-footer-feedback");
   });
 
   it("styles the footer on neutral tokens", () => {

@@ -1,12 +1,12 @@
 # Zo Co-browse Backend — WebSocket Relay
 
-Relays co-browsing session messages between Zo and the browser extension. Also serves as a Zo.space bridge for data queries.
+Relays co-browsing session messages between Zo and the browser extension.
 
 ## Quick Start
 
 ```bash
 bun install
-bun run relay.ts --port 8091
+PORT=8091 bun run relay.ts
 ```
 
 ## Register as a User Service
@@ -19,27 +19,27 @@ register_user_service with mode="http", local_port=8091, entrypoint="bun run /ho
 
 ### WebSocket
 
-Connect at `ws://host:port/ws/:sessionId`
+Connect at `ws://host:port/ws?room=<roomId>&client=<clientId>` (both optional; default `room=default`, `client` auto-generated)
 
 Messages are JSON:
 - `{ type: "page_context", url, title, dom }` — share current page
-- `{ type: "query", text }` — ask Zo about the page
 - `{ type: "action", action }` — execute a browser action
 - `{ type: "cursor", x, y }` — cursor position for shared browsing
+- `{ type: "chat" }` / `{ type: "text" }` — chat message
+- `{ type: "scroll" }` / `{ type: "navigation" }` / `{ type: "highlight" }` — broadcast
+- `{ type: "ping" }` — server replies `{ type: "pong" }`
 
 ### HTTP
 
-- `GET /health` — service health check
-- `POST /query` — DuckDB read query (same as zo.space API)
+- `GET /health` — service health check (rooms, connections, uptime)
+- `GET /rooms` — list active rooms and participants
+- `POST /rooms/:roomId/participants` — register a participant in a room
 
 ## Environment Variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `PORT` | No | `3000` | HTTP server port (set by Zo user service) |
-| `ZO_API_KEY` | Yes | — | API key for Zo at api.zo.computer |
-| `ZO_API_URL` | No | `https://api.zo.computer` | Zo API base URL |
-| `CORS_ORIGIN` | No | `*` | Allowed CORS origin |
+| `PORT` | No | `3101` | HTTP/WebSocket server port (set by Zo user service) |
 
 ## Running
 
@@ -47,27 +47,30 @@ The relay serves as a WebSocket bridge for shared co-browse sessions (Ticket #15
 
 ### Local development
 ```bash
-ZO_API_KEY=sk_xxx bun run backend/relay.ts
+bun run backend/relay.ts
 ```
 
 ### As a Zo user service
 ```bash
-register_user_service mode=http local_port=3000 entrypoint='bash -c "cd /home/workspace/Projects/zo-cobrowse && bun run backend/relay.ts"' env_vars='{"ZO_API_KEY":"sk_xxx"}'
+register_user_service mode=http local_port=3101 entrypoint='bash -c "cd /home/workspace/Projects/zo-cobrowse && bun run backend/relay.ts"'
 ```
 
 ## Endpoints
 
 ### `GET /health`
-Health check. Returns `{ "status": "ok" }` if the relay is alive.
+Health check. Returns `{ "status": "ok", "rooms": <n>, "connections": <n>, "uptime": <s> }`.
 
-### `GET /`
-Returns the Zo Co-browse research page (demonstration of capabilities).
+### `GET /rooms`
+Lists active rooms with participant counts and names.
+
+### `POST /rooms/:roomId/participants`
+Registers a participant in a room (creates the room if absent).
 
 ### `WebSocket /ws`
-WebSocket endpoint for shared sessions. See `ticket-15-shared-sessions.md` for protocol.
+WebSocket endpoint for shared sessions (`?room=<id>&client=<id>`). See `ticket-15-shared-sessions.md` for protocol.
 
 ### Example
 ```bash
-curl http://localhost:3000/health
-# => {"status":"ok"}
+curl http://localhost:3101/health
+# => {"status":"ok","rooms":0,"connections":0,"uptime":1.23}
 ```

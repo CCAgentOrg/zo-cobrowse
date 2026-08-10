@@ -16,3 +16,7 @@ zo-cobrowse.zip
 
 # bun.lock is intentionally tracked for deterministic CI installs.
 database/
+
+# Local tool/agent artifacts — never committed
+.mimosa/
+.zcode/
