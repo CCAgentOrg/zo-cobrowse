@@ -6,6 +6,16 @@ Compact project index for agents working on this codebase.
 
 Chrome MV3 extension + optional WebSocket backend that connects the browser to [Zo Computer](https://zocomputer.com) as the AI co-browsing backend. Zo sees the page DOM, uses its full toolchain (DuckDB, skills, web search, files, integrations), and returns browser actions (click, fill, navigate, extract, scroll).
 
+## Branching & release flow
+
+Git-flow model — see `CONTRIBUTING.md` for the full rules. Short version:
+
+- `dev` (protected) — integration branch. Branch from it, PR back to it.
+- `main` (protected) — latest working release code. Promote via PR from `dev`.
+- `feature/*` / `fix/*` / `chore/*` — one branch per unit of work.
+- Releases are deliberate: `git tag vX.Y.Z && git push origin vX.Y.Z` triggers
+  `.github/workflows/release.yml`. Merging to `main` does **not** release.
+
 ## To understand quickly
 
 - **`extension/background.js`** — entry point for the service worker. All Zo API communication, message routing, config persistence, conversation_id tracking. Key functions: `getActiveTabContext(tabId, tier, modeId)` (CDP eval fast-path via `debugger` perm; capture is **tier-gated** — 0=url only, 1=+text, 2=+clickable+forms w/ selectors, 3=+screenshot), `buildPrompt(mode, pageContext, userQuery)` (single shared prompt assembler), `askZoStream()`/`_askZoStreamImpl()` (primary streaming path), `askZo()` (non-streaming fallback), `executeActions()`, `testConnection()`, `generateMode()` (LLM custom-Mode generator). Top-level helpers: `safePost()`, `isRetriableStreamError()`.
@@ -48,7 +58,7 @@ bun run package       # zip extension/ → zo-cobrowse.zip
 
 [![CI](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml/badge.svg)](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml)
 
-**494 tests across 23 files (0 failures, 1240 expect() calls).** Every extension JS file transpiles cleanly via `bun build` (checked by `bun run verify` and CI). The committed pre-commit hook (`scripts/hooks/pre-commit`) runs `bun run verify` before every commit as a hard gate — bypass with `git commit --no-verify`. CI runs the same checks on every branch push + PR to `main`; tags `v*` trigger the dormant Release workflow (`release.yml`). Adding a feature means adding/updating the corresponding test file under `tests/`. See `QA_REPORT.md` for the audit history.
+**494 tests across 23 files (0 failures, 1240 expect() calls).** Every extension JS file transpiles cleanly via `bun build` (checked by `bun run verify` and CI). The committed pre-commit hook (`scripts/hooks/pre-commit`) runs `bun run verify` before every commit as a hard gate — bypass with `git commit --no-verify`. CI runs the same checks on every branch push + PRs into both `main` and `dev`; tags `v*` trigger the dormant Release workflow (`release.yml`). Adding a feature means adding/updating the corresponding test file under `tests/`. See `QA_REPORT.md` for the audit history.
 
 ## Ticket & feature status
 
