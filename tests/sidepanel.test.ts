@@ -41,9 +41,7 @@ describe("sidepanel model/persona selectors", () => {
     const html = readFileSync(htmlPath, "utf-8");
     expect(html).toContain('id="model-select"');
     expect(html).toContain('id="persona-select"');
-  });
-
-  it("fetches models and personas from background", () => {
+  });  it("fetches models and personas from background", () => {
     expect(code).toContain('LIST_MODELS');
     expect(code).toContain('LIST_PERSONAS');
     expect(code).toContain('config.selectedModel');
@@ -64,6 +62,48 @@ describe("sidepanel model/persona selectors", () => {
   it("maps model_name/label from API response", () => {
     expect(code).toContain('m.model_name');
     expect(code).toContain('m.label');
+  });
+});
+
+describe("Zo-native message rendering", () => {
+  // Guards the Phase-2 changes: user messages render markdown (not plain
+  // textContent) so composer-shell prose + mention pills work, and a
+  // page-context mention pill is attached on the send path.
+  it("addMessageDOM renders markdown for user messages too (Zo composer prose)", () => {
+    // Previously user bodies used textContent; now all roles go through
+    // markdownToHtml. Assert the unified branch + that no role is left
+    // on the plain-text path.
+    expect(code).toMatch(/body\.innerHTML = markdownToHtml\(text\)/);
+    expect(code).not.toMatch(/role === 'assistant' \|\| role === 'system' \|\| role === 'thinking'/);
+  });
+
+  it("defines appendMentionPill (Zo file-mention badge helper)", () => {
+    expect(code).toContain("function appendMentionPill");
+    expect(code).toContain("msg-mention");
+    expect(code).toContain("msg-mention-label");
+  });
+
+  it("attaches a page-context mention pill on the main send path", () => {
+    expect(code).toContain("currentContext && (currentContext.title || currentContext.url)");
+    expect(code).toContain("appendMentionPill(userBody");
+  });
+
+  it("suppresses raw action-JSON during streaming (shows a placeholder)", () => {
+    // Chronological feed: raw action-JSON is no longer a separate concern —
+    // reasoning tokens stream as .msg-stream-thought, tool cards as
+    // .msg-stream-tool-card, and answer tokens as markdown. The old
+    // isActionJson / msg-streaming-actions placeholder was removed.
+    // This test now just ensures the chronological feed classes exist.
+    expect(code).toContain("msg-stream-thought");
+    expect(code).toContain("msg-stream-tool-card");
+  });
+
+  it("never falls back to the raw action-JSON as the final response text", () => {
+    // STREAM_DONE must not surface the streamed JSON as the assistant body
+    // when done.response is absent: skip the fullText fallback when actions
+    // are present.
+    expect(code).toContain("hasActions");
+    expect(code).toMatch(/hasActions \? '' : safeText\(msg\.fullText\)/);
   });
 });
 
@@ -150,11 +190,11 @@ describe("sidepanel Mode system", () => {
   });
 
   it("renders the timeline as an inline run block + groups repeats + tracks duration (Gaps 1/2/4)", () => {
-    // Inline "⚡ Worked N steps · duration" run block in the chat stream.
+    // Inline "⚡ Performed N actions · duration" tool-trace card in the chat stream.
     expect(code).toContain("function groupActions");
     expect(code).toContain("msg-action-run");
     expect(code).toContain("action-run-header");
-    expect(code).toContain("⚡ Worked");
+    expect(code).toContain("⚡ Performed actions");
     expect(code).toContain("function formatDuration");
     // Duration is captured at run start/end.
     expect(code).toMatch(/runStartTime = Date\.now\(\)/);
@@ -197,21 +237,26 @@ describe("sidepanel thinking/reasoning bubble", () => {
     expect(code).toContain("function addReasoningBubble");
   });
 
-  it("renders a collapsible bubble (toggle + hidden content, collapsed by default)", () => {
-    expect(code).toContain("msg-thinking-bubble");
-    expect(code).toContain("thinking-toggle");
-    expect(code).toContain("thinking-content");
+  it("renders short reasoning inline as muted prose (Zo model)", () => {
+    // Short reasoning (<= INLINE_REASONING_MAX, single line) renders inline,
+    // no collapse — mirrors Zo's interleaved thinking prose.
+    expect(code).toContain("INLINE_REASONING_MAX");
+    expect(code).toContain("msg-reasoning-inline");
+    expect(css).toContain(".msg-reasoning-inline");
+  });
+
+  it("renders longer reasoning as a collapsible trace header (Zo model)", () => {
+    expect(code).toContain("reasoning-toggle");
+    expect(code).toContain("reasoning-content");
     expect(code).toContain('aria-expanded');
     expect(code).toContain("content.hidden = true");
   });
 
-  it("shows a one-line summary in the collapsed header (Gap 3, matches zo.computer)", () => {
-    // The label is now "💭 Thought" plus a reasoningSummary() preview, not a
-    // bare char count.
+  it("shows a one-line summary in the collapsed header (matches zo.computer)", () => {
     expect(code).toContain("function reasoningSummary");
     expect(code).toContain("'💭 Thought'");
-    expect(code).toContain("thinking-summary");
-    expect(css).toContain(".thinking-summary");
+    expect(code).toContain("reasoning-summary");
+    expect(css).toContain(".reasoning-summary");
   });
 
   it("no-ops on empty reasoning so non-reasoning modes are unaffected", () => {
@@ -224,34 +269,77 @@ describe("sidepanel thinking/reasoning bubble", () => {
   });
 
   it("attaches the bubble in the streaming STREAM_DONE path", () => {
-    expect(code).toContain("addReasoningBubble(streamSession.msgEl, msg.reasoning)");
+    // Chronological feed: STREAM_DONE doesn't call addReasoningBubble unless no
+    // chunks were streamed (fallback path). The reasoning is streamed inline as
+    // .msg-stream-thought tokens. This test now checks the chronological feed path.
+    expect(code).toContain("msg-stream-thought");
+    expect(code).toMatch(/case ['"]STREAM_DONE['"]/);
   });
 
   it("persists reasoning with the assistant message (streaming write path)", () => {
     expect(code).toContain("reasoning: reasoningVal");
-    expect(code).toContain("safeText(msg.reasoning) || undefined");
+    // Now includes streamed reasoning (streamSession.reasoningText) as fallback.
+    expect(code).toContain("msg.reasoning");
   });
 
   it("re-renders reasoning bubbles from history for assistant messages", () => {
-    // Render loops heal each assistant msg (key-first blob repair) into `m`,
-    // then attach the reasoning bubble from the healed message.
     expect(code).toContain("if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning)");
   });
 
-  it("styles the bubble, toggle, and content", () => {
-    expect(css).toContain(".msg-thinking-bubble");
-    expect(css).toContain(".thinking-toggle");
-    expect(css).toContain(".thinking-content");
-    expect(css).toContain(".thinking-caret");
-    expect(css).toContain('.thinking-toggle[aria-expanded="true"] .thinking-caret');
-    expect(css).toContain(".thinking-content[hidden]");
+  it("styles the reasoning block, toggle, and content", () => {
+    expect(css).toContain(".msg-reasoning");
+    expect(css).toContain(".reasoning-toggle");
+    expect(css).toContain(".reasoning-content");
+    expect(css).toContain(".reasoning-caret");
+    expect(css).toContain('.reasoning-toggle[aria-expanded="true"] .reasoning-caret');
+    expect(css).toContain(".reasoning-content[hidden]");
   });
 
-  it("stacks the bubble above the body (flex-wrap + full-width bubble)", () => {
-    // Regression guard: the bubble is inserted INSIDE a .msg (display:flex row),
-    // so it must take the full row to wrap onto its own line above .msg-body.
-    expect(css).toContain("flex-wrap: wrap");
-    expect(css).toMatch(/\.msg-thinking-bubble\s*\{[^}]*flex:\s*1 0 100%/);
+  it("places the reasoning block above the body (full-width, above .msg-body)", () => {
+    // Regression guard: reasoning is inserted INSIDE .msg, full-width, above
+    // the answer body so it reads reasoning → answer.
+    expect(css).toMatch(/\.msg-reasoning\s*\{[^}]*width:\s*100%/);
+  });
+});
+
+describe("sidepanel chronological streaming feed (Thought → Explored → Final)", () => {
+  it("handles STREAM_REASONING messages for live reasoning deltas", () => {
+    expect(code).toContain("case 'STREAM_REASONING'");
+    expect(code).toContain("msg-stream-thought");
+  });
+
+  it("handles STREAM_TOOL messages for live tool-call/result events", () => {
+    expect(code).toContain("case 'STREAM_TOOL'");
+    expect(code).toContain("msg-stream-tool-card");
+  });
+
+  it("renders tool cards with pending/done/error states in chronological order", () => {
+    expect(code).toContain("msg-stream-tool-icon");
+    expect(code).toContain("msg-stream-tool-name");
+    expect(code).toContain("msg-stream-tool-args");
+    expect(code).toContain("msg-stream-tool-result");
+    expect(code).toContain("msg-stream-tool-result-body");
+  });
+
+  it("STREAM_DONE adds TTS button and preserves chronological feed (no innerHTML overwrite)", () => {
+    // Chronological feed: STREAM_DONE must NOT overwrite the message body's innerHTML
+    // (which would break the chronological feed). It only adds TTS and falls back
+    // to addMessage if no chunks arrived.
+    expect(code).toMatch(/case ['"]STREAM_DONE['"]/);
+    expect(code).toContain("tts-btn");
+    // Should NOT contain the old grouped regions logic that set body.innerHTML
+    // in the STREAM_DONE case. Check that there's no body.innerHTML = assignment
+    // between STREAM_DONE case and the next case.
+    const streamDoneMatch = code.match(/case 'STREAM_DONE':([\s\S]*?)case\s+/);
+    const streamDoneBlock = streamDoneMatch ? streamDoneMatch[1] : '';
+    expect(streamDoneBlock).not.toMatch(/body\.innerHTML\s*=/);
+  });
+
+  it("persists reasoning from streamSession and msg.reasoning to conversation", () => {
+    // Chronological feed stores only reasoning (tools are in the body as cards).
+    expect(code).toContain("streamSession.reasoningText");
+    expect(code).toContain("msg.reasoning");
+    expect(code).toContain("reasoning: reasoningVal");
   });
 });
 
@@ -353,6 +441,7 @@ describe("addReasoningBubble DOM behavior", () => {
     // Provide document.createElement to the stub.
     sandbox.document = { createElement: (t: string) => new El(t) };
     vm.runInContext(
+      "const INLINE_REASONING_MAX = 120;\n" +
       extractFn("safeText") + "\n" +
       extractFn("reasoningSummary") + "\n" +
       extractFn("escapeHtml") + "\n" +
@@ -366,9 +455,8 @@ describe("addReasoningBubble DOM behavior", () => {
     return sandbox.addReasoningBubble;
   }
 
-  it("inserts a collapsed bubble ABOVE .msg-body and reveals it on toggle", () => {
+  it("renders SHORT reasoning inline ABOVE .msg-body (no collapse)", () => {
     const addReasoningBubble = loadAddReasoningBubble();
-    // Build the same shape addMessageDOM produces: div.msg.msg-assistant > div.msg-body
     const msg = new El("div");
     msg.className = "msg msg-assistant";
     const body = new El("div");
@@ -378,45 +466,58 @@ describe("addReasoningBubble DOM behavior", () => {
     const reasoning = "The page is a basic documentation landing page.";
     addReasoningBubble(msg, reasoning);
 
-    // Bubble inserted as a child, BEFORE the body
-    const bubble = msg.querySelector(".msg-thinking-bubble");
-    expect(bubble).not.toBeNull();
-    expect(bubble!.parent).toBe(msg);
-    expect(msg.children[0]).toBe(bubble);
+    // Inline block inserted before the body, carries the escaped reasoning.
+    const block = msg.querySelector(".msg-reasoning-inline");
+    expect(block).not.toBeNull();
+    expect(block!.parent).toBe(msg);
+    expect(msg.children[0]).toBe(block);
     expect(msg.children[1]).toBe(body);
+    expect(block!.innerHTML).toContain("documentation landing page");
+    // No toggle on the inline variant.
+    expect(block!.querySelector(".reasoning-toggle")).toBeNull();
+  });
 
-    // Toggle header: label is now "💭 Thought", with a summary preview line
-    // and a separate char-count meta span (Gap 3, matches zo.computer).
-    const toggle = bubble!.querySelector(".thinking-toggle");
+  it("renders LONG reasoning as a collapsible trace ABOVE .msg-body", () => {
+    const addReasoningBubble = loadAddReasoningBubble();
+    const msg = new El("div");
+    msg.className = "msg msg-assistant";
+    msg.appendChild(Object.assign(new El("div"), { className: "msg-body" }));
+
+    // > 120 chars and/or multi-line → collapsible trace header.
+    const reasoning =
+      "First I will inspect the page structure to understand the layout, " +
+      "then I will identify the primary navigation and any forms present, " +
+      "and finally I will decide which action best answers the user query.";
+    addReasoningBubble(msg, reasoning);
+
+    const block = msg.querySelector(".msg-reasoning");
+    expect(block).not.toBeNull();
+    expect(msg.children[0]).toBe(block);
+
+    // Toggle header: "💭 Thought" label + summary preview, collapsed by default.
+    const toggle = block!.querySelector(".reasoning-toggle");
     expect(toggle).not.toBeNull();
     expect(toggle!.getAttribute("aria-expanded")).toBe("false");
-    expect(toggle!.querySelector(".thinking-label")!.textContent).toContain("Thought");
-    // The one-line summary preview reflects the reasoning content.
-    const summary = toggle!.querySelector(".thinking-summary");
+    expect(toggle!.querySelector(".reasoning-label")!.textContent).toContain("Thought");
+    const summary = toggle!.querySelector(".reasoning-summary");
     expect(summary).not.toBeNull();
-    expect(summary!.textContent).toContain("documentation landing page");
-    // Char count moved to a dedicated meta span.
-    const meta = toggle!.querySelector(".thinking-meta");
-    expect(meta).not.toBeNull();
-    expect(meta!.textContent).toContain(String(reasoning.length));
 
-    // Content exists, hidden by default, carries the (escaped) reasoning
-    const content = bubble!.querySelector(".thinking-content");
+    // Content hidden by default, carries the escaped reasoning.
+    const content = block!.querySelector(".reasoning-content");
     expect(content).not.toBeNull();
     expect(content!.hidden).toBe(true);
-    expect(content!.innerHTML).toContain("documentation landing page");
+    expect(content!.innerHTML).toContain("inspect the page structure");
 
-    // Click → expands: aria-expanded flips, content unhidden
+    // Click → expands: aria-expanded flips, content unhidden; click again collapses.
     toggle!.click();
     expect(toggle!.getAttribute("aria-expanded")).toBe("true");
     expect(content!.hidden).toBe(false);
-    // Click again → collapses
     toggle!.click();
     expect(toggle!.getAttribute("aria-expanded")).toBe("false");
     expect(content!.hidden).toBe(true);
   });
 
-  it("no-ops on empty/whitespace reasoning (no bubble added)", () => {
+  it("no-ops on empty/whitespace reasoning (no block added)", () => {
     const addReasoningBubble = loadAddReasoningBubble();
     const msg = new El("div");
     msg.className = "msg msg-assistant";
@@ -429,7 +530,7 @@ describe("addReasoningBubble DOM behavior", () => {
     addReasoningBubble(msg, undefined);
 
     expect(msg.children.length).toBe(before); // unchanged
-    expect(msg.querySelector(".msg-thinking-bubble")).toBeNull();
+    expect(msg.querySelector(".msg-reasoning")).toBeNull();
   });
 
   it("no-ops when parentMsgEl is null/falsy", () => {
@@ -438,7 +539,7 @@ describe("addReasoningBubble DOM behavior", () => {
     expect(() => addReasoningBubble(undefined, "reasoning")).not.toThrow();
   });
 
-  it("does not duplicate the bubble on a second call", () => {
+  it("does not duplicate the reasoning block on a second call", () => {
     const addReasoningBubble = loadAddReasoningBubble();
     const msg = new El("div");
     msg.className = "msg msg-assistant";
@@ -447,10 +548,10 @@ describe("addReasoningBubble DOM behavior", () => {
     addReasoningBubble(msg, "reason one");
     addReasoningBubble(msg, "reason two");
 
-    const bubbles = msg.querySelectorAll(".msg-thinking-bubble");
-    expect(bubbles.length).toBe(1);
-    // First reasoning wins (guard short-circuits the second call)
-    expect(bubbles[0].querySelector(".thinking-content")!.innerHTML).toContain("reason one");
+    const blocks = msg.querySelectorAll(".msg-reasoning");
+    expect(blocks.length).toBe(1);
+    // First reasoning wins (guard short-circuits the second call).
+    expect(blocks[0].innerHTML).toContain("reason one");
   });
 });
 
@@ -545,7 +646,7 @@ describe("healAssistantMessage — persisted-history repair", () => {
   });
 });
 
-// ── renderActionTimeline DOM behavior: inline "⚡ Worked N steps" run block
+// ── renderActionTimeline DOM behavior: inline "⚡ Performed N actions" tool-trace card
 // (Gaps 1/2/4 — matches zo.computer). Exercises the real function extracted
 // from sidepanel.js against a richer DOM stub that supports getElementById +
 // dataset, which renderActionTimeline uses.

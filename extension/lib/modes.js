@@ -145,7 +145,11 @@ export function presetToMode(preset) {
     instructions: preset.instructions || '',
     contextTier: Number.isInteger(preset.contextTier) ? preset.contextTier : TIER.TEXT,
     textBudget: preset.textBudget || 2000,
-    expectJson: preset.expectJson !== undefined ? !!preset.expectJson : true,
+    // Default to plain-markdown (expectJson:false). Only cobrowse sets
+    // expectJson:true; defaulting custom modes/presets to true silently
+    // leaked the "Respond with JSON {actions}" instruction into prompts
+    // for read-only modes, making Zo emit actions instead of prose.
+    expectJson: preset.expectJson !== undefined ? !!preset.expectJson : false,
     builtin: false,
   };
 }
@@ -199,6 +203,18 @@ export function normalizeActions(actions) {
       }
     }
     if (!found) {
+      // Singular `{"action":"click",...}` variant — real multi-action captures
+      // emit this non-spec form (qa-notes.md §"Action envelope shape"). Map
+      // a top-level `action` naming a known type onto the canonical `type`.
+      if (typeof a.action === 'string' && ACTION_TYPE_NAMES.includes(a.action)) {
+        const { action, args, ...rest } = a;
+        // args may be an object (common) or absent; merge into the flat action.
+        const argsObj = (args && typeof args === 'object' && !Array.isArray(args)) ? args : {};
+        out.push({ type: action, ...argsObj, ...rest });
+        found = true;
+      }
+    }
+    if (!found) {
       // Unknown shape — skip rather than risk rendering raw JSON in the chat.
     }
   }
@@ -220,7 +236,8 @@ function normalizeMode(raw, key) {
     instructions: m.instructions || '',
     contextTier: Number.isInteger(m.contextTier) ? m.contextTier : TIER.TEXT,
     textBudget: m.textBudget || 2000,
-    expectJson: m.expectJson !== undefined ? !!m.expectJson : true,
+    // Default to plain-markdown (see presetToMode for rationale).
+    expectJson: m.expectJson !== undefined ? !!m.expectJson : false,
     builtin: false,
   };
 }

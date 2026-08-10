@@ -12,11 +12,13 @@
     "lint": "bash scripts/check-release.sh",
     "verify": "bash scripts/verify.sh",
     "setup-hooks": "bash scripts/install-hooks.sh",
+    "capture:prompts": "bun --env-file=.env tests/test-prompts/capture.ts",
     "package": "cd extension && zip -r ../zo-cobrowse.zip . -x '*.git*' -x '*.DS_Store'"
   },
   "devDependencies": {
     "acorn": "^8.14.0",
     "bun-types": "latest",
+    "happy-dom": "^20.11.2",
     "zod": "^4.4.3"
   }
 }

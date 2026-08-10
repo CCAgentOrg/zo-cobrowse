@@ -41,17 +41,19 @@ function loadPureHelpers() {
     extractFn("reasoningSummary") + "\n" +
     extractFn("actionKey") + "\n" +
     extractFn("groupActions") + "\n" +
-    extractFn("formatDuration"),
+    extractFn("formatDuration") + "\n" +
+    extractFn("relativeTime"),
     sandbox,
   );
   return {
     reasoningSummary: sandbox.reasoningSummary as (text: any, max?: number) => string,
     groupActions: sandbox.groupActions as (actions: any[]) => any[],
     formatDuration: sandbox.formatDuration as (ms: any) => string,
+    relativeTime: sandbox.relativeTime as (ts: number, now?: number) => string,
   };
 }
 
-const { reasoningSummary, groupActions, formatDuration } = loadPureHelpers();
+const { reasoningSummary, groupActions, formatDuration, relativeTime } = loadPureHelpers();
 
 // ── reasoningSummary (Gap 3: collapsed-bubble preview) ──
 describe("reasoningSummary — collapsed Thought-bubble preview", () => {
@@ -218,5 +220,102 @@ describe("formatDuration — compact elapsed-time formatting", () => {
   it("returns plain 'm' for whole minutes (no trailing 0s)", () => {
     expect(formatDuration(120000)).toBe("2m");
     expect(formatDuration(600000)).toBe("10m");
+  });
+});
+
+// ── Zo tool-trace card parity (Phase 4) ──
+// The cobrowse action timeline is re-skinned as a Zo-style collapsible
+// tool-trace card ("Performed N actions · <duration>"). These guard the
+// structural + label changes against regressions.
+describe("action tool-trace card — Zo parity", () => {
+  const sidepanel = readFileSync(SIDEPANEL_PATH, "utf-8");
+  const cssPath = resolve(import.meta.dir, "../extension/styles.css");
+  const css = readFileSync(cssPath, "utf-8");
+
+  it("uses Zo vocabulary for the run header (Performed …, not Worked)", () => {
+    expect(sidepanel).toContain("Performed actions");
+    expect(sidepanel).toContain("Performing actions…");
+    // The old "Worked" wording is gone.
+    expect(sidepanel).not.toContain("⚡ Worked");
+    expect(sidepanel).not.toContain("⚡ Working");
+  });
+
+  it("the run block is capped + centered on the same rail as messages", () => {
+    const idx = css.indexOf(".msg-action-run");
+    const braceStart = css.indexOf("{", idx);
+    const braceEnd = css.indexOf("}", braceStart);
+    const block = css.slice(braceStart, braceEnd);
+    expect(block).toContain("max-width: 768px");
+    expect(block).toContain("margin-inline: auto");
+  });
+
+  it("cards + header use the Zo-neutral palette tokens", () => {
+    const cardIdx = css.indexOf(".action-card {");
+    const cardBlock = css.slice(cardIdx, css.indexOf("}", cardIdx) + 1);
+    expect(cardBlock).toContain("var(--zo-border)");
+    expect(cardBlock).toContain("var(--zo-accent)");
+
+    const headIdx = css.indexOf(".action-run-header {");
+    const headBlock = css.slice(headIdx, css.indexOf("}", headIdx) + 1);
+    expect(headBlock).toContain("var(--zo-muted-foreground)");
+  });
+});
+
+// ── relativeTime (Phase 5: Zo message-footer timestamp) ──
+describe("relativeTime — message footer timestamp", () => {
+  const NOW = 1_700_000_000_000; // fixed "now" for deterministic assertions
+  const MIN = 60_000, HOUR = 3_600_000, DAY = 86_400_000, WEEK = 7 * DAY, MO = 30 * DAY, YEAR = 365 * DAY;
+
+  it("returns 'just now' for timestamps under a minute old", () => {
+    expect(relativeTime(NOW - 5_000, NOW)).toBe("just now");
+    expect(relativeTime(NOW - 59_000, NOW)).toBe("just now");
+  });
+
+  it("formats minutes, hours, and days compactly (Zo style)", () => {
+    expect(relativeTime(NOW - MIN, NOW)).toBe("1m");
+    expect(relativeTime(NOW - 5 * MIN, NOW)).toBe("5m");
+    expect(relativeTime(NOW - HOUR, NOW)).toBe("1h");
+    expect(relativeTime(NOW - 5 * HOUR, NOW)).toBe("5h");
+    expect(relativeTime(NOW - DAY, NOW)).toBe("1d");
+    expect(relativeTime(NOW - 3 * DAY, NOW)).toBe("3d");
+  });
+
+  it("formats weeks, months, and years", () => {
+    expect(relativeTime(NOW - WEEK, NOW)).toBe("1w");
+    expect(relativeTime(NOW - 3 * WEEK, NOW)).toBe("3w");
+    expect(relativeTime(NOW - MO, NOW)).toBe("1mo");
+    expect(relativeTime(NOW - 3 * MO, NOW)).toBe("3mo");
+    expect(relativeTime(NOW - YEAR, NOW)).toBe("1y");
+    expect(relativeTime(NOW - 2 * YEAR, NOW)).toBe("2y");
+  });
+
+  it("returns '' for invalid / zero / future / non-number input", () => {
+    expect(relativeTime(0, NOW)).toBe("");
+    expect(relativeTime(-5, NOW)).toBe("");
+    expect(relativeTime(NaN, NOW)).toBe("");
+    expect(relativeTime(NOW + HOUR, NOW)).toBe("just now"); // future clamps to 0 → just now
+    expect(relativeTime("abc" as unknown as number, NOW)).toBe("");
+  });
+});
+
+// ── Message footer (Phase 5: Zo parity) CSS presence ──
+describe("message footer — Zo parity", () => {
+  const cssPath = resolve(import.meta.dir, "../extension/styles.css");
+  const css = readFileSync(cssPath, "utf-8");
+  const sidepanel = readFileSync(SIDEPANEL_PATH, "utf-8");
+
+  it("renders a footer with Copy / mode / model / time (no feedback)", () => {
+    expect(sidepanel).toContain("function addMessageFooter");
+    expect(sidepanel).toContain("msg-footer-copy");
+    expect(sidepanel).toContain("msg-footer-mode");
+    expect(sidepanel).toContain("msg-footer-model");
+    // Feedback icons removed - no longer present in footer
+    expect(sidepanel).not.toContain("msg-footer-feedback");
+  });
+
+  it("styles the footer on neutral tokens", () => {
+    const idx = css.indexOf(".msg-footer {");
+    const block = css.slice(idx, css.indexOf("}", idx) + 1);
+    expect(block).toContain("var(--zo-muted-foreground)");
   });
 });

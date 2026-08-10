@@ -1,0 +1,42 @@
+{
+  "id": "research",
+  "request": {
+    "prompt": "You are Zo — the user's AI research assistant. Deeply analyze the current page: extract key facts, data, sources, insights. Cite specific content.\n\n## Page\n\nURL: https://example.com/test-page\n\nTitle: ...[REDACTED for size/privacy]",
+    "prompt_redacted": true,
+    "model_name": "(default)",
+    "stream": true
+  },
+  "response": {
+    "x_conversation_id": "con_gK8COhLzZMIVRya4",
+    "content_type": "text/event-stream; charset=utf-8",
+    "status": 200
+  },
+  "summary": {
+    "eventCount": 1026,
+    "eventTypes": [
+      "AgentRuntimeStreamChunk",
+      "PartStartEvent",
+      "PartDeltaEvent",
+      "FunctionToolCallEvent",
+      "FunctionToolResultEvent",
+      "completed"
+    ],
+    "firstChunkFields": [
+      "type",
+      "delta",
+      "tool_name",
+      "status",
+      "error",
+      "result",
+      "data",
+      "message_id",
+      "runner_id"
+    ],
+    "completed": true,
+    "hasActions": false,
+    "hasReasoning": true,
+    "toolCallCount": 1,
+    "assembledFullText": " Analysis: Test Page for Zo Co-browse\n\n**Assessment up front:** This is a synthetic test page, not a substantive research source. Its content is marketing scaffolding — a hero, three feature cards, and a boilerplate footer. There is no data, no statistics, no dates, no named sources, and nothing to independently verify. The analysis below extracts what exists and flags what is missing.\n\n---\n\n## Key Claims\n\n| Claim | Where it appears | Verifiability |\n| --- | --- | --- |\n| \"Build Smarter with Zo\"",
+    "assembledReasoningLength": 9119
+  }
+}

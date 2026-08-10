@@ -33,8 +33,15 @@ Send a message to Zo. Zo has full access to files, tools, integrations.
 ```
 
 **Streaming** (when `stream: true`): SSE events with `Content-Type: text/event-stream`.
-- Event types: `FrontendModelResponse` (text chunk in `data.content`), `End` (complete, has `data.output`), `Error` (`data.message`)
-- `x-conversation-id` response header has the conversation ID
+- `x-conversation-id` response header has the conversation ID.
+- **Real event types** (captured live 2026-08-09; see `tests/test-prompts/qa-notes.md`). The earlier-documented `FrontendModelResponse`/`End`/`Error` events are **never emitted** by the live API — the extension keeps handlers for them only to support synthetic test fixtures.
+  - `PartStartEvent` — starts a content part. `data: {event_kind:"part_start", index, part:{part_kind:"thinking|text|tool-call|tool-return", content:"<first piece>"|args}, previous_part_kind}`. The `part.content` is the first token of that part and must be routed by `part.part_kind` (otherwise the first word of every part is lost).
+  - `PartDeltaEvent` — incremental content delta (the workhorse). `data: {event_kind:"part_delta", index, delta:{content_delta:"<text>", part_delta_kind:"thinking|text"}}`. Route on `delta.part_delta_kind`: `"thinking"` is the live reasoning channel (index 0), `"text"` is the answer channel (index 1).
+  - `FunctionToolCallEvent` — a tool was invoked. `data: {event_kind:"function_tool_call", part:{tool_name, tool_call_id, args}}`. Surfaced as the "Explored" channel.
+  - `FunctionToolResultEvent` — a tool returned. `data: {event_kind:"function_tool_result", result:{content:{stdout,stderr,returncode}|string, outcome:"success"|"error", tool_call_id, tool_name}}`.
+  - `AgentRuntimeStreamChunk` — lifecycle metadata. `data: {type:"status"|"persisted", status, data:{message_id}}`. Not rendered (live reasoning + tool cards cover it).
+  - `completed` — **terminal** signal. `data: {status:"succeeded"|"failed", error}`. (Not `End`, not `[DONE]`.)
+- Cobrowse mode wraps the `{reasoning,actions}` JSON envelope in a ```` ```json ```` code fence; `background.js` strips exactly one whole-fence block before parsing. The action object may arrive as key-first (`{"click":{...}}`), type-first (`{"type":"click",...}`), or the non-spec `{"action":"click",...}` variant — `normalizeActions` maps all three.
 
 #### `GET /models/available`
 List models you can use (includes BYOK configs). Requires auth.
@@ -156,11 +163,12 @@ The options page currently shows "fetching..." until a token is saved. Using the
 
 When a persona has its own `model` field, selecting that persona should automatically switch the model selector. Currently we only read `p.name` and `p.id`.
 
-## Design System: "The Observatory" (2026-07-05)
+## Design System: Zo-native chat surface (2026-08-09)
 
-- **Dark palette:** Midnight blue (#0b0e1e) base, deep cobalt (#0f1428) cards, amber (#c47f20) accents, indigo (#6c5ce7) secondary
-- **Light palette:** Cream (#f4f1ea) base, warm white (#fcfaf5) cards, amber (#b8860b) accents, slate (#5a5f7a) secondary
-- **Fonts:** Fraunces (display), Figtree (UI), JetBrains Mono (code) — all loaded from Google Fonts
+- **Conversation surface mirrors zo.computer:** Hanken Grotesk on a neutral oklch-derived palette. Brand amber is retained for header chrome only; messages use the `--zo-*` tokens so the chat reads like the native Zo UI.
+- **Zo-neutral tokens** (`--zo-sidebar`/`-foreground`/`-primary`/`-accent`/`-muted-foreground`/`-border`/`-border-primary`): defined in every theme block (`:root`, `[data-theme="dark|light|sepia|forest|ocean"]`), each mapped to the shadcn role equivalents used by Zo's own UI.
+- **Fonts:** Hanken Grotesk (UI + display, **bundled locally** at `extension/assets/fonts/` — MV3 CSP-safe, no external `font-src`), JetBrains Mono (code; `@import` is a non-blocking enhancement under MV3's default `style-src 'self'`, falls back to `ui-monospace`).
+- **Chat container model:** `#messages` uses Zo's spacing (`gap: 24px` / `padding: 32px 20px`), `.msg` is capped at `max-width: 768px` (`max-w-3xl`) and centered — matching `#chat-scroll-content`.
 - **Theme toggle:** `data-theme` attribute on `<html>` — empty = system, "light" = light, "dark" = dark
 - **System theme:** `prefers-color-scheme` media query respected when `data-theme=""`
 - **Theme persistence:** `chrome.storage.sync` key `cobrowse_theme`
@@ -207,6 +215,7 @@ A **Mode** is the single source of truth for how Zo behaves on a request. It bun
 - **Custom Modes** stored in `chrome.storage.local` under `cobrowse_modes`; active Mode id persisted in `chrome.storage.sync` under `zoActiveMode`.
 - **Context tiers**: 0 = URL/title/viewport only · 1 = +visibleText (sliced to `textBudget`) · 2 = +compact clickable + form-field list **with selectors** · 3 = +screenshot. Tier is fixed per-Mode and passed to `getActiveTabContext(tabId, tier, modeId)`, which gates capture cost accordingly.
 - **Compact action schema** (`ACTION_SCHEMA_COMPACT` in modes.js): one line, shipped only when `expectJson` is true — replaces the old ~130-token commented JSON block.
+- **Intent-aware downgrade (action modes):** `extension/lib/intent.js` `detectIntent()` classifies a free-text query as `'action'` or `'read'`. `buildPrompt` calls `shouldDowngradeToJsonDisabled(mode, userQuery)`; when an action (JSON) mode like `cobrowse` receives a read-only intent ("Summarize", "What is this page?", "Explain the pricing"), it swaps both the action schema and the action instruction for plain-markdown equivalents for that turn — so read-only questions answer as prose instead of `{actions:[...]}`. Genuine action queries ("Click Pricing", "Fill the form") keep the JSON envelope. Plain-markdown modes are unaffected. Pure module, unit-tested via `tests/intent.test.ts`.
 - **Prompt assembly** is a single helper `buildPrompt(mode, pageContext, userQuery)` in background.js — no more duplicated template in two places.
 - The `✦` button (`#create-mode-btn`) sends `GENERATE_MODE` → `generateMode()` in background.js, which calls Zo and backfills the result via `presetToMode()`.
 - Bang commands (`!summarize`, `!extract`, `!research`, `!qa`/`!ask`) resolve to a `mode` field (not `preset`) that overrides the active Mode for a single turn.

@@ -28,6 +28,22 @@ describe("error handling patterns", () => {
       expect(sidepanelCode).toMatch(/STREAM_ERROR/);
     });
 
+    it("sidepanel renders a Zo error card with Retry on stream error", () => {
+      // Zo parity: "Response interrupted" + technical detail + Retry that
+      // re-submits the last query — not a bare text error.
+      expect(sidepanelCode).toContain("addErrorCard");
+      expect(sidepanelCode).toContain("Response interrupted");
+      expect(sidepanelCode).toContain("error-card-retry");
+      expect(sidepanelCode).toContain("lastQuery");
+    });
+
+    it("sidepanel has an Esc-to-cancel stream + empty-input Send gating", () => {
+      expect(sidepanelCode).toContain("function cancelStream");
+      expect(sidepanelCode).toContain("'Escape'");
+      expect(sidepanelCode).toContain("syncSendBtn");
+      expect(sidepanelCode).toContain("Zo is thinking. Press Esc to stop.");
+    });
+
     it("sidepanel has reconnection logic", () => {
       expect(sidepanelCode).toMatch(/STREAM_RECONNECT|reconnect|retry/i);
     });

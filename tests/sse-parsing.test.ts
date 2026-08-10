@@ -3,6 +3,7 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 import * as vm from "node:vm";
 import { normalizeActions } from "../extension/lib/modes.js";
+import { replaySse } from "./test-prompts/replay.js";
 
 /**
  * Verify the /zo/ask SSE parser against real-world stream formats.
@@ -350,9 +351,11 @@ describe("finishStream preserves reasoning into STREAM_DONE", () => {
   }
   function loadFinishStream() {
     const safeStart = bgSource.indexOf("function safeText(");
-    const safeEnd = braceEnd(bgSource, safeStart);
+    const safeEnd = braceEnd(bgSource, bgSource.indexOf("{", safeStart));
     const fsStart = bgSource.indexOf("function finishStream(");
-    const fsEnd = braceEnd(bgSource, fsStart);
+    // Find body brace AFTER the signature's closing `)` (to skip `extra = {}`).
+    const sigEnd = bgSource.indexOf(")", fsStart);
+    const fsEnd = braceEnd(bgSource, bgSource.indexOf("{", sigEnd));
     const safeSlice = bgSource.slice(safeStart, safeEnd);
     const fsSlice = bgSource.slice(fsStart, fsEnd);
     const sandbox: any = {
@@ -360,6 +363,19 @@ describe("finishStream preserves reasoning into STREAM_DONE", () => {
       safePost: (port: any, msg: any) => { port.postMessage(msg); },
       // finishStream calls normalizeActions (imported from lib/modes.js).
       normalizeActions,
+      // finishStream calls stripCodeFence (to unwrap ```json fences around cobrowse
+      // action envelopes). Provide a faithful inline stub.
+      stripCodeFence: (str: any) => {
+        if (typeof str !== "string") return str;
+        const trimmed = str.trim();
+        const m = trimmed.match(/^```[a-zA-Z0-9]*\s*\n([\s\S]*?)\n```\s*$/);
+        return m ? m[1] : str;
+      },
+      // finishStream ends by emitting a stream-shape diagnostic; a no-op here
+      // (the real one lives in background.js and just console.debug + posts a
+      // STREAM_DIAGNOSTIC message we don't need in these unit tests).
+      sessionEventShapes: null,
+      emitStreamDiagnostic: () => {},
     };
     vm.createContext(sandbox);
     vm.runInContext(safeSlice + "\n" + fsSlice, sandbox);
@@ -397,12 +413,26 @@ describe("finishStream preserves reasoning into STREAM_DONE", () => {
   it("no-ops the port when dead (safePost contract)", () => {
     // Re-extract with a safePost that honors the real _dead contract.
     const safeStart = bgSource.indexOf("function safeText(");
-    const safeEnd = braceEnd(bgSource, safeStart);
+    const safeEnd = braceEnd(bgSource, bgSource.indexOf("{", safeStart));
     const fsStart = bgSource.indexOf("function finishStream(");
-    const fsEnd = braceEnd(bgSource, fsStart);
+    // Find body brace AFTER the signature's closing `)` (to skip `extra = {}`).
+    const fsSigEnd = bgSource.indexOf(")", fsStart);
+    const fsEnd = braceEnd(bgSource, bgSource.indexOf("{", fsSigEnd));
     const spStart = bgSource.indexOf("function safePost(");
-    const spEnd = braceEnd(bgSource, spStart);
-    const sandbox: any = { normalizeActions };
+    const spEnd = braceEnd(bgSource, bgSource.indexOf("{", spStart));
+    const sandbox: any = {
+      normalizeActions,
+      // finishStream ends by emitting a stream-shape diagnostic; provide the
+      // (no-op) helper + module var so the extracted function runs.
+      sessionEventShapes: null,
+      emitStreamDiagnostic: () => {},
+      stripCodeFence: (str: any) => {
+        if (typeof str !== "string") return str;
+        const trimmed = str.trim();
+        const m = trimmed.match(/^```[a-zA-Z0-9]*\s*\n([\s\S]*?)\n```\s*$/);
+        return m ? m[1] : str;
+      },
+    };
     vm.createContext(sandbox);
     vm.runInContext(
       bgSource.slice(spStart, spEnd) + "\n" +
@@ -478,3 +508,54 @@ describe("finishStream preserves reasoning into STREAM_DONE", () => {
     expect(posted[0].reasoning).toContain("treemap");
   });
 });
+
+describe("real Zo SSE protocol — PartStart/PartDelta/completed", () => {
+  // Test that the replay correctly routes on part_delta_kind (thinking vs text)
+  // and that the terminal is `completed`, not `End`. Uses the replay harness.
+  it("PartStartEvent + PartDeltaEvent thinking/text → STREAM_REASONING + STREAM_CHUNK", () => {
+    const sse = `
+event: PartStartEvent
+data: {"event_kind":"part_start","index":0,"part":{"content":"The","id":"reasoning_content","part_kind":"thinking"},"previous_part_kind":null}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":" user is asking","part_delta_kind":"thinking"},"event_kind":"part_delta","index":0}
+
+event: PartDeltaEvent
+data: {"delta":{"content_delta":"Answer:","part_delta_kind":"text"},"event_kind":"part_delta","index":1}
+
+event: completed
+data: {"status":"succeeded","error":null}
+`.trim();
+    const result = replaySse(sse);
+    const reasoningMsgs = result.messages.filter((m: any) => m.type === "STREAM_REASONING");
+    const textMsgs = result.messages.filter((m: any) => m.type === "STREAM_CHUNK");
+    const doneMsg = result.messages.find((m: any) => m.type === "STREAM_DONE");
+    expect(reasoningMsgs.length).toBeGreaterThan(0);
+    // Chronological feed: STREAM_REASONING messages contain deltas, not cumulative text
+    expect(reasoningMsgs[0].text).toContain("The");
+    expect(reasoningMsgs[1].text).toContain("user is asking");
+    expect(textMsgs.length).toBeGreaterThan(0);
+    // STREAM_CHUNK messages contain deltas, not cumulative text
+    expect(textMsgs[0].text).toContain("Answer:");
+    expect(doneMsg?.reasoning).toBeTruthy();
+    expect(doneMsg?.fullText).toBeTruthy();
+    // done.reasoning is the final accumulated thinking, done.fullText is the answer.
+    expect(doneMsg.reasoning.includes("user is asking")).toBe(true);
+    expect(doneMsg.fullText.includes("Answer:")).toBe(true);
+  });
+
+  it("event: completed terminates the stream (status succeeded/failed)", () => {
+    const sse = `
+event: PartStartEvent
+data: {"event_kind":"part_start","index":1,"part":{"content":"OK","part_kind":"text"},"previous_part_kind":null}
+
+event: completed
+data: {"status":"succeeded","error":null}
+`.trim();
+    const result = replaySse(sse);
+    const doneMsg = result.messages.find((m: any) => m.type === "STREAM_DONE");
+    expect(doneMsg).toBeDefined();
+    expect(result.terminal).toBe("done");
+  });
+});
+

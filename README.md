@@ -59,28 +59,23 @@ The extension tracks `conversation_id` returned by `/zo/ask` and sends it on eve
 
 ## Backend
 
-Optional WebSocket relay for multi-participant co-browsing + Zo.space bridge.
+Optional WebSocket relay for multi-participant co-browsing.
 
 ```bash
 cd backend && bun run relay.ts
 ```
 
-Register as a user service: `mode="http"`, port `8091`.
+Register as a user service: `mode="http"`, port `3101`.
 
 ### Zo.space API
 
 | Route | Purpose |
 |-------|---------|
 | `POST /api/cobrowse/query` | DuckDB read queries |
-| `POST /api/cobrowse/research` | Zo.space search bridge |
 
 ### Secrets
 
-Set in [Settings → Advanced](https://cashlessconsumer.zo.computer/?t=settings&s=advanced):
-
-| Secret | Purpose |
-|--------|---------|
-| `CO_BROWSE_SECRET` | Auth extension → Zo.space queries |
+The extension authenticates to Zo.space with your **Zo Access Token** (Bearer), set in [Settings → Advanced](https://cashlessconsumer.zo.computer/?t=settings&s=advanced).
 
 ## Project Structure
 
@@ -93,7 +88,8 @@ extension/
 ├── sidepanel.js           # Chat logic — history, auto-execution, new-chat
 ├── options.html           # Settings page
 ├── options.js             # Settings logic — token entry, connection test
-├── styles.css             # Dark-theme shared styles
+├── styles.css             # Zo-native shared styles
+├── lib/                   # Pure ES modules (no chrome.* deps, unit-tested)
 └── icons/                 # Extension icons (16/48/128)
 
 backend/
@@ -106,7 +102,8 @@ tests/
 │   ├── actions.ts
 │   ├── messages.ts
 │   ├── config.ts
-│   └── bang-commands.ts
+│   ├── bang-commands.ts
+│   └── modes.ts
 ├── manifest.test.ts        # Manifest validation against schema
 ├── message-contract.test.ts# Message contract completeness
 ├── html.test.ts            # UI element presence
@@ -117,7 +114,7 @@ tests/
 ├── bang-commands.test.ts   # Bang (!) command parser
 └── relay.test.ts           # WebSocket endpoints
 
-lib/                        # Pure JS modules (no chrome.* deps, testable directly)
+lib/                        # Pure ES modules (no chrome.* deps, testable directly)
 └── bang-commands.js        # Bang command parser — the reference pattern
 
 README.md                   # This file
@@ -132,7 +129,7 @@ Reload from `chrome://extensions` after edits. Verify before every commit:
 bun install        # once — installs zod + bun-types
 bun run setup-hooks # once — installs the pre-commit verification gate
 bun run verify     # tests + release checks + transpile check (also runs pre-commit)
-bun test           # 274 tests across 19 test files + 5 schema files
+bun test           # 494 tests across 23 test files + 6 schema files
 bun test:watch     # Watch mode
 ```
 

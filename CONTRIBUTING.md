@@ -5,7 +5,7 @@
 1. Clone the repo
 2. Run `bun install` (installs zod + bun-types)
 3. Run `bun run setup-hooks` (installs the pre-commit verification gate)
-4. Run `bun test` — all 274 tests should pass
+4. Run `bun test` — all 494 tests should pass
 5. Load `extension/` as an unpacked extension in Chrome (`chrome://extensions` → Developer mode → Load unpacked)
 
 ## Development Loop (verify before commit)
@@ -31,18 +31,17 @@ bun run verify   # = tests (bun test) → release checks (lint) → transpile ch
 ```
 zo-cobrowse/
 ├── extension/          # Chrome extension (service worker, side panel, options)
-│   ├── lib/            # Shared modules (config, bang-commands)
+│   ├── lib/            # Shared modules (config, modes, intent, bang-commands)
 │   ├── icons/          # Extension icons (16, 48, 128)
 │   ├── sidepanel.html  # Co-browse side panel UI
 │   ├── background.js   # Service worker (Zo API calls, action execution)
 │   ├── content.js      # Content script (DOM capture, action dispatch)
 │   ├── options.html    # Options page (API URL, model, persona)
 │   └── manifest.json   # Chrome extension manifest (V3)
-├── tests/              # Bun test suite (274 tests across 19 files)
+├── tests/              # Bun test suite (494 tests across 23 files)
 │   ├── schemas/        # Zod schemas for data contracts
 │   └── helpers/        # Test helpers (chrome mock)
 ├── backend/            # WebSocket relay for shared sessions
-├── brainstorming/      # Design docs, roadmap, feature comparisons
 ├── scripts/            # Release checking, verification gate, git hooks
 ├── AGENTS.md           # Project index & state tracking
 ├── PRIVACY.md          # Privacy policy (for Chrome Web Store)
@@ -67,7 +66,7 @@ bun run test:watch    # Watch mode (auto-rerun on changes)
 
 ## Pull Request Process
 
-1. Run `bun run verify` — all 274 tests plus release/transpile checks pass
+1. Run `bun run verify` — all 494 tests plus release/transpile checks pass
 2. Update `CHANGELOG.md` (and `CHECKLIST.md`) if the change is user-visible
 3. Update the ticket completion table in `AGENTS.md` if implementing a tracked feature
 4. Open a PR against `main` (CI runs the same `verify` gate)

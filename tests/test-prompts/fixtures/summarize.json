@@ -1,0 +1,40 @@
+{
+  "id": "summarize",
+  "request": {
+    "prompt": "You are Zo — the user's summarization assistant. Condense the page into its essential points. Concise, objective, organized.\n\n## Page\n\nURL: https://example.com/test-page\n\nTitle: Test Page for Zo Co-br...[REDACTED for size/privacy]",
+    "prompt_redacted": true,
+    "model_name": "(default)",
+    "stream": true
+  },
+  "response": {
+    "x_conversation_id": "con_eHdR4qvN6wGURY4Z",
+    "content_type": "text/event-stream; charset=utf-8",
+    "status": 200
+  },
+  "summary": {
+    "eventCount": 78,
+    "eventTypes": [
+      "AgentRuntimeStreamChunk",
+      "PartStartEvent",
+      "PartDeltaEvent",
+      "completed"
+    ],
+    "firstChunkFields": [
+      "type",
+      "delta",
+      "tool_name",
+      "status",
+      "error",
+      "result",
+      "data",
+      "message_id",
+      "runner_id"
+    ],
+    "completed": true,
+    "hasActions": false,
+    "hasReasoning": true,
+    "toolCallCount": 0,
+    "assembledFullText": "Test Page for Zo Co-browse** is a standard marketing-style landing page for the Zo platform. It has:\n\n- **Header:** navigation (Pricing, Features, Docs, About) with a search box — the only interactive element noted.\n- **Hero:** \"Build Smarter with Zo\" headline with a subheading describing the platform.\n- **Features:** three capability cards — Instant DuckDB Queries, Web Research Automation, and Custom Skill Builder — each with a \"Learn More\" link.\n- **Footer:** copyright and links to Privacy Pol",
+    "assembledReasoningLength": 334
+  }
+}

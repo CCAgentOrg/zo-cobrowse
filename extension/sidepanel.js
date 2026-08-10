@@ -2,6 +2,7 @@
 
 import { parseBangCommand, BANG_COMMANDS } from './lib/bang-commands.js';
 import { BUILTIN_MODES, DEFAULT_MODE_ID, resolveMode, presetToMode, normalizeActions } from './lib/modes.js';
+import { looksLikeActionJson } from './lib/intent.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -20,10 +21,13 @@ function startThinkingTimeout() {
     thinkingTimeout = null;
     const thinking = msgsEl?.querySelector('.msg-thinking');
     if (thinking) thinking.remove();
+    stopStreamTimer();
     if (streamSession.active) {
       streamSession.active = false;
       streamSession.msgEl = null;
       streamSession.fullText = '';
+      streamSession.reasoningText = '';
+      streamSession.startTime = 0;
     }
     if (typeof input !== 'undefined' && input) input.disabled = false;
     if (typeof sendBtn !== 'undefined' && sendBtn) sendBtn.disabled = false;
@@ -132,6 +136,7 @@ let pendingActionsReasoning = '';   // reasoning to attach to the done-answer bu
 let currentContext = null;
 let actionRunning = false;
 let isHistoryView = false;
+let cachedModels = [];      // cache LIST_MODELS response for label lookup
 
 // ---- STT state ----
 let recognition = null;
@@ -363,10 +368,16 @@ function bindEvents() {
     chrome.storage.sync.set({ zoPersonaId: personaSelect.value });
   });
 
-  // Send
+  // Send (disabled while the input is empty, like Zo's Send button)
+  const syncSendBtn = () => { sendBtn.disabled = !input.value.trim() || actionRunning; };
+  input.addEventListener('input', syncSendBtn);
+  input.addEventListener('keyup', syncSendBtn);
+  syncSendBtn();
   sendBtn.addEventListener('click', () => { sendQuery(); });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(); }
+    // Esc cancels an in-flight stream (Zo: "Press Esc to stop").
+    if (e.key === 'Escape' && streamSession.active) { cancelStream(); e.preventDefault(); }
   });
 
   // Mic button — STT
@@ -568,8 +579,10 @@ function renderCurrentConversation() {
   }
   for (const msg of conv.messages) {
     const m = msg.role === 'assistant' ? healAssistantMessage(msg) : msg;
-    const el = addMessageDOM(m.role, m.text);
+    const opts = m.role === 'assistant' ? { timestamp: m.timestamp, durationMs: m.durationMs } : {};
+    const el = addMessageDOM(m.role, m.text, opts);
     if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning);
+    if (m.role === 'assistant' && m.tools) addExploredRegion(el, m.tools);
   }
 }
 
@@ -619,8 +632,10 @@ async function switchToConversation(id) {
   if (conv && conv.messages.length > 0) {
     for (const msg of conv.messages) {
       const m = msg.role === 'assistant' ? healAssistantMessage(msg) : msg;
-      const el = addMessageDOM(m.role, m.text);
+      const opts = m.role === 'assistant' ? { timestamp: m.timestamp, durationMs: m.durationMs } : {};
+      const el = addMessageDOM(m.role, m.text, opts);
       if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning);
+      if (m.role === 'assistant' && m.tools) addExploredRegion(el, m.tools);
     }
   } else {
     addMessageDOM('system', 'Connected to Zo. Ask me about this page, or tell me what to do.');
@@ -789,6 +804,7 @@ async function fetchModelsAndPersonas() {
 
   const modelsResp = await chrome.runtime.sendMessage({ type: 'LIST_MODELS' });
   if (modelsResp?.success && Array.isArray(modelsResp.models)) {
+    cachedModels = modelsResp.models; // Cache for label lookup in message footer
     modelSelect.innerHTML = '<option value="">Default model</option>';
     for (const m of modelsResp.models) {
       const opt = document.createElement('option');
@@ -799,6 +815,7 @@ async function fetchModelsAndPersonas() {
       modelSelect.appendChild(opt);
     }
   } else {
+    cachedModels = [];
     modelSelect.innerHTML = '<option value="">Models unavailable</option>';
   }
 
@@ -854,9 +871,10 @@ function escapeHtml(s) {
 }
 
 // ---- Action Timeline (#03) ----
-// Renders an inline "⚡ Worked N steps · duration" run block in the chat stream
-// (matching zo.computer), with grouped cards inside. Repeated consecutive
-// actions collapse into a single card with a "× N" count.
+// Renders an inline "⚡ Performed N actions · <duration>" tool-trace card in
+// the chat stream (Zo's "Explored N steps Ns" analog), with grouped cards
+// inside. Repeated consecutive actions collapse into a single card with a
+// "× N" count.
 const ACTION_META = {
   click:    { icon: '👆', label: 'Click' },
   fill:     { icon: '✏️', label: 'Fill' },
@@ -921,6 +939,123 @@ function formatDuration(ms) {
   return s ? `${m}m ${s}s` : `${m}m`;
 }
 
+// Relative timestamp like Zo's message footer ("1d", "5m", "just now").
+// Pure (no chrome.* / DOM deps) so it's unit-testable directly.
+function relativeTime(ts, now = Date.now()) {
+  if (typeof ts !== 'number' || !isFinite(ts) || ts <= 0) return '';
+  const diff = Math.max(0, now - ts);
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m === 1 ? '1m' : `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return h === 1 ? '1h' : `${h}h`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return d === 1 ? '1d' : `${d}d`;
+  // Week vs month boundary at 30 days: 7–29 days read as weeks, 30+ as months.
+  // (30d ≈ 4.3 weeks, but reads as "1mo" not "4w"; 21d stays "3w".)
+  if (d < 30) {
+    const w = Math.floor(d / 7);
+    return w === 1 ? '1w' : `${w}w`;
+  }
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return mo === 1 ? '1mo' : `${mo}mo`;
+  const y = Math.floor(d / 365);
+  return y === 1 ? '1y' : `${y}y`;
+}
+
+// Per-turn message footer (Zo footer parity): Copy, mode chip, model chip,
+// relative timestamp, and feedback (Good / Bad / Loved it). Rendered inside
+// an assistant message (left-aligned) after the body. Feedback is stored
+// locally on the history entry (no backend).
+function addMessageFooter(parentMsgEl, opts = {}) {
+  if (!parentMsgEl || parentMsgEl.querySelector('.msg-footer')) return null;
+  const { timestamp, modeName, modelName, durationMs } = opts;
+  const footer = document.createElement('div');
+  footer.className = 'msg-footer';
+
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'msg-footer-btn msg-footer-copy';
+  copyBtn.textContent = 'Copy';
+  copyBtn.title = 'Copy this message';
+  const body = parentMsgEl.querySelector('.msg-body');
+  copyBtn.addEventListener('click', async () => {
+    const text = body ? body.textContent || '' : '';
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      copyBtn.textContent = 'Copied ✓';
+      setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+    } catch { /* clipboard unavailable */ }
+  });
+  footer.appendChild(copyBtn);
+
+  if (modeName) {
+    const modeChip = document.createElement('span');
+    modeChip.className = 'msg-footer-chip msg-footer-mode';
+    modeChip.textContent = safeText(modeName);
+    modeChip.title = 'Mode';
+    footer.appendChild(modeChip);
+  }
+  if (modelName) {
+    const modelChip = document.createElement('span');
+    modelChip.className = 'msg-footer-chip msg-footer-model';
+    // Look up label from cached models, fallback to modelName
+    const modelDisplay = cachedModels.find(m => (m.model_name || m.id) === modelName)?.label || modelName;
+    modelChip.textContent = safeText(modelDisplay);
+    modelChip.title = 'Model';
+    footer.appendChild(modelChip);
+  }
+
+  if (timestamp) {
+    const timeEl = document.createElement('span');
+    timeEl.className = 'msg-footer-time';
+    // Relative timestamp + total request duration (e.g. "just now · 4s").
+    const dur = formatDuration(durationMs);
+    timeEl.textContent = dur ? `${relativeTime(timestamp)} · ${dur}` : relativeTime(timestamp);
+    footer.appendChild(timeEl);
+  }
+
+  parentMsgEl.appendChild(footer);
+  return footer;
+}
+
+// Zo-style error card: "Response interrupted" heading + the technical detail
+// (status/model/body) + a Retry button that re-sends the last query. Rendered
+// as a normal .msg so it flows in the chat and is persisted like other errors.
+function addErrorCard(errorText, onRetry) {
+  const div = document.createElement('div');
+  div.className = 'msg msg-error';
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+
+  const title = document.createElement('div');
+  title.className = 'error-card-title';
+  title.textContent = 'Response interrupted';
+
+  const detail = document.createElement('div');
+  detail.className = 'error-card-detail';
+  detail.textContent = safeText(errorText) || 'An unexpected error occurred.';
+
+  const actionsEl = document.createElement('div');
+  actionsEl.className = 'error-card-actions';
+  const retry = document.createElement('button');
+  retry.type = 'button';
+  retry.className = 'btn btn-sm btn-primary error-card-retry';
+  retry.textContent = '↻ Retry';
+  retry.addEventListener('click', () => { if (onRetry) onRetry(); });
+  actionsEl.appendChild(retry);
+
+  body.appendChild(title);
+  body.appendChild(detail);
+  body.appendChild(actionsEl);
+  div.appendChild(body);
+  msgsEl.appendChild(div);
+  msgsEl.scrollTop = msgsEl.scrollHeight;
+  return div;
+}
+
 function renderActionTimeline() {
   if (!pendingActions) return;
   // Render inline in the chat stream (not in the separate #actions-bar), so a
@@ -939,7 +1074,7 @@ function renderActionTimeline() {
   header.setAttribute('aria-label', 'Show action steps');
   header.innerHTML =
     '<span class="action-run-caret">▸</span>' +
-    '<span class="action-run-label">⚡ Working…</span>' +
+    '<span class="action-run-label">⚡ Performing actions…</span>' +
     '<span class="action-run-count"></span>' +
     '<span class="action-run-duration"></span>';
   header.addEventListener('click', () => {
@@ -1024,8 +1159,8 @@ async function runPendingActions() {
 
   const runStartTime = Date.now();
   renderActionTimeline();
-  // Live header: count includes the done action (matches "Worked N steps").
-  updateActionRunHeader('⚡ Working…', actions.length, null);
+  // Live header: count includes the done action.
+  updateActionRunHeader('⚡ Performing actions…', actions.length, null);
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const tabId = tab?.id;
@@ -1074,8 +1209,9 @@ async function runPendingActions() {
 
   const elapsed = Date.now() - runStartTime;
   const completedCount = actions.length;
-  // Finalize the inline run header: "⚡ Worked N steps · <duration>".
-  updateActionRunHeader('⚡ Worked', completedCount, elapsed);
+  // Finalize the inline run header: "⚡ Performed N actions · <duration>"
+  // (Zo's "Explored N steps Ns" analog).
+  updateActionRunHeader('⚡ Performed actions', completedCount, elapsed);
 
   pendingActions = null;
   pendingActionsReasoning = '';
@@ -1212,19 +1348,18 @@ function markdownToHtml(md) {
   return html;
 }
 
-function addMessageDOM(role, text) {
+function addMessageDOM(role, text, opts = {}) {
   text = safeText(text);
   const div = document.createElement('div');
   div.className = `msg msg-${role}`;
   const body = document.createElement('div');
   body.className = 'msg-body';
 
-  // Render markdown for assistant messages, keep others as plain text
-  if (role === 'assistant' || role === 'system' || role === 'thinking') {
-    body.innerHTML = markdownToHtml(text);
-  } else {
-    body.textContent = text;
-  }
+  // All roles render markdown (user input is prose too, matching Zo's
+  // composer-shell which renders TipTap/ProseMirror). markdownToHtml +
+  // safeText keep every text sink escaped — never raw innerHTML of
+  // untrusted text.
+  body.innerHTML = markdownToHtml(text);
 
   div.appendChild(body);
 
@@ -1241,9 +1376,49 @@ function addMessageDOM(role, text) {
     div.appendChild(ttsBtn);
   }
 
+  // Assistant-turn footer (Zo parity): Copy / mode / model / time.
+  // Suppressed while streaming (`opts.streaming`) — the live processing
+  // timer takes its place and the full footer is rendered at STREAM_DONE.
+  // History re-render passes `opts.timestamp` / `opts.durationMs` so
+  // reloaded messages keep their original time + total request duration.
+  if (role === 'assistant' && !opts.streaming) {
+    const mode = resolveMode(activeModeId, customModes);
+    addMessageFooter(div, {
+      timestamp: opts.timestamp || Date.now(),
+      modeName: mode.name,
+      modelName: config.selectedModel || undefined,
+      durationMs: opts.durationMs,
+    });
+  }
+
   msgsEl.appendChild(div);
   msgsEl.scrollTop = msgsEl.scrollHeight;
   return div;
+}
+
+// Render a page/file mention pill (Zo file-mention badge) and append it
+// to a user message body. `label` is the page title or filename; an inline
+// SVG file icon leads, matching Zo's data-testid="file-mention-badge".
+// Pure DOM, text-safed. Returns the pill element.
+function appendMentionPill(userBody, label) {
+  if (!userBody) return null;
+  const pill = document.createElement('span');
+  pill.className = 'msg-mention';
+
+  const icon = document.createElement('span');
+  icon.className = 'msg-mention-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML =
+    '<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 16" width="18" height="16"><path d="M3.25 1A2.25 2.25 0 0 0 1 3.25v9.5A2.25 2.25 0 0 0 3.25 15h11.5A2.25 2.25 0 0 0 17 12.75v-8a2.25 2.25 0 0 0-2.25-2.25H9.915a.75.75 0 0 1-.385-.107L7.742 1.321A2.25 2.25 0 0 0 6.585 1zM2.5 3.25a.75.75 0 0 1 .75-.75h3.335a.75.75 0 0 1 .385.107l1.788 1.072c.35.21.75.321 1.157.321h4.835a.75.75 0 0 1 .75.75V5h-13z"></path></svg>';
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'msg-mention-label';
+  labelEl.textContent = safeText(label);
+
+  pill.appendChild(icon);
+  pill.appendChild(labelEl);
+  userBody.appendChild(pill);
+  return pill;
 }
 
 // Collapsible "💭 Thinking" bubble rendered above an assistant message body,
@@ -1290,67 +1465,132 @@ function reasoningSummary(text, max = 80) {
   return summary;
 }
 
-function addReasoningBubble(parentMsgEl, reasoning) {
+// Inline reasoning, rendered above the assistant answer (Zo model).
+// Zo surfaces the model's thinking as prose interleaved with the work,
+// not a separate bubble. We mirror that:
+//   - short reasoning (<= INLINE_REASONING_MAX chars, single line) renders
+//     inline as muted prose directly above the answer — no collapse;
+//   - longer reasoning collapses into a "💭 Thought" trace header (like
+//     Zo's "Response interrupted — retried ▸" pattern) that expands to
+//     the full reasoning.
+// No-ops on empty reasoning so non-reasoning modes (ask/visual) are
+// unaffected. Idempotent: skips if a reasoning block is already present.
+const INLINE_REASONING_MAX = 120;
+
+function addReasoningBubble(parentMsgEl, reasoning, inlineMax = INLINE_REASONING_MAX) {
   if (!parentMsgEl) return;
   const text = safeText(reasoning);
   if (!text || !text.trim()) return;
 
-  // Don't add a duplicate bubble (e.g. on re-render)
-  if (parentMsgEl.querySelector('.msg-thinking-bubble')) return;
+  // Don't add a duplicate (e.g. on re-render from history)
+  if (parentMsgEl.querySelector('.msg-reasoning')) return;
 
-  const bubble = document.createElement('div');
-  bubble.className = 'msg-thinking-bubble';
+  const isInline = text.length <= inlineMax && !text.includes('\n');
 
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'thinking-toggle';
-  toggle.setAttribute('aria-expanded', 'false');
-  toggle.setAttribute('aria-label', 'Show reasoning');
-  const caret = document.createElement('span');
-  caret.className = 'thinking-caret';
-  caret.textContent = '▸';
-  const label = document.createElement('span');
-  label.className = 'thinking-label';
-  label.textContent = '💭 Thought';
-  toggle.appendChild(caret);
-  toggle.appendChild(label);
-  // Collapsed preview: a one-line gist of the reasoning (matches zo.computer's
-  // "Inspecting site responsiveness issues" header). Truncated with ellipsis via CSS.
-  const summary = reasoningSummary(text);
-  if (summary) {
-    const summaryEl = document.createElement('span');
-    summaryEl.className = 'thinking-summary';
-    summaryEl.textContent = `— ${summary}`;
-    toggle.appendChild(summaryEl);
+  const block = document.createElement('div');
+  block.className = isInline ? 'msg-reasoning msg-reasoning-inline' : 'msg-reasoning';
+
+  if (isInline) {
+    // Inline muted prose, no collapse.
+    block.innerHTML = markdownToHtml(text);
+  } else {
+    // Collapsible trace header.
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'reasoning-toggle';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-label', 'Show reasoning');
+    const caret = document.createElement('span');
+    caret.className = 'reasoning-caret';
+    caret.textContent = '▸';
+    const label = document.createElement('span');
+    label.className = 'reasoning-label';
+    label.textContent = '💭 Thought';
+    toggle.appendChild(caret);
+    toggle.appendChild(label);
+    // Collapsed preview: a one-line gist of the reasoning.
+    const summary = reasoningSummary(text);
+    if (summary) {
+      const summaryEl = document.createElement('span');
+      summaryEl.className = 'reasoning-summary';
+      summaryEl.textContent = `— ${summary}`;
+      toggle.appendChild(summaryEl);
+    }
+
+    const content = document.createElement('div');
+    content.className = 'reasoning-content';
+    content.hidden = true;
+    content.innerHTML = markdownToHtml(text);
+
+    toggle.addEventListener('click', () => {
+      const expanded = toggle.getAttribute('aria-expanded') === 'true';
+      toggle.setAttribute('aria-expanded', String(!expanded));
+      toggle.setAttribute('aria-label', expanded ? 'Show reasoning' : 'Hide reasoning');
+      caret.textContent = expanded ? '▸' : '▾';
+      content.hidden = expanded;
+    });
+
+    block.appendChild(toggle);
+    block.appendChild(content);
   }
-  const meta = document.createElement('span');
-  meta.className = 'thinking-meta';
-  meta.textContent = `${text.length} chars`;
-  toggle.appendChild(meta);
 
-  const content = document.createElement('div');
-  content.className = 'thinking-content';
-  content.hidden = true;
-  content.innerHTML = markdownToHtml(text);
-
-  toggle.addEventListener('click', () => {
-    const expanded = toggle.getAttribute('aria-expanded') === 'true';
-    toggle.setAttribute('aria-expanded', String(!expanded));
-    toggle.setAttribute('aria-label', expanded ? 'Show reasoning' : 'Hide reasoning');
-    caret.textContent = expanded ? '▸' : '▾';
-    content.hidden = expanded;
-  });
-
-  bubble.appendChild(toggle);
-  bubble.appendChild(content);
-
-  // Insert above the message body so it reads: thinking → answer
+  // Insert above the message body so it reads: reasoning → answer
   const body = parentMsgEl.querySelector('.msg-body');
   if (body) {
-    parentMsgEl.insertBefore(bubble, body);
+    parentMsgEl.insertBefore(block, body);
   } else {
-    parentMsgEl.insertBefore(bubble, parentMsgEl.firstChild);
+    parentMsgEl.insertBefore(block, parentMsgEl.firstChild);
   }
+}
+
+// Render persisted explored tools (from history) as a static 🔍 Explored
+// region above the answer body. Mirrors the live STREAM_TOOL cards but is
+// non-interactive (cards are already resolved with their outcome).
+function addExploredRegion(parentMsgEl, tools) {
+  if (!parentMsgEl) return;
+  if (!Array.isArray(tools) || !tools.length) return;
+  if (parentMsgEl.querySelector('.msg-explored')) return; // idempotent
+  const block = document.createElement('div');
+  block.className = 'msg-explored msg-explored-static';
+  const label = document.createElement('div');
+  label.className = 'msg-explored-label';
+  label.textContent = '🔍 Explored';
+  const list = document.createElement('div');
+  list.className = 'msg-explored-list';
+  for (const t of tools) {
+    const card = document.createElement('div');
+    card.className = 'msg-tool-card ' + (t.outcome === 'error' ? 'msg-tool-error' : 'msg-tool-done');
+    const head = document.createElement('div');
+    head.className = 'msg-tool-head';
+    const icon = document.createElement('span');
+    icon.className = 'msg-tool-icon';
+    icon.textContent = t.outcome === 'error' ? '✗' : '✓';
+    const name = document.createElement('span');
+    name.className = 'msg-tool-name';
+    name.textContent = safeText(t.toolName) || 'tool';
+    head.appendChild(icon);
+    head.appendChild(name);
+    card.appendChild(head);
+    const result = safeText(t.result);
+    if (result) {
+      const details = document.createElement('details');
+      details.className = 'msg-tool-result';
+      const summary = document.createElement('summary');
+      summary.textContent = 'result';
+      const pre = document.createElement('div');
+      pre.className = 'msg-tool-result-body';
+      pre.textContent = result;
+      details.appendChild(summary);
+      details.appendChild(pre);
+      card.appendChild(details);
+    }
+    list.appendChild(card);
+  }
+  block.appendChild(label);
+  block.appendChild(list);
+  const body = parentMsgEl.querySelector('.msg-body');
+  if (body) parentMsgEl.insertBefore(block, body);
+  else parentMsgEl.appendChild(block);
 }
 
 // ---- Presets ----
@@ -1688,7 +1928,73 @@ function stopSpeaking() {
 let sendQuery = async function () { /* replaced at the end of this file */ };
 
 let streamPort = null;
-let streamSession = { active: false, sessionId: 0, msgEl: null, fullText: '', remainingActions: null };
+// Chronological streaming state. Instead of grouping by channel (Thought/
+// Explored/Final), we append every event in the order it arrives to the message
+// body — a live feed. The final STREAM_DONE may render a collapsed reasoning
+// summary bubble above the body if the user wants a compact view, but the
+// full reasoning stream is always visible in chronological order.
+let streamSession = { active: false, sessionId: 0, msgEl: null, fullText: '', reasoningText: '', remainingActions: null, startTime: 0 };
+
+// Live "processing" timer: ticks the elapsed time on the in-flight assistant
+// bubble's first line until STREAM_DONE replaces it with the real footer
+// (which carries the relative timestamp + the total duration).
+let streamTimerInterval = null;
+function startStreamTimer(msgEl) {
+  stopStreamTimer();
+  if (!msgEl) return;
+  let line = msgEl.querySelector('.msg-processing-timer');
+  if (!line) {
+    line = document.createElement('div');
+    line.className = 'msg-processing-timer';
+    msgEl.appendChild(line);
+  }
+  const tick = () => {
+    const elapsed = Date.now() - streamSession.startTime;
+    line.textContent = `◷ ${formatDuration(elapsed)} — processing…`;
+  };
+  tick();
+  streamTimerInterval = setInterval(tick, 200);
+}
+function stopStreamTimer() {
+  if (streamTimerInterval) { clearInterval(streamTimerInterval); streamTimerInterval = null; }
+}
+
+// Last user query submitted — used by the error card's Retry button.
+let lastQuery = '';
+
+// Latest STREAM_DIAGNOSTIC: the SSE event→fields map Zo emitted for the last
+// stream. Kept for richer-content rendering (tool traces / sources / streaming
+// reasoning); not shown to the user.
+let streamShape = null;
+
+// Re-submit the last query (used by the Retry button on the error card).
+// Bypasses the empty-input guard since the value lives in the label, not the box.
+async function sendQueryFromLabel(label) {
+  const text = safeText(label).trim();
+  if (!text) return;
+  input.value = text;
+  await sendQuery();
+}
+
+// Cancel the in-flight stream (Zo's "Press Esc to stop"). Disconnects the
+// port, clears the session, removes any thinking indicator, and re-enables
+// input so the panel is never stuck.
+function cancelStream() {
+  if (!streamSession.active) return;
+  streamSession.active = false;
+  clearThinkingTimeout();
+  stopStreamTimer();
+  const thinking = msgsEl?.querySelector('.msg-thinking');
+  if (thinking) thinking.remove();
+  if (streamPort) { try { streamPort.disconnect(); } catch {} streamPort = null; }
+  streamSession.msgEl = null;
+  streamSession.fullText = '';
+  streamSession.reasoningText = '';
+  streamSession.remainingActions = null;
+  streamSession.startTime = 0;
+  if (typeof input !== 'undefined' && input) input.disabled = false;
+  if (typeof sendBtn !== 'undefined' && sendBtn) { sendBtn.disabled = !input?.value?.trim(); }
+}
 
 function connectStreamingPort() {
   try {
@@ -1703,6 +2009,7 @@ function connectStreamingPort() {
         if (streamSession.active) {
           streamSession.active = false;
           clearThinkingTimeout();
+          stopStreamTimer();
           const thinking = msgsEl?.querySelector('.msg-thinking');
           if (thinking) thinking.remove();
           if (typeof input !== 'undefined' && input) input.disabled = false;
@@ -1721,23 +2028,137 @@ function handleStreamMessage(msg) {
   // Ignore stale messages from previous sessions
   if (msg.sessionId && msg.sessionId !== streamSession.sessionId) return;
   switch (msg.type) {
-    case 'STREAM_CHUNK': {
-      // First real progress — cancel the thinking timeout
+    case 'STREAM_REASONING': {
+      // Live thinking channel (PartDeltaEvent part_delta_kind:"thinking").
+      // Append to a collapsible reasoning container in chronological order.
       clearThinkingTimeout();
-      // Remove any stale reconnecting banner(s)
       msgsEl.querySelectorAll('.msg-reconnecting').forEach(el => el.remove());
-      // First chunk — remove thinking indicator, create assistant message
       if (!streamSession.active) return;
       if (!streamSession.msgEl) {
         const thinking = msgsEl.querySelector('.msg-thinking');
         if (thinking) thinking.remove();
-        streamSession.msgEl = addMessageDOM('assistant', safeText(msg.text));
+        streamSession.msgEl = addMessageDOM('assistant', '', { streaming: true });
+        startStreamTimer(streamSession.msgEl);
+      }
+      streamSession.reasoningText = safeText(msg.text);
+      const body = streamSession.msgEl.querySelector('.msg-body');
+      if (body) {
+        // Lazily create a collapsible reasoning container
+        let reasoningContainer = body.querySelector('.msg-stream-reasoning');
+        if (!reasoningContainer) {
+          reasoningContainer = document.createElement('details');
+          reasoningContainer.className = 'msg-stream-reasoning';
+          reasoningContainer.open = false; // Collapsed by default
+          const summary = document.createElement('summary');
+          summary.className = 'msg-stream-reasoning-summary';
+          summary.textContent = '💭 Thought';
+          reasoningContainer.appendChild(summary);
+          const content = document.createElement('div');
+          content.className = 'msg-stream-reasoning-content';
+          reasoningContainer.appendChild(content);
+          body.appendChild(reasoningContainer);
+        }
+        // Append the new reasoning token to the content area
+        const content = reasoningContainer.querySelector('.msg-stream-reasoning-content');
+        if (content) {
+          const token = document.createElement('span');
+          token.className = 'msg-stream-thought';
+          token.textContent = safeText(msg.text);
+          content.appendChild(token);
+        }
+      }
+      break;
+    }
+    case 'STREAM_TOOL': {
+      // Live "Explored" channel — a tool was called or returned. Append as a
+      // card-like block in chronological order.
+      clearThinkingTimeout();
+      if (!streamSession.active) return;
+      if (!streamSession.msgEl) {
+        const thinking = msgsEl.querySelector('.msg-thinking');
+        if (thinking) thinking.remove();
+        streamSession.msgEl = addMessageDOM('assistant', '', { streaming: true });
+        startStreamTimer(streamSession.msgEl);
+      }
+      const body = streamSession.msgEl.querySelector('.msg-body');
+      if (!body) break;
+
+      if (msg.phase === 'call') {
+        const card = document.createElement('div');
+        card.className = 'msg-stream-tool-card';
+        card.dataset.callId = safeText(msg.callId) || '';
+        const head = document.createElement('div');
+        head.className = 'msg-stream-tool-head';
+        const icon = document.createElement('span');
+        icon.className = 'msg-stream-tool-icon';
+        icon.textContent = '▸';
+        const name = document.createElement('span');
+        name.className = 'msg-stream-tool-name';
+        name.textContent = safeText(msg.toolName) || 'tool';
+        head.appendChild(icon);
+        head.appendChild(name);
+        if (msg.args) {
+          const argsEl = document.createElement('span');
+          argsEl.className = 'msg-stream-tool-args';
+          argsEl.textContent = msg.args.length > 120 ? msg.args.slice(0, 120) + '…' : msg.args;
+          head.appendChild(argsEl);
+        }
+        card.appendChild(head);
+        body.appendChild(card);
+      } else if (msg.phase === 'result') {
+        // Match the pending call card (by callId, else the last pending card).
+        const callId = safeText(msg.callId);
+        let card = callId ? body.querySelector(`.msg-stream-tool-card[data-call-id="${CSS.escape(callId)}"]`) : null;
+        if (!card) {
+          const pending = body.querySelectorAll('.msg-stream-tool-card');
+          card = pending[pending.length - 1] || null;
+        }
+        if (card) {
+          const icon = card.querySelector('.msg-stream-tool-icon');
+          if (icon) icon.textContent = msg.outcome === 'error' ? '✗' : '✓';
+          card.classList.remove('msg-stream-tool-pending');
+          card.classList.add(msg.outcome === 'error' ? 'msg-stream-tool-error' : 'msg-stream-tool-done');
+          const result = safeText(msg.result);
+          if (result) {
+            const details = document.createElement('details');
+            details.className = 'msg-stream-tool-result';
+            const summary = document.createElement('summary');
+            summary.textContent = 'result';
+            const pre = document.createElement('div');
+            pre.className = 'msg-stream-tool-result-body';
+            pre.textContent = result;
+            details.appendChild(summary);
+            details.appendChild(pre);
+            card.appendChild(details);
+          }
+        }
+      }
+      break;
+    }
+    case 'STREAM_CHUNK': {
+      // First real progress — cancel the thinking timeout
+      clearThinkingTimeout();
+      msgsEl.querySelectorAll('.msg-reconnecting').forEach(el => el.remove());
+      if (!streamSession.active) return;
+      // Co-browse streams the action envelope as text deltas: the raw JSON
+      // accumulates here. Never render it as prose; show a placeholder instead.
+      const isActionJson = looksLikeActionJson(msg.text);
+      if (!streamSession.msgEl) {
+        const thinking = msgsEl.querySelector('.msg-thinking');
+        if (thinking) thinking.remove();
+        streamSession.msgEl = addMessageDOM('assistant', isActionJson ? '_Preparing actions…_' : '', { streaming: true });
+        startStreamTimer(streamSession.msgEl);
         streamSession.fullText = safeText(msg.text);
       } else {
-        streamSession.fullText = safeText(msg.text);
+        streamSession.fullText += safeText(msg.text);
         const body = streamSession.msgEl.querySelector('.msg-body');
-        if (body) {
-          body.innerHTML = markdownToHtml(safeText(msg.text));
+        if (body && !isActionJson) {
+          // During streaming: append plain text for immediate feedback.
+          // At STREAM_DONE, this will be replaced with fully-rendered markdown.
+          const tokenSpan = document.createElement('span');
+          tokenSpan.className = 'msg-streaming-text';
+          tokenSpan.textContent = safeText(msg.text);
+          body.appendChild(tokenSpan);
         }
       }
       break;
@@ -1748,6 +2169,7 @@ function handleStreamMessage(msg) {
       // Remove any stale thinking indicator regardless of active state
       const staleThinking = msgsEl.querySelector('.msg-thinking');
       if (staleThinking) staleThinking.remove();
+      stopStreamTimer();
 
       if (!streamSession.active) {
         // Stream was cancelled or port disconnected, but we still have a response —
@@ -1773,22 +2195,38 @@ function handleStreamMessage(msg) {
       streamSession.active = false;
       // Remove any stale thinking indicator
 
-      // Extract response text for non-action plain-text streaming
+      // Extract response text for non-action plain-text streaming.
+      // When the response carried actions, prefer the done.response and skip
+      // any fallback that is the raw action-JSON envelope (which would leak
+      // {"actions":[...]} into the chat body when done.response is absent).
       const doneAction = (msg.actions || []).find(a => a.type === 'done');
-      const responseText = safeText(doneAction?.response) || safeText(msg.fullText) || safeText(streamSession.fullText) || safeText(msg.reasoning) || '';
+      const hasActions = (msg.actions || []).some(a => a.type !== 'done' && a.type !== 'navigate');
+      const candidateText = safeText(doneAction?.response)
+        || (hasActions ? '' : safeText(msg.fullText))
+        || (hasActions ? '' : safeText(streamSession.fullText))
+        || safeText(msg.reasoning)
+        || '';
+      const responseText = hasActions && !candidateText
+        ? '_Done — see the action timeline above._'
+        : candidateText;
 
-      // Finalize streaming message body. Always normalize to responseText
-      // (the canonical final text) so the rendered DOM never lingers on a
-      // partial streamed chunk. Structured actions are rendered separately
-      // by handleStreamActions (navigate adds its own message; dom actions
-      // render in the timeline), so this body holds the reasoning/done text.
+      // Chronological feed: the body already contains everything streamed in order
+      // (reasoning tokens → tool cards → answer tokens). At this point, replace
+      // the streaming text spans with fully-rendered markdown for proper formatting
+      // (tables, bold, headings, etc. need complete text to parse correctly).
       if (streamSession.msgEl) {
         const body = streamSession.msgEl.querySelector('.msg-body');
-        if (body && responseText) {
-          body.innerHTML = markdownToHtml(responseText);
+        if (body) {
+          const streamingTexts = body.querySelectorAll('.msg-streaming-text');
+          if (streamingTexts.length > 0 && streamSession.fullText) {
+            // Replace all streaming text spans with a single fully-rendered markdown block
+            const renderedHtml = markdownToHtml(streamSession.fullText);
+            streamingTexts.forEach(el => el.remove());
+            body.insertAdjacentHTML('beforeend', renderedHtml);
+          }
         }
-        // Add TTS button if not already present
-        if (!streamSession.msgEl.querySelector('.tts-btn') && responseText) {
+        // Add TTS button if not already present (only if there's actual content).
+        if (!streamSession.msgEl.querySelector('.tts-btn') && streamSession.msgEl.querySelector('.msg-body')?.textContent.trim()) {
           const ttsBtn = document.createElement('button');
           ttsBtn.className = 'tts-btn msg-tts-btn';
           ttsBtn.textContent = '🔊';
@@ -1799,8 +2237,6 @@ function handleStreamMessage(msg) {
           });
           streamSession.msgEl.appendChild(ttsBtn);
         }
-        // Render the reasoning field (if any) as a collapsible bubble above the body
-        addReasoningBubble(streamSession.msgEl, msg.reasoning);
       } else {
         // No streaming chunks — fallback to addMessage
         if (responseText) {
@@ -1819,12 +2255,30 @@ function handleStreamMessage(msg) {
         }
       }
 
+      // Finalize: stop the live processing timer and render the full footer
+      // (Copy / mode / model / timestamp · total-duration) on the streamed bubble.
+      const doneDuration = streamSession.startTime ? Date.now() - streamSession.startTime : 0;
+      stopStreamTimer();
+      const doneTimestamp = Date.now();
+      if (streamSession.msgEl) {
+        const timerLine = streamSession.msgEl.querySelector('.msg-processing-timer');
+        if (timerLine) timerLine.remove();
+        const mode = resolveMode(activeModeId, customModes);
+        addMessageFooter(streamSession.msgEl, {
+          timestamp: doneTimestamp,
+          modeName: mode.name,
+          modelName: config.selectedModel || undefined,
+          durationMs: doneDuration,
+        });
+      }
+
       // Persist to conversation
       if (responseText) {
         const conv = getActiveConversation();
         if (conv) {
-          const reasoningVal = safeText(msg.reasoning) || undefined;
-          conv.messages.push({ role: 'assistant', text: responseText, reasoning: reasoningVal, timestamp: Date.now() });
+          const reasoningVal = safeText(msg.reasoning) || safeText(streamSession.reasoningText) || undefined;
+          // Persist to conversation (chronological feed is already in the body; just save reasoning)
+          conv.messages.push({ role: 'assistant', text: responseText, reasoning: reasoningVal, timestamp: doneTimestamp, durationMs: doneDuration || undefined });
           if (conv.messages.length > 50) {
             conv.messages = conv.messages.slice(-50);
           }
@@ -1833,7 +2287,6 @@ function handleStreamMessage(msg) {
       }
 
       // Handle structured actions (navigate, dom, done)
-      // handleStreamActions adds its own message for done actions
       const actions = msg.actions || [];
       if (actions.length > 0) {
         handleStreamActions(actions, msg.reasoning);
@@ -1845,10 +2298,12 @@ function handleStreamMessage(msg) {
       input.focus();
       streamSession.msgEl = null;
       streamSession.fullText = '';
+      streamSession.reasoningText = '';
       break;
     }
     case 'STREAM_ERROR': {
       clearThinkingTimeout();
+      stopStreamTimer();
       if (!streamSession.active) return;
       // Remove any stale reconnecting banner
       const reconnErr = msgsEl.querySelector('.msg-reconnecting');
@@ -1856,12 +2311,22 @@ function handleStreamMessage(msg) {
       streamSession.active = false;
       const thinking = msgsEl.querySelector('.msg-thinking');
       if (thinking) thinking.remove();
-      addMessage('error', msg.error);
+      // Drop the partial assistant bubble (if any) so the processing timer line doesn't linger.
+      if (streamSession.msgEl) {
+        const timerLine = streamSession.msgEl.querySelector('.msg-processing-timer');
+        if (timerLine) timerLine.remove();
+      }
+      // Zo error card: "Response interrupted" + technical detail + Retry.
+      addErrorCard(msg.error, () => {
+        if (lastQuery) sendQueryFromLabel(lastQuery);
+      });
       input.disabled = false;
       sendBtn.disabled = false;
       input.focus();
       streamSession.msgEl = null;
       streamSession.fullText = '';
+      streamSession.reasoningText = '';
+      streamSession.startTime = 0;
       break;
     }
       case 'STREAM_RECONNECT_DONE': {
@@ -1881,6 +2346,13 @@ function handleStreamMessage(msg) {
       }
       reconn.querySelector('.msg-body').textContent = '➳ Reconnecting... attempt ' + msg.attempt + ' of ' + msg.maxRetries;
       reconn.scrollIntoView({ behavior: 'smooth' });
+      break;
+    }
+    case 'STREAM_DIAGNOSTIC': {
+      // Stream-shape discovery: Zo tells us which SSE events/fields it emitted.
+      // Recorded for richer-content rendering (tool traces, sources, streaming
+      // reasoning); not shown in the chat stream (the user shouldn't see it).
+      streamShape = msg.diagnostic || null;
       break;
     }
   }
@@ -1922,6 +2394,7 @@ function handleStreamActions(actions, reasoning) {
 sendQuery = async function() {
   const query = input.value.trim();
   if (!query || actionRunning) return;
+  lastQuery = query;
   input.value = '';
   input.disabled = true;
   sendBtn.disabled = true;
@@ -2020,8 +2493,20 @@ sendQuery = async function() {
     tempMode = bang.mode;
   }
 
-  addMessage('user', query);
-  addMessage('thinking', 'Zo is thinking...');
+  const userMsgEl = addMessage('user', query);
+  // When a page is captured for this turn, show a Zo-style mention pill
+  // (file-mention badge) in the user message so it reads like Zo's
+  // composer-shell with an attached file/page reference.
+  if (currentContext && (currentContext.title || currentContext.url)) {
+    const userBody = userMsgEl && userMsgEl.querySelector
+      ? userMsgEl.querySelector('.msg-body')
+      : null;
+    if (userBody) {
+      const host = safeText(currentContext.title || currentContext.url);
+      appendMentionPill(userBody, host);
+    }
+  }
+  addMessage('thinking', 'Zo is thinking. Press Esc to stop.');
   startThinkingTimeout();
 
   // Resolve the Mode for this turn: a bang command can override the active
@@ -2036,6 +2521,8 @@ sendQuery = async function() {
     streamSession.active = true;
     streamSession.msgEl = null;
     streamSession.fullText = '';
+    streamSession.reasoningText = '';
+    streamSession.startTime = Date.now();
     try {
       streamPort.postMessage({
         sessionId: thisSessionId,
@@ -2138,12 +2625,3 @@ sendQuery = async function() {
   sendBtn.disabled = false;
   input.focus();
 };
-function cancelStream() {
-  if (streamSession.active) {
-    streamSession.active = false;
-    streamSession.msgEl = null;
-    streamSession.fullText = '';
-    input.disabled = false;
-    sendBtn.disabled = false;
-  }
-}

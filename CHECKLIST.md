@@ -263,7 +263,7 @@ Test each:
 
 ## 24. Build & Package
 
-- [ ] `bun run verify` passes (274 tests / 0 fail + release + transpile checks)
+- [ ] `bun run verify` passes (494 tests / 0 fail + release + transpile checks)
 - [ ] `bun run package` creates `zo-cobrowse.zip`
 - [ ] Zip loads correctly in Chrome via "Load unpacked"
 - [ ] Zip size is reasonable (< 5MB)

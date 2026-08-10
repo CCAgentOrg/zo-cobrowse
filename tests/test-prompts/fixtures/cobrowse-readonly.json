@@ -1,0 +1,40 @@
+{
+  "id": "cobrowse-readonly",
+  "request": {
+    "prompt": "You are Zo — the user's AI co-browsing assistant. You see the page they're on and can control the browser.\n\n## Page\n\nURL: https://example.com/test-page\n\nTitle: Test Page for Zo Co-browse\n\nViewport: 19...[REDACTED for size/privacy]",
+    "prompt_redacted": true,
+    "model_name": "(default)",
+    "stream": true
+  },
+  "response": {
+    "x_conversation_id": "con_hB89BzYg4fVcDWJH",
+    "content_type": "text/event-stream; charset=utf-8",
+    "status": 200
+  },
+  "summary": {
+    "eventCount": 125,
+    "eventTypes": [
+      "AgentRuntimeStreamChunk",
+      "PartStartEvent",
+      "PartDeltaEvent",
+      "completed"
+    ],
+    "firstChunkFields": [
+      "type",
+      "delta",
+      "tool_name",
+      "status",
+      "error",
+      "result",
+      "data",
+      "message_id",
+      "runner_id"
+    ],
+    "completed": true,
+    "hasActions": false,
+    "hasReasoning": true,
+    "toolCallCount": 0,
+    "assembledFullText": " test/landing page for Zo — the AI co-browsing assistant. It's structured like a typical SaaS marketing page:\n\n- **Header nav**: links to Pricing, Features, Docs, and About, plus a search box\n- **Hero section**: headline \"Build Smarter with Zo\" with a subheading describing the platform\n- **Three feature cards** highlighting core capabilities: Instant DuckDB Queries, Web Research Automation, and Custom Skill Builder — each with a \"Learn More\" link\n- **Footer**: copyright info plus Privacy Policy ",
+    "assembledReasoningLength": 1189
+  }
+}

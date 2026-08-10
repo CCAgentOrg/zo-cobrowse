@@ -6,6 +6,7 @@ import {
   ACTION_SCHEMA_COMPACT,
   resolveMode,
   presetToMode,
+  normalizeActions,
 } from "../extension/lib/modes.js";
 import { ModeSchema, BUILTIN_MODE_IDS, BANG_MODE_IDS } from "./schemas/modes.js";
 
@@ -114,6 +115,23 @@ describe("ACTION_SCHEMA_COMPACT", () => {
     expect(ACTION_SCHEMA_COMPACT).not.toContain('"reasoning"');
     expect(ACTION_SCHEMA_COMPACT).not.toContain('{"reasoning"');
   });
+
+  it("is gated to expectJson:true ONLY — every non-cobrowse mode is plain markdown", () => {
+    // The action-schema text must never leak into a prompt for a read-only
+    // mode. buildPrompt pushes ACTION_SCHEMA_COMPACT only when mode.expectJson
+    // is true; everything else gets the plain-markdown hint. Guard the
+    // invariant at the source of truth: the Mode definitions.
+    const jsonModes = Object.values(BUILTIN_MODES).filter((m) => m.expectJson);
+    expect(jsonModes.map((m) => m.id)).toEqual(["cobrowse"]);
+  });
+
+  it("custom modes / presets default to plain markdown (no schema leak)", () => {
+    // Regression guard: presetToMode / normalizeMode previously defaulted
+    // expectJson to true, silently turning any custom mode into a
+    // JSON-action mode and leaking "Respond with JSON {actions}".
+    expect(presetToMode({ name: "custom persona" }).expectJson).toBe(false);
+    expect(resolveMode("c", { c: { name: "custom" } }).expectJson).toBe(false);
+  });
 });
 
 describe("DEFAULT_MODE_ID", () => {
@@ -158,7 +176,11 @@ describe("resolveMode", () => {
 });
 
 describe("presetToMode — legacy migration", () => {
-  it("backfills tier/budget/expectJson on a legacy preset that lacked them", () => {
+  it("backfills tier/budget on a legacy preset that lacked them, expectJson defaults to false", () => {
+    // A legacy preset that never carried expectJson must default to plain
+    // markdown (expectJson:false). Defaulting to true silently leaked the
+    // "Respond with JSON {actions}" instruction into prompts for read-only
+    // modes, making Zo emit actions instead of prose.
     const legacy = {
       name: "Old Preset",
       description: "from the old system",
@@ -170,7 +192,7 @@ describe("presetToMode — legacy migration", () => {
     expect(mode.builtin).toBe(false);
     expect(mode.contextTier).toBe(TIER.TEXT);
     expect(mode.textBudget).toBe(2000);
-    expect(mode.expectJson).toBe(true);
+    expect(mode.expectJson).toBe(false);
     expect(mode.id).toMatch(/^custom_/);
   });
 
@@ -179,13 +201,20 @@ describe("presetToMode — legacy migration", () => {
     expect(mode.id).toBe("my_special");
   });
 
+  it("custom modes / presets default to plain markdown (expectJson:false)", () => {
+    // Regression guard for the action-schema leak: a custom mode with no
+    // explicit expectJson must NOT become a JSON-action mode.
+    expect(presetToMode({ name: "no json field" }).expectJson).toBe(false);
+    expect(resolveMode("customX", { customX: { name: "x" } }).expectJson).toBe(false);
+  });
+
   it("preserves an explicit contextTier / expectJson if provided", () => {
     const mode = presetToMode({
       id: "x", systemPrompt: "s", instructions: "i",
-      contextTier: TIER.ELEMENTS, expectJson: false, textBudget: 999,
+      contextTier: TIER.ELEMENTS, expectJson: true, textBudget: 999,
     });
     expect(mode.contextTier).toBe(TIER.ELEMENTS);
-    expect(mode.expectJson).toBe(false);
+    expect(mode.expectJson).toBe(true);
     expect(mode.textBudget).toBe(999);
   });
 });
@@ -197,3 +226,37 @@ describe("BANG_MODE_IDS — bang command targets", () => {
     }
   });
 });
+
+describe("normalizeActions", () => {
+  it("passes through type-first canonical actions", () => {
+    const actions = [{ type: "click", selector: "#btn" }, { type: "fill", selector: "#inp", value: "x" }];
+    expect(normalizeActions(actions)).toEqual(actions);
+  });
+
+  it("converts key-first actions to type-first", () => {
+    const actions = [{ click: { selector: "#btn" } }, { fill: { selector: "#inp", value: "x" } }];
+    const normalized = normalizeActions(actions);
+    expect(normalized).toEqual([
+      { type: "click", selector: "#btn" },
+      { type: "fill", selector: "#inp", value: "x" },
+    ]);
+  });
+
+  it("handles the non-spec {\"action\":\"type\"} variant (real multi-action captures)", () => {
+    const actions = [{ action: "scroll", selector: "body", args: { direction: "down", amount: 200 } }];
+    const normalized = normalizeActions(actions);
+    expect(normalized).toEqual([{ type: "scroll", selector: "body", direction: "down", amount: 200 }]);
+  });
+
+  it("skips unknown shapes silently", () => {
+    const actions = [{ foo: "bar" }, { type: "unknown" }, null];
+    expect(normalizeActions(actions)).toEqual([]);
+  });
+
+  it("handles mixed known and unknown actions", () => {
+    const actions = [{ click: { selector: "#a" } }, { foo: "bar" }, { type: "fill", value: "x" }];
+    const normalized = normalizeActions(actions);
+    expect(normalized).toEqual([{ type: "click", selector: "#a" }, { type: "fill", value: "x" }]);
+  });
+});
+

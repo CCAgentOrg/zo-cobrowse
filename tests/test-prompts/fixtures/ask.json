@@ -1,0 +1,40 @@
+{
+  "id": "ask",
+  "request": {
+    "prompt": "You are Zo — the user's browser companion. You see the page they're on. Keep responses concise and scannable.\n\n## Page\n\nURL: https://example.com/test-page\n\nTitle: Test Page for Zo Co-browse\n\nViewport:...[REDACTED for size/privacy]",
+    "prompt_redacted": true,
+    "model_name": "(default)",
+    "stream": true
+  },
+  "response": {
+    "x_conversation_id": "con_TTA7HvzskyoJuGIU",
+    "content_type": "text/event-stream; charset=utf-8",
+    "status": 200
+  },
+  "summary": {
+    "eventCount": 62,
+    "eventTypes": [
+      "AgentRuntimeStreamChunk",
+      "PartStartEvent",
+      "PartDeltaEvent",
+      "completed"
+    ],
+    "firstChunkFields": [
+      "type",
+      "delta",
+      "tool_name",
+      "status",
+      "error",
+      "result",
+      "data",
+      "message_id",
+      "runner_id"
+    ],
+    "completed": true,
+    "hasActions": false,
+    "hasReasoning": true,
+    "toolCallCount": 0,
+    "assembledFullText": " is a product landing page for Zo, a platform that advertises \"Build Smarter with Zo\" — with features like Instant DuckDB Queries, Web Research Automation, and a Custom Skill Builder. It's structured as a typical marketing page (nav, hero, feature cards, footer).",
+    "assembledReasoningLength": 585
+  }
+}
