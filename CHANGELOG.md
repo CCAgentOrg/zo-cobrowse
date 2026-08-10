@@ -13,6 +13,12 @@ and this project uses [Semantic Versioning](https://semver.org/).
 > section `[Unreleased]` → `[vX.Y.Z]` and move the compare link below.
 
 ### Added
+- **Repo maintenance rules + git-flow model** — formalized a `dev` (integration)
+  → `main` (release) branching model with branch protection on both: no direct
+  pushes, CI must be green to merge. CI now gates PRs into `dev` as well as
+  `main`. Feature/fix/chore branches flow into `dev`, which promotes to `main`
+  via PR. Releases remain deliberate (`git tag vX.Y.Z` triggers `release.yml`).
+  Documented in `CONTRIBUTING.md` § "Branching model" and `AGENTS.md`.
 - **Thinking/reasoning bubble** — `reasoning` returned by Zo surfaces as a
   collapsible "💭 Thinking" bubble above the assistant message, persisted with the
   message and re-rendered from history. (no-op when the backend sends none)
