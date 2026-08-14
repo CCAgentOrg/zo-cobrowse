@@ -277,6 +277,54 @@
       </div>
     </div>
 
+    <!-- ── Prompts (mode tuning) ── -->
+    <div class="card">
+      <h2>✎ Prompts</h2>
+      <p class="desc">Tune what each Mode sends to Zo — system prompt, instructions, and how much page context. Built-in Modes keep an editable override (Reset restores the original); custom Modes are edited directly. Page context still requires <code>!context</code> per turn in the chat.</p>
+      <div class="field-group">
+        <label for="prompt-mode-select">Mode</label>
+        <select id="prompt-mode-select"></select>
+      </div>
+      <div class="field-group">
+        <label for="prompt-system">System Prompt</label>
+        <textarea id="prompt-system" rows="2" placeholder="Who Zo is for this Mode"></textarea>
+      </div>
+      <div class="field-group">
+        <label for="prompt-instructions">Instructions</label>
+        <textarea id="prompt-instructions" rows="2" placeholder="What Zo should do for this Mode"></textarea>
+      </div>
+      <div class="field-group-double">
+        <div class="field-group">
+          <label for="prompt-tier">Page Context Tier</label>
+          <select id="prompt-tier">
+            <option value="0">0 — URL only</option>
+            <option value="1">1 — + text</option>
+            <option value="2">2 — + elements + forms</option>
+            <option value="3">3 — + screenshot</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label for="prompt-budget">Text Budget (chars)</label>
+          <input type="number" id="prompt-budget" min="0" step="100" placeholder="2000" />
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="row-label">
+          <input type="checkbox" id="prompt-json" /> Expect JSON actions (browser control)
+        </label>
+      </div>
+      <div class="btn-row">
+        <button type="button" id="prompt-save" class="btn btn-primary btn-sm">Save</button>
+        <button type="button" id="prompt-reset" class="btn btn-sm">Reset to original</button>
+        <span id="prompt-status" class="inline-status"></span>
+      </div>
+      <details class="prompt-inspector" style="margin-top:10px;">
+        <summary>Live preview</summary>
+        <div class="prompt-inspector-meta" id="prompt-preview-meta"></div>
+        <pre class="prompt-preview" id="prompt-preview-pre"></pre>
+      </details>
+    </div>
+
     <!-- ── Screenshot ── -->
     <div class="card">
       <h2>📷 Screenshot & Vision</h2>

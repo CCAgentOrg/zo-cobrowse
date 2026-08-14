@@ -115,18 +115,54 @@ export const BUILTIN_MODES = {
 export const DEFAULT_MODE_ID = 'cobrowse';
 
 /**
+ * The user-tunable Mode knobs. The remaining fields (id/name/icon/builtin) are
+ * identity and stay fixed for built-ins. The Settings editor persists a sparse
+ * subset of these per built-in id in the cobrowse_mode_overrides catalog.
+ */
+export const EDITABLE_MODE_FIELDS = Object.freeze([
+  'systemPrompt',
+  'instructions',
+  'contextTier',
+  'textBudget',
+  'expectJson',
+]);
+
+/**
+ * Merge a (possibly sparse) builtin override over a COPY of the base Mode.
+ * Only the editable knobs are taken from the override; identity fields
+ * (id/name/icon/builtin) always come from the base — so a built-in stays a
+ * built-in and "Reset to original" is just deleting the override entry. The
+ * base object (a BUILTIN_MODES entry) is never mutated.
+ *
+ * @param {object} base   a full Mode (typically a BUILTIN_MODES entry)
+ * @param {object} [override]  a sparse partial carrying only edited knobs
+ * @returns {object} a full Mode with overrides applied
+ */
+export function mergeOverride(base, override) {
+  if (!override || typeof override !== 'object') return base;
+  const out = { ...base };
+  for (const k of EDITABLE_MODE_FIELDS) {
+    if (override[k] !== undefined) out[k] = override[k];
+  }
+  return out;
+}
+
+/**
  * Resolve a Mode id to a Mode object.
  * Custom modes override built-ins by id; unknown/missing ids fall back to
- * the default Mode so callers never receive null.
+ * the default Mode so callers never receive null. Built-in resolution also
+ * applies any stored per-id overrides (editable knobs only), so user edits
+ * made in Settings take effect without mutating the immutable BUILTIN_MODES.
  *
  * @param {string} modeId
  * @param {Record<string, object>} [customModes={}]
+ * @param {Record<string, object>} [overrides={}]  per-built-in-id sparse overrides
  * @returns {object} a full Mode object
  */
-export function resolveMode(modeId, customModes = {}) {
+export function resolveMode(modeId, customModes = {}, overrides = {}) {
   if (modeId && customModes[modeId]) return normalizeMode(customModes[modeId], modeId);
-  if (modeId && BUILTIN_MODES[modeId]) return BUILTIN_MODES[modeId];
-  return BUILTIN_MODES[DEFAULT_MODE_ID];
+  if (modeId && BUILTIN_MODES[modeId]) return mergeOverride(BUILTIN_MODES[modeId], overrides[modeId]);
+  return mergeOverride(BUILTIN_MODES[DEFAULT_MODE_ID], overrides[DEFAULT_MODE_ID]);
 }
 
 /**

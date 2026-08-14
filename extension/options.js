@@ -33,7 +33,7 @@ function applyOptionsTheme(theme) {
 }
 
 // ---- Init ----
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   loadOptionsTheme();
   // Listen for system theme changes when no override is set
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', loadOptionsTheme);
@@ -255,7 +255,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!confirm('Reset all Zo Co-browse settings to defaults? This clears your token, endpoint, model, and preferences on this device.')) return;
       // Sensitive (local) + non-sensitive (sync) keys are cleared together.
       const syncKeys = ['zoModel', 'zoPersonaId', 'zoActiveMode', 'zoQuickActions', 'zoTtsLang', 'zoTtsRate', 'zoTtsAutoRead', 'enabledMenus', 'enableScreenshots', 'cobrowse_theme'];
-      const localKeys = ['zoAccessToken', 'zoSpaceEndpoint'];
+      const localKeys = ['zoAccessToken', 'zoSpaceEndpoint', 'cobrowse_mode_overrides'];
       Promise.all([
         new Promise((r) => chrome.storage.sync.remove(syncKeys, r)),
         new Promise((r) => chrome.storage.local.remove(localKeys, r)),
@@ -277,7 +277,173 @@ document.addEventListener('DOMContentLoaded', () => {
       chrome.tabs.create({ url: 'https://cashlessconsumer.zo.computer/?t=settings&s=advanced' });
     });
   }
+
+  // ---- Prompts editor (mode tuning) ----
+  // Dynamic import keeps options.js a classic script (the test suite parses it
+  // via new Function(code)); the libs are pure ES modules shared with the
+  // side panel + background.
+  try {
+    const [{ BUILTIN_MODES, mergeOverride, EDITABLE_MODE_FIELDS }, { describePrompt }] = await Promise.all([
+      import('./lib/modes.js'),
+      import('./lib/prompt.js'),
+    ]);
+    initPromptsEditor(BUILTIN_MODES, mergeOverride, EDITABLE_MODE_FIELDS, describePrompt);
+  } catch (err) {
+    console.warn('Prompts editor failed to load:', err);
+  }
 });
+
+// ---- Prompts editor implementation ----
+function initPromptsEditor(BUILTIN_MODES, mergeOverride, EDITABLE_MODE_FIELDS, describePrompt) {
+  const OVERRIDES_KEY = 'cobrowse_mode_overrides';
+  const CUSTOM_MODES_KEY = 'cobrowse_modes';
+  const TIER_NAMES = ['URL only', 'Text', 'Elements', 'Screenshot'];
+
+  const modeSelect = document.getElementById('prompt-mode-select');
+  const sysEl = document.getElementById('prompt-system');
+  const instrEl = document.getElementById('prompt-instructions');
+  const tierEl = document.getElementById('prompt-tier');
+  const budgetEl = document.getElementById('prompt-budget');
+  const jsonEl = document.getElementById('prompt-json');
+  const saveBtn = document.getElementById('prompt-save');
+  const resetBtn = document.getElementById('prompt-reset');
+  const statusEl = document.getElementById('prompt-status');
+  const previewPre = document.getElementById('prompt-preview-pre');
+  const previewMeta = document.getElementById('prompt-preview-meta');
+  if (!modeSelect || !saveBtn) return;
+
+  let overrides = {};
+  let customModes = {};
+  let currentId = null;
+  const isBuiltin = (id) => !!BUILTIN_MODES[id];
+
+  const flash = (msg, ok = true) => {
+    statusEl.textContent = msg;
+    statusEl.className = 'inline-status ' + (ok ? 'ok' : 'err');
+    setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'inline-status'; }, 2500);
+  };
+
+  function draftMode() {
+    const base = isBuiltin(currentId)
+      ? mergeOverride(BUILTIN_MODES[currentId], overrides[currentId] || {})
+      : (customModes[currentId] || BUILTIN_MODES.cobrowse);
+    return {
+      ...base,
+      systemPrompt: sysEl.value,
+      instructions: instrEl.value,
+      contextTier: Math.max(0, Math.min(3, parseInt(tierEl.value, 10) || 0)),
+      textBudget: Math.max(0, parseInt(budgetEl.value, 10) || 0),
+      expectJson: !!jsonEl.checked,
+    };
+  }
+
+  function renderPreview() {
+    if (!previewPre) return;
+    const mode = draftMode();
+    const ctx = {
+      url: 'https://example.com/docs', title: 'Sample page',
+      visibleText: 'Sample page body text used for the prompt preview.',
+      clickable: [{ text: 'Get started', tag: 'a', selector: '#cta' }],
+      formFields: [{ tag: 'input', type: 'email', selector: '#email', placeholder: 'Email' }],
+      viewport: { w: 1280, h: 800 },
+    };
+    const d = describePrompt(mode, ctx, 'Example question for this Mode');
+    previewPre.textContent = d.prompt;
+    if (previewMeta) {
+      previewMeta.replaceChildren();
+      const chip = (label, val) => {
+        const s = document.createElement('span');
+        const b = document.createElement('b'); b.textContent = label + ' ';
+        s.appendChild(b); s.appendChild(document.createTextNode(String(val)));
+        return s;
+      };
+      previewMeta.appendChild(chip('Context:', TIER_NAMES[d.tier] || `Tier ${d.tier}`));
+      previewMeta.appendChild(chip('Format:', d.expectJson ? 'JSON actions' : 'Markdown'));
+      previewMeta.appendChild(chip('≈ Tokens:', d.approxTokens));
+    }
+  }
+
+  function fill(id) {
+    currentId = id;
+    const base = isBuiltin(id)
+      ? mergeOverride(BUILTIN_MODES[id], overrides[id] || {})
+      : (customModes[id] || BUILTIN_MODES.cobrowse);
+    sysEl.value = base.systemPrompt || '';
+    instrEl.value = base.instructions || '';
+    tierEl.value = String(base.contextTier ?? 2);
+    budgetEl.value = String(base.textBudget ?? 2000);
+    jsonEl.checked = !!base.expectJson;
+    resetBtn.disabled = !(isBuiltin(id) && overrides[id]);
+    renderPreview();
+  }
+
+  async function load() {
+    const both = await chrome.storage.local.get([OVERRIDES_KEY, CUSTOM_MODES_KEY]);
+    overrides = (both && both[OVERRIDES_KEY]) || {};
+    customModes = (both && both[CUSTOM_MODES_KEY]) || {};
+    modeSelect.innerHTML = '';
+    for (const id of Object.keys(BUILTIN_MODES)) {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = `${BUILTIN_MODES[id].icon} ${BUILTIN_MODES[id].name} (built-in)`;
+      modeSelect.appendChild(opt);
+    }
+    const customIds = Object.keys(customModes);
+    if (customIds.length) {
+      const sep = document.createElement('option');
+      sep.disabled = true; sep.textContent = '—— Custom ——';
+      modeSelect.appendChild(sep);
+      for (const id of customIds) {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = `${customModes[id].icon || '✨'} ${customModes[id].name || id} (custom)`;
+        modeSelect.appendChild(opt);
+      }
+    }
+    fill(modeSelect.value || Object.keys(BUILTIN_MODES)[0]);
+  }
+
+  modeSelect.addEventListener('change', () => fill(modeSelect.value));
+  [sysEl, instrEl, tierEl, budgetEl, jsonEl].forEach((el) => {
+    if (el) el.addEventListener('input', renderPreview);
+  });
+
+  saveBtn.addEventListener('click', async () => {
+    const id = modeSelect.value;
+    const draft = draftMode();
+    if (!draft.systemPrompt || !draft.instructions) {
+      flash('System prompt and instructions are required.', false);
+      return;
+    }
+    if (isBuiltin(id)) {
+      // Store only the editable knobs that differ from the base built-in.
+      const base = BUILTIN_MODES[id];
+      const ov = {};
+      for (const k of EDITABLE_MODE_FIELDS) {
+        if (draft[k] !== base[k]) ov[k] = draft[k];
+      }
+      if (Object.keys(ov).length) overrides[id] = ov;
+      else delete overrides[id];
+      await chrome.storage.local.set({ [OVERRIDES_KEY]: overrides });
+    } else {
+      customModes[id] = { ...customModes[id], ...draft, id, builtin: false };
+      await chrome.storage.local.set({ [CUSTOM_MODES_KEY]: customModes });
+    }
+    flash('✅ Saved');
+    fill(id);
+  });
+
+  resetBtn.addEventListener('click', async () => {
+    const id = modeSelect.value;
+    if (!isBuiltin(id)) return;
+    delete overrides[id];
+    await chrome.storage.local.set({ [OVERRIDES_KEY]: overrides });
+    fill(id);
+    flash('Reset to original');
+  });
+
+  load();
+}
 
 async function populateModels(token, currentValue) {
   const modelStatus = document.getElementById('model-status');

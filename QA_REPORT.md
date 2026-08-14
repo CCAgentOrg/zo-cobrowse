@@ -26,6 +26,29 @@
 > `.github/workflows/release.yml`. Suite: **274 tests / 0 fail** (19 files,
 > 783 expects). See `CHANGELOG.md` `[Unreleased]`.
 
+> **2026-08-14 — Prompts feature round (`feature/prompts`):**
+> Prompts to Zo are now **reviewable, customizable, and token-efficient**.
+> (1) `buildPrompt` extracted from background.js into the pure
+> `extension/lib/prompt.js` (byte-identical; parity tests lock the output; the
+> duplicated copy in `tests/test-prompts/capture.ts` is deleted) +
+> `describePrompt()` structured view. (2) **Opt-in DOM + send-once** via the
+> new `extension/lib/context-policy.js#decideTurn`: read turns send URL/title
+> only (tier 0) by default; `!context`/`!dom` attaches full context for one
+> turn; action turns attach on first turn / page-hash change and dedupe after
+> (relying on `conversation_id` threading). `effectiveTier` rides the existing
+> `ASK_ZO` payload (no new message types — the bidirectional contract test
+> stays green by construction). (3) **Side-panel prompt inspector** — live,
+> collapsible preview of the exact prompt + policy reason + approx tokens.
+> (4) **Settings ✎ Prompts card** — edit each Mode's 5 knobs with a live
+> preview; built-ins persist sparse overrides to `cobrowse_mode_overrides`
+> (`mergeOverride` in modes.js; originals never mutated). (5) content.js
+> `captureContext(tier)` now honors the requested tier (was always tier-2
+> sized). Post-review fixes: `refreshPageContext` now resolves the Mode WITH
+> overrides (Settings tier-raises actually capture) and the inspector honors
+> mode-switching bangs. Behavior change (intended): read modes no longer ship
+> page text by default — the inspector surfaces the decision. Suite: **594
+> tests / 0 fail** (27 files, 1531 expects) + `bun run verify` fully green.
+
 ## Test suite
 
 ```
