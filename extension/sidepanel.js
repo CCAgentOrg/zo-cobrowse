@@ -11,7 +11,7 @@ import {
   saveConversationState,
 } from './lib/context-policy.js';
 import { describePrompt } from './lib/prompt.js';
-import { assignRefs, ensureActiveTabRef } from './lib/tab-contexts.js';
+import { assignRefs, ensureActiveTabRef, isBlankPage } from './lib/tab-contexts.js';
 import {
   openChatTab,
   closeChatTab,
@@ -1123,6 +1123,7 @@ function renderPromptInspector() {
     bang: isContextBang ? bang : null,
     state: contextState,
     pageHash,
+    pageBlank: isBlankPage(currentContext?.url || ''),
   });
   const described = describePrompt(mode, currentContext, query, { effectiveTier: decision.effectiveTier, tabContexts: previewTabContexts({ includeActive: decision.effectiveTier === 0 }) });
 
@@ -3238,8 +3239,9 @@ sendQuery = async function() {
   const userMsgEl = addMessage('user', query);
   // When a page is captured for this turn, show a Zo-style mention pill
   // (file-mention badge) in the user message so it reads like Zo's
-  // composer-shell with an attached file/page reference.
-  if (currentContext && (currentContext.title || currentContext.url)) {
+  // composer-shell with an attached file/page reference. Blank/new-tab pages
+  // get no pill — a cold-start turn references nothing.
+  if (currentContext && (currentContext.title || currentContext.url) && !isBlankPage(currentContext.url || '')) {
     const userBody = userMsgEl && userMsgEl.querySelector
       ? userMsgEl.querySelector('.msg-body')
       : null;
@@ -3274,12 +3276,14 @@ sendQuery = async function() {
   // The capture above is at the Mode tier (IPC, not billed tokens); buildPrompt
   // (in the background) thins what actually reaches Zo using effectiveTier.
   const pageHash = computePageHash(currentContext, mode.contextTier);
+  const pageBlank = isBlankPage(currentContext?.url || '');
   const turnDecision = decideTurn({
     mode,
     query: effectiveQuery,
     bang: bangResult,
     state: contextState,
     pageHash,
+    pageBlank,
   });
   contextState = turnDecision.newState;
   saveConversationState(activeId, contextState);
@@ -3291,8 +3295,9 @@ sendQuery = async function() {
   // line + 500-char excerpt) so Zo always knows what page you're on.
   // Banner-free capture (content-script path); full DOM stays opt-in
   // (!context / action turns). Refs renumber so the active tab is T1.
+  // Blank/new-tab pages are never auto-referenced (cold start: no page).
   let sendTabContexts = tabContexts;
-  if (effectiveTier === 0 && currentContext && currentContext.tabId != null) {
+  if (effectiveTier === 0 && currentContext && currentContext.tabId != null && !pageBlank) {
     const activeRef = await fetchTabContext(currentContext.tabId);
     if (activeRef) sendTabContexts = assignRefs(ensureActiveTabRef(tabContexts, activeRef));
   }

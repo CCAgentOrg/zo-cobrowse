@@ -402,9 +402,24 @@ describe("cold start — background wiring", () => {
   });
 });
 
+// ---- cold start — sidepanel wiring --------------------------------------------------
+
+describe("cold start — sidepanel wiring", () => {
+  it("threads pageBlank into the context policy on BOTH call sites (send + inspector parity)", () => {
+    // sendQuery and renderPromptInspector both compute the same pageBlank.
+    const computes = [...spCode.matchAll(/isBlankPage\(currentContext\?\.url \|\| ''\)/g)].length;
+    expect(computes).toBeGreaterThanOrEqual(2);
+    expect(spCode).toMatch(/pageBlank,\s*\n/);
+  });
+
+  it("skips the page-mention pill on blank pages (no 'New Tab' pill noise)", () => {
+    expect(spCode).toMatch(/\(currentContext\.title \|\| currentContext\.url\)[^\n]*&& !isBlankPage/);
+  });
+});
+
 describe("auto-active-tab — sidepanel wiring", () => {
   it("auto-references the active tab on tier-0 turns and sends the merged list", () => {
-    expect(spCode).toMatch(/effectiveTier === 0 && currentContext && currentContext\.tabId != null/);
+    expect(spCode).toMatch(/effectiveTier === 0 && currentContext && currentContext\.tabId != null && !pageBlank/);
     expect(spCode).toMatch(/ensureActiveTabRef\(tabContexts, activeRef\)/);
     expect(spCode).toMatch(/tabContexts: sendTabContexts/);
   });
