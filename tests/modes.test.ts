@@ -97,9 +97,14 @@ describe("BUILTIN_MODES — tier invariants", () => {
 
 describe("ACTION_SCHEMA_COMPACT", () => {
   it("mentions every action type from the action protocol", () => {
-    for (const action of ["click", "fill", "extract", "navigate", "scroll", "wait", "done"]) {
+    for (const action of ["click", "fill", "extract", "navigate", "scroll", "wait", "done", "read_tab"]) {
       expect(ACTION_SCHEMA_COMPACT).toContain(action);
     }
+  });
+
+  it("teaches read_tab as context-only (never cross-tab DOM actions)", () => {
+    expect(ACTION_SCHEMA_COMPACT).toContain("read_tab{ref}");
+    expect(ACTION_SCHEMA_COMPACT).toContain("context only");
   });
 
   it("is much shorter than the legacy commented JSON block (sanity)", () => {

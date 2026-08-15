@@ -38,7 +38,14 @@ describe("createConversationState", () => {
       lastCaptureHash: null,
       lastCaptureTier: null,
       turnsSinceFullCapture: 0,
+      tabsSent: {},
     });
+  });
+
+  it("starts with an empty tab-context send-once map", () => {
+    const s = createConversationState();
+    expect(s.tabsSent).toEqual({});
+    expect(Object.keys(s.tabsSent)).toHaveLength(0);
   });
 });
 

@@ -2213,3 +2213,84 @@ body.options-page {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ── Tab contexts (referenced tabs as VSCode-style context) ── */
+.tab-contexts {
+  margin: 0 12px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tab-strip-collapse {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--text-secondary, var(--text, #9aa));
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm, 6px);
+}
+.tab-strip-collapse:hover { color: var(--text, #fff); }
+.tab-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tab-strip.collapsed { display: none; }
+.tab-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 3px 10px;
+  font-size: 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #333);
+  background: transparent;
+  color: var(--text-secondary, var(--text, #9aa));
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+.tab-chip:hover { border-color: var(--border-focus, var(--amber, #f0a832)); color: var(--text, #fff); }
+.tab-chip-on {
+  background: var(--amber-glow, rgba(240,168,50,0.15));
+  border-color: var(--border-focus, var(--amber, #f0a832));
+  color: var(--text, #fff);
+}
+.tab-autocomplete {
+  position: absolute;
+  bottom: calc(var(--input-h, 44px) + 56px);
+  left: 12px;
+  right: 12px;
+  max-height: 200px;
+  overflow: auto;
+  z-index: 40;
+  background: var(--bg-secondary, #15182e);
+  border: 1px solid var(--border, #333);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,0.5));
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tab-autocomplete.hidden { display: none; }
+.tab-ac-item {
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text, #fff);
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tab-ac-item:hover, .tab-ac-item.tab-ac-active {
+  background: var(--amber-glow, rgba(240,168,50,0.15));
+}

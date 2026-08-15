@@ -32,6 +32,9 @@ export function createConversationState() {
     lastCaptureHash: null,
     lastCaptureTier: null,
     turnsSinceFullCapture: 0,
+    // Tab contexts (send-once per tab): { [tabId]: pageHash }. Managed by
+    // noteTabSent/isTabSentAt in lib/tab-contexts.js.
+    tabsSent: {},
   };
 }
 

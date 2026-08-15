@@ -82,20 +82,36 @@ When Zo decides to interact with the browser, it returns:
   "reasoning": "step-by-step thinking before acting",
   "actions": [
     {
-      "type": "navigate" | "click" | "fill" | "extract" | "scroll" | "wait" | "done",
+      "type": "navigate" | "click" | "fill" | "extract" | "scroll" | "wait" | "done" | "read_tab",
       "selector": "css-selector",
       "value": "text to type",
       "url": "https://...",
       "direction": "up" | "down",
       "amount": 300,
       "ms": 1000,
-      "response": "final answer for user"
+      "response": "final answer for user",
+      "ref": "T1"
     }
   ]
 }
 ```
 
 Lite mode returns **plain text** — no action JSON.
+
+### Referenced tabs + `read_tab` (context, not actions)
+
+When the user references other tabs as context, the prompt carries a
+`## Referenced Tabs` manifest — one line per tab (`[T1] title — host — size
+hint` + a short excerpt). That is all you get by default; the full page text
+is **not** attached. If you need a referenced tab's content to answer, return
+`{"type": "read_tab", "ref": "T1"}`:
+
+- The extension captures that tab and auto-sends its full text back into the
+  conversation as a follow-up — then continue your answer.
+- Budget: max 3 `read_tab` per user turn; repeated reads of an unchanged tab
+  return "already provided above".
+- `read_tab` is context-only. You cannot click/fill/extract in another tab;
+  DOM actions always run in the tab the user is looking at.
 
 ## Use Cases
 

@@ -17,7 +17,8 @@
 export const ACTION_SCHEMA_COMPACT =
   'Respond with JSON {"actions":[...]}. ' +
   'Actions: click{selector} | fill{selector,value} | extract{selector,attribute} | ' +
-  'navigate{url} | scroll{direction,amount?} | wait{ms} | done{response}.';
+  'navigate{url} | scroll{direction,amount?} | wait{ms} | done{response}' +
+  ' | read_tab{ref} — request full content of a referenced tab (context only).';
 
 /**
  * Fallback instructions for Modes that don't define their own.

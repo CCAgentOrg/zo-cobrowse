@@ -11,6 +11,7 @@ import {
   saveConversationState,
 } from './lib/context-policy.js';
 import { describePrompt } from './lib/prompt.js';
+import { assignRefs } from './lib/tab-contexts.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -227,6 +228,7 @@ async function finishInit() {
     await fetchModelsAndPersonas();
     await loadQuickActions();
     await loadTtsConfig();
+    initTabStrip();
     connectStreamingPort();
     chrome.storage.onChanged.addListener((changes) => {
       if (changes[STORAGE_ACTIONS_KEY]) {
@@ -397,11 +399,16 @@ function bindEvents() {
   const syncSendBtn = () => { sendBtn.disabled = !input.value.trim() || actionRunning; };
   input.addEventListener('input', syncSendBtn);
   input.addEventListener('input', schedulePromptInspector);
+  input.addEventListener('input', onComposerInputForTabs);
   input.addEventListener('keyup', syncSendBtn);
   syncSendBtn();
   sendBtn.addEventListener('click', () => { sendQuery(); });
+  // Tab-context `@` autocomplete keys. Captured on the WRAPPER so Enter-to-
+  // select fires before the send-on-Enter listener registered on the input.
+  const inputWrap = $('.input-wrap');
+  if (inputWrap) inputWrap.addEventListener('keydown', onComposerKeydownForTabs, true);
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); closeTabAutocomplete(); sendQuery(); }
     // Esc cancels an in-flight stream (Zo: "Press Esc to stop").
     if (e.key === 'Escape' && streamSession.active) { cancelStream(); e.preventDefault(); }
   });
@@ -609,6 +616,7 @@ function renderCurrentConversation() {
     const el = addMessageDOM(m.role, m.text, opts);
     if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning);
     if (m.role === 'assistant' && m.tools) addExploredRegion(el, m.tools);
+    if (m.role === 'user' && Array.isArray(m.tabRefs)) renderTabRefPills(el, m.tabRefs);
   }
 }
 
@@ -628,6 +636,7 @@ async function startNewConversation() {
   // for a fresh full-context attach (opt-in DOM / send-once).
   contextState = createConversationState();
   saveConversationState(contextState);
+  resetTabRefs(); // chip toggles are per-conversation
 
   // Create new conversation
   createNewConversation();
@@ -656,6 +665,7 @@ async function switchToConversation(id) {
 
   // Switch
   activeId = id;
+  resetTabRefs(); // chip toggles are per-conversation
   await saveConversations();
 
   // Render
@@ -668,6 +678,7 @@ async function switchToConversation(id) {
       const el = addMessageDOM(m.role, m.text, opts);
       if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning);
       if (m.role === 'assistant' && m.tools) addExploredRegion(el, m.tools);
+      if (m.role === 'user' && Array.isArray(m.tabRefs)) renderTabRefPills(el, m.tabRefs);
     }
   } else {
     addMessageDOM('system', 'Connected to Zo. Ask me about this page, or tell me what to do.');
@@ -873,7 +884,7 @@ function renderPromptInspector() {
     state: contextState,
     pageHash,
   });
-  const described = describePrompt(mode, currentContext, query, { effectiveTier: decision.effectiveTier });
+  const described = describePrompt(mode, currentContext, query, { effectiveTier: decision.effectiveTier, tabContexts: previewTabContexts() });
 
   summary.textContent = `🔎 Prompt preview · ~${described.approxTokens} tokens`;
   meta.replaceChildren();
@@ -1517,6 +1528,219 @@ function appendMentionPill(userBody, label) {
   pill.appendChild(labelEl);
   userBody.appendChild(pill);
   return pill;
+}
+
+// ---- Tab contexts (referenced tabs as VSCode-style context) ----
+// A chip strip above the composer lists the window's capturable tabs; toggled
+// chips ride along with the next message as a compact manifest + excerpt
+// (refs T1…Tn). `@` in the composer is a keyboard shortcut to toggle the same
+// chips. Full content is pulled on demand via Zo's read_tab action (the
+// background chains the follow-up inside the stream).
+
+const tabRefsEnabled = new Set(); // tabIds currently referenced
+let openTabs = [];                // last GET_OPEN_TABS result (recency order)
+let tabStripCollapsed = false;
+
+function initTabStrip() {
+  if (typeof chrome === 'undefined' || !chrome?.runtime?.sendMessage) return;
+  const collapseBtn = document.getElementById('tab-strip-collapse');
+  if (collapseBtn) {
+    collapseBtn.addEventListener('click', () => {
+      tabStripCollapsed = !tabStripCollapsed;
+      const caret = collapseBtn.querySelector('.tab-strip-caret');
+      if (caret) caret.textContent = tabStripCollapsed ? '▸' : '▾';
+      renderTabStrip();
+    });
+  }
+  refreshOpenTabs();
+  // Keep the strip fresh when the user refocuses the panel.
+  window.addEventListener('focus', refreshOpenTabs);
+}
+
+async function refreshOpenTabs() {
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'GET_OPEN_TABS' });
+    openTabs = (resp && Array.isArray(resp.tabs)) ? resp.tabs : [];
+    // Drop toggles for tabs that no longer exist.
+    const live = new Set(openTabs.map((t) => t.tabId));
+    for (const id of [...tabRefsEnabled]) {
+      if (!live.has(id)) tabRefsEnabled.delete(id);
+    }
+    renderTabStrip();
+  } catch { /* background unavailable — keep last render */ }
+}
+
+function renderTabStrip() {
+  const wrap = document.getElementById('tab-contexts');
+  const strip = document.getElementById('tab-strip');
+  const countEl = document.getElementById('tab-strip-count');
+  if (!wrap || !strip) return;
+  if (!openTabs.length) {
+    wrap.classList.add('hidden');
+    return;
+  }
+  wrap.classList.remove('hidden');
+  if (countEl) countEl.textContent = `(${tabRefsEnabled.size}/${openTabs.length})`;
+
+  strip.replaceChildren();
+  strip.classList.toggle('collapsed', tabStripCollapsed);
+  if (tabStripCollapsed) return;
+
+  for (const t of openTabs) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'tab-chip' + (tabRefsEnabled.has(t.tabId) ? ' tab-chip-on' : '');
+    const label = safeText(t.host || t.title || t.url).slice(0, 24);
+    chip.textContent = (t.active ? '◈ ' : '') + label;
+    chip.title = safeText(t.title || t.url) + (t.active ? ' — this tab' : '') +
+      (tabRefsEnabled.has(t.tabId) ? ' — referenced (click to remove)' : ' — click to reference as context');
+    chip.setAttribute('aria-pressed', String(tabRefsEnabled.has(t.tabId)));
+    chip.addEventListener('click', () => {
+      toggleTabRef(t.tabId);
+    });
+    strip.appendChild(chip);
+  }
+}
+
+function toggleTabRef(tabId) {
+  if (tabRefsEnabled.has(tabId)) tabRefsEnabled.delete(tabId);
+  else tabRefsEnabled.add(tabId);
+  renderTabStrip();
+  closeTabAutocomplete();
+  renderPromptInspector();
+}
+
+/** Mention pills for a sent message's referenced tabs (re-render from history). */
+function renderTabRefPills(userMsgEl, tabRefs) {
+  const userBody = userMsgEl && userMsgEl.querySelector ? userMsgEl.querySelector('.msg-body') : null;
+  if (!userBody) return;
+  for (const tr of (tabRefs || [])) {
+    appendMentionPill(userBody, safeText(tr && (tr.host || tr.title) || (tr && tr.ref) || ''));
+  }
+}
+
+function resetTabRefs() {
+  tabRefsEnabled.clear();
+  renderTabStrip();
+  renderPromptInspector();
+}
+
+/**
+ * Inspector preview: synthesized TabContexts from the current toggle state
+ * (openTabs metadata; no capture). The real send replaces these with fresh
+ * captures (stats + excerpt) — refs and ordering match, so the preview shows
+ * the exact manifest structure that will go out.
+ */
+function previewTabContexts() {
+  if (!tabRefsEnabled.size) return [];
+  const picked = openTabs.filter((t) => tabRefsEnabled.has(t.tabId));
+  return assignRefs(picked.map((t) => ({
+    tabId: t.tabId,
+    title: t.title || '',
+    url: t.url || '',
+    host: t.host || '',
+    textLength: 0,
+    elementCount: 0,
+    excerpt: '',
+    isActive: !!t.active,
+    available: true,
+  })));
+}
+
+/**
+ * Fetch fresh TabContexts for every referenced tab (called per send — excerpts
+ * are always fresh). Returns { tabContexts, dropped } where dropped are tabs
+ * that closed since they were toggled (they never reach the manifest).
+ */
+async function fetchTabContextsForSend() {
+  if (!tabRefsEnabled.size) return { tabContexts: [], dropped: [] };
+  let resp = null;
+  try {
+    resp = await chrome.runtime.sendMessage({ type: 'GET_TAB_CONTEXTS', tabIds: [...tabRefsEnabled], activeTabId: currentContext?.tabId ?? null });
+  } catch { /* fall through with empty */ }
+  const tabs = (resp && Array.isArray(resp.tabs)) ? resp.tabs : [];
+  const dropped = tabs.filter((t) => !t.url); // no url → tab closed (chrome.tabs.get threw)
+  const alive = tabs.filter((t) => t.url);
+  // Recency order (openTabs) decides ref numbering T1…Tn, matching the strip.
+  const order = new Map(openTabs.map((t, i) => [t.tabId, i]));
+  alive.sort((a, b) => (order.get(a.tabId) ?? 999) - (order.get(b.tabId) ?? 999));
+  return { tabContexts: assignRefs(alive), dropped };
+}
+
+// -- `@` autocomplete: a keyboard path to toggle chips. Typing `@query` opens
+// the same tab list; selecting toggles the chip and swallows the typed token.
+
+let tabAcItems = [];
+let tabAcIndex = 0;
+
+function closeTabAutocomplete() {
+  const popup = document.getElementById('tab-autocomplete');
+  if (popup) popup.classList.add('hidden');
+  tabAcItems = [];
+  tabAcIndex = 0;
+}
+
+function renderTabAutocomplete(filterText) {
+  const popup = document.getElementById('tab-autocomplete');
+  if (!popup) return;
+  const q = (filterText || '').toLowerCase();
+  tabAcItems = openTabs.filter((t) => {
+    const hay = `${t.title || ''} ${t.host || ''} ${t.url || ''}`.toLowerCase();
+    return !q || hay.includes(q);
+  });
+  if (!tabAcItems.length) { closeTabAutocomplete(); return; }
+  tabAcIndex = 0;
+  popup.replaceChildren();
+  tabAcItems.forEach((t, i) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'tab-ac-item' + (i === tabAcIndex ? ' tab-ac-active' : '');
+    item.textContent = (t.active ? '◈ ' : '') + safeText(t.host || t.title || t.url).slice(0, 30);
+    item.title = safeText(t.title || t.url);
+    item.addEventListener('mousedown', (e) => { e.preventDefault(); selectTabAutocomplete(i); });
+    popup.appendChild(item);
+  });
+  popup.classList.remove('hidden');
+}
+
+function selectTabAutocomplete(i) {
+  const t = tabAcItems[i];
+  if (!t) return;
+  // Swallow the typed `@…` token (from the token start through the caret).
+  const before = input.value.slice(0, input.selectionStart ?? input.value.length);
+  const m = before.match(/(^|\s)@(\S*)$/);
+  if (m) {
+    const start = before.length - m[0].length + m[1].length;
+    const end = input.selectionStart ?? input.value.length;
+    input.value = input.value.slice(0, start) + input.value.slice(end);
+    input.focus();
+  }
+  toggleTabRef(t.tabId);
+  closeTabAutocomplete();
+  syncSendBtn();
+}
+
+function onComposerInputForTabs() {
+  const before = input.value.slice(0, input.selectionStart ?? input.value.length);
+  const m = before.match(/(^|\s)@(\S*)$/);
+  if (m) renderTabAutocomplete(m[2]);
+  else closeTabAutocomplete();
+}
+
+function onComposerKeydownForTabs(e) {
+  const popup = document.getElementById('tab-autocomplete');
+  if (!popup || popup.classList.contains('hidden') || !tabAcItems.length) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    tabAcIndex = (tabAcIndex + (e.key === 'ArrowDown' ? 1 : tabAcItems.length - 1)) % tabAcItems.length;
+    popup.querySelectorAll('.tab-ac-item').forEach((el, i) => el.classList.toggle('tab-ac-active', i === tabAcIndex));
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    e.stopPropagation();
+    selectTabAutocomplete(tabAcIndex);
+  } else if (e.key === 'Escape') {
+    closeTabAutocomplete();
+  }
 }
 
 // Collapsible "💭 Thinking" bubble rendered above an assistant message body,
@@ -2267,7 +2491,7 @@ function handleStreamMessage(msg) {
     }
     case 'STREAM_DONE': {
       clearThinkingTimeout();
-      const domActions = (msg.actions || []).filter((a) => a.type !== 'navigate' && a.type !== 'done');
+      const domActions = (msg.actions || []).filter((a) => a.type !== 'navigate' && a.type !== 'done' && a.type !== 'read_tab');
       // Remove any stale thinking indicator regardless of active state
       const staleThinking = msgsEl.querySelector('.msg-thinking');
       if (staleThinking) staleThinking.remove();
@@ -2597,6 +2821,11 @@ sendQuery = async function() {
     tempMode = bang.mode;
   }
 
+  // ---- Tab contexts: referenced tabs ride along as manifest + excerpt ----
+  // Fresh capture per send (excerpts are cheap + always current). Refs T1…Tn
+  // follow the strip's recency order; closed tabs drop with an inline note.
+  const { tabContexts, dropped } = await fetchTabContextsForSend();
+
   const userMsgEl = addMessage('user', query);
   // When a page is captured for this turn, show a Zo-style mention pill
   // (file-mention badge) in the user message so it reads like Zo's
@@ -2609,6 +2838,17 @@ sendQuery = async function() {
       const host = safeText(currentContext.title || currentContext.url);
       appendMentionPill(userBody, host);
     }
+  }
+  if (tabContexts.length) {
+    renderTabRefPills(userMsgEl, tabContexts.map((t) => ({ ref: t.ref, host: t.host, title: t.title })));
+    const conv = getActiveConversation();
+    if (conv && conv.messages.length) {
+      conv.messages[conv.messages.length - 1].tabRefs = tabContexts.map((t) => ({ ref: t.ref, host: t.host, title: t.title }));
+      saveCurrentConversation();
+    }
+  }
+  if (dropped.length) {
+    addMessage('system', `📎 ${dropped.length} referenced tab${dropped.length === 1 ? '' : 's'} closed — skipped.`);
   }
   addMessage('thinking', 'Zo is thinking. Press Esc to stop.');
   startThinkingTimeout();
@@ -2659,6 +2899,7 @@ sendQuery = async function() {
         customModes,
         effectiveTier,
         modeOverrides,
+        ...(tabContexts.length ? { tabContexts } : {}),
       });
     } catch (e) {
       // Port disconnected between check and postMessage — fall through to non-streaming fallback
@@ -2682,6 +2923,7 @@ sendQuery = async function() {
     customModes,
     effectiveTier,
     modeOverrides,
+    ...(tabContexts.length ? { tabContexts } : {}),
   });
 
   const thinking = msgsEl.querySelector('.msg-thinking');
