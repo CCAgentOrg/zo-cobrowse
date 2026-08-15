@@ -2424,3 +2424,60 @@ body.options-page {
 .tab-ac-item:hover, .tab-ac-item.tab-ac-active {
   background: var(--amber-glow, rgba(240,168,50,0.15));
 }
+
+/* ── Link chips + "Open all (N)" (research answers → tabs, #27) ──
+   Attached inside an assistant bubble when the answer carries ≥2 unique
+   http(s) URLs. Chip = one URL (label host); Open all opens first-foreground/
+   rest-background and adds the tabs as reference chips. */
+.msg-links {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #333);
+  border-radius: 8px;
+  background: var(--zo-muted, rgba(255, 255, 255, 0.03));
+}
+.msg-links-head {
+  font-size: 11px;
+  color: var(--zo-muted-foreground, #9aa);
+  margin-bottom: 6px;
+}
+.msg-links-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.msg-link-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 3px 10px;
+  font-size: 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #333);
+  background: transparent;
+  color: var(--text-secondary, var(--text, #9aa));
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease;
+}
+.msg-link-chip:hover { border-color: var(--border-focus, var(--amber, #f0a832)); color: var(--text, #fff); }
+.msg-links-more {
+  font-size: 11px;
+  color: var(--text-faint, #778);
+}
+.msg-links-open-all {
+  margin-top: 8px;
+  padding: 4px 12px;
+  font-size: 11.5px;
+  border-radius: 6px;
+  border: 1px solid var(--border-focus, var(--amber, #f0a832));
+  background: transparent;
+  color: var(--text, #fff);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.msg-links-open-all:hover { background: var(--amber-glow, rgba(240, 168, 50, 0.15)); }
