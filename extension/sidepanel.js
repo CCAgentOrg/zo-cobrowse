@@ -11,7 +11,7 @@ import {
   saveConversationState,
 } from './lib/context-policy.js';
 import { describePrompt } from './lib/prompt.js';
-import { assignRefs } from './lib/tab-contexts.js';
+import { assignRefs, ensureActiveTabRef } from './lib/tab-contexts.js';
 import {
   openChatTab,
   closeChatTab,
@@ -693,6 +693,10 @@ async function startNewConversation() {
   await saveConversationState(activeId, contextState);
   restoreTabRefs(); // loads the new chat's (empty) toggle set
 
+  // A new chat describes the browser tab the user is on NOW (display-only
+  // adopt — no capture/banner); the full capture happens at the first send.
+  adoptActiveTabDisplay();
+
   renderPromptInspector();
 
   // Clear UI
@@ -1051,6 +1055,32 @@ async function refreshPageContext() {
   }
 }
 
+/**
+ * Lightweight display adoption of a browser tab: URL/title/tabId straight
+ * from the tabs API — NO capture, so NO debugger banner. Keeps the page bar,
+ * 📎 strip ("this tab" marker), and inspector describing the tab the user is
+ * actually on between sends (the full Mode-tier capture still happens per
+ * send in refreshPageContext). Replaces currentContext wholesale — stale
+ * text from the previous tab must never ride under a new URL.
+ */
+async function adoptActiveTabDisplay(tabId) {
+  try {
+    let id = tabId;
+    if (id == null) {
+      const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
+      id = t?.id;
+    }
+    if (id == null) return;
+    const tab = await chrome.tabs.get(id);
+    if (!tab || !tab.url) return;
+    currentContext = { url: tab.url, title: tab.title || '', tabId: tab.id, viewport: currentContext?.viewport };
+    pageUrl.textContent = tab.title || tab.url;
+    pageUrl.title = tab.url;
+    renderPromptInspector();
+    refreshOpenTabs(); // moves the ◈ this-tab marker
+  } catch { /* tab gone — keep the last known page */ }
+}
+
 // ---- Prompt inspector ----
 // Live preview of the exact prompt that will be sent to Zo for the current
 // input + active Mode, including the context-policy decision (effective tier,
@@ -1094,7 +1124,7 @@ function renderPromptInspector() {
     state: contextState,
     pageHash,
   });
-  const described = describePrompt(mode, currentContext, query, { effectiveTier: decision.effectiveTier, tabContexts: previewTabContexts() });
+  const described = describePrompt(mode, currentContext, query, { effectiveTier: decision.effectiveTier, tabContexts: previewTabContexts({ includeActive: decision.effectiveTier === 0 }) });
 
   summary.textContent = `🔎 Prompt preview · ~${described.approxTokens} tokens`;
   meta.replaceChildren();
@@ -1808,6 +1838,19 @@ function initTabStrip() {
   refreshOpenTabs();
   // Keep the strip fresh when the user refocuses the panel.
   window.addEventListener('focus', refreshOpenTabs);
+  // Track browser-tab switches: adopt the newly active tab for DISPLAY (page
+  // bar + strip + inspector). Scoped to this panel's window — another
+  // window's tab switch must not repaint our page. No capture happens here
+  // (no debugger banner); the real Mode-tier capture is per send.
+  if (chrome.tabs?.onActivated) {
+    chrome.tabs.onActivated.addListener(async (info) => {
+      try {
+        const win = await chrome.windows.getCurrent();
+        if (win && info.windowId !== win.id) return;
+      } catch { /* fall through — adopt anyway */ }
+      adoptActiveTabDisplay(info.tabId);
+    });
+  }
 }
 
 async function refreshOpenTabs() {
@@ -1896,12 +1939,21 @@ function restoreTabRefs() {
  * Inspector preview: synthesized TabContexts from the current toggle state
  * (openTabs metadata; no capture). The real send replaces these with fresh
  * captures (stats + excerpt) — refs and ordering match, so the preview shows
- * the exact manifest structure that will go out.
+ * the exact manifest structure that will go out. `includeActive` mirrors
+ * sendQuery's tier-0 auto-reference (active tab as T1, not toggled).
  */
-function previewTabContexts() {
-  if (!tabRefsEnabled.size) return [];
+function previewTabContexts({ includeActive = false } = {}) {
   const picked = openTabs.filter((t) => tabRefsEnabled.has(t.tabId));
-  return assignRefs(picked.map((t) => ({
+  let autoActive = null;
+  if (includeActive) {
+    autoActive = openTabs.find((t) => t.active && t.tabId === (currentContext && currentContext.tabId))
+      || openTabs.find((t) => t.active)
+      || null;
+    if (autoActive && tabRefsEnabled.has(autoActive.tabId)) autoActive = null; // already referenced
+  }
+  const list = [...(autoActive ? [autoActive] : []), ...picked];
+  if (!list.length) return [];
+  return assignRefs(list.map((t) => ({
     tabId: t.tabId,
     title: t.title || '',
     url: t.url || '',
@@ -1932,6 +1984,22 @@ async function fetchTabContextsForSend() {
   const order = new Map(openTabs.map((t, i) => [t.tabId, i]));
   alive.sort((a, b) => (order.get(a.tabId) ?? 999) - (order.get(b.tabId) ?? 999));
   return { tabContexts: assignRefs(alive), dropped };
+}
+
+/**
+ * One tab's TabContext (banner-free content-script capture) — used to
+ * auto-reference the ACTIVE browser tab on tier-0 turns. Null when the
+ * capture fails or the tab is gone.
+ */
+async function fetchTabContext(tabId) {
+  if (tabId == null) return null;
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'GET_TAB_CONTEXTS', tabIds: [tabId], activeTabId: tabId });
+    const t = resp && Array.isArray(resp.tabs) ? resp.tabs[0] : null;
+    return t && t.url ? t : null;
+  } catch {
+    return null;
+  }
 }
 
 // -- `@` autocomplete: a keyboard path to toggle chips. Typing `@query` opens
@@ -3216,6 +3284,19 @@ sendQuery = async function() {
   contextState = turnDecision.newState;
   saveConversationState(activeId, contextState);
   const effectiveTier = turnDecision.effectiveTier;
+
+  // ---- Auto-reference the active tab on tier-0 turns ----
+  // Whenever the policy thins this turn to URL-only (reads, same-page
+  // follow-ups), the active browser tab still rides along as T1 (manifest
+  // line + 500-char excerpt) so Zo always knows what page you're on.
+  // Banner-free capture (content-script path); full DOM stays opt-in
+  // (!context / action turns). Refs renumber so the active tab is T1.
+  let sendTabContexts = tabContexts;
+  if (effectiveTier === 0 && currentContext && currentContext.tabId != null) {
+    const activeRef = await fetchTabContext(currentContext.tabId);
+    if (activeRef) sendTabContexts = assignRefs(ensureActiveTabRef(tabContexts, activeRef));
+  }
+
   renderPromptInspector(); // dedup state advanced — refresh the preview
 
   // Per-chat threading: send the chat's stored Zo thread id (the background
@@ -3248,7 +3329,7 @@ sendQuery = async function() {
         customModes,
         effectiveTier,
         modeOverrides,
-        ...(tabContexts.length ? { tabContexts } : {}),
+        ...(sendTabContexts.length ? { tabContexts: sendTabContexts } : {}),
       });
     } catch (e) {
       // Port disconnected between check and postMessage — fall through to non-streaming fallback
@@ -3274,7 +3355,7 @@ sendQuery = async function() {
     customModes,
     effectiveTier,
     modeOverrides,
-    ...(tabContexts.length ? { tabContexts } : {}),
+    ...(sendTabContexts.length ? { tabContexts: sendTabContexts } : {}),
   });
 
   // Persist the echoed thread id for this chat (before any early return).

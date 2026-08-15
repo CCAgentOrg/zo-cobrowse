@@ -572,6 +572,13 @@ async function getActiveTabContext(tabId, tier, modeId, opts) {
     }
   }
 
+  // Stamp the source tab so callers (sidepanel currentContext) can key
+  // active-tab logic off it — GET_TAB_CONTEXTS' isActive dedup and the
+  // auto-referenced active tab both depend on this id.
+  if (context && !context.error && !('tabId' in context)) {
+    context.tabId = tab.id;
+  }
+
   return context;
 }
 

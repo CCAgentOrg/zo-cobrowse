@@ -76,6 +76,25 @@
 > No new message types — the bidirectional contract test stays green by
 > construction. Suite: **694 tests / 0 fail** (29 files, 1734 expects) +
 > `bun run verify` fully green.
+>
+> **2026-08-15 (follow-up) — Auto-referenced active tab + tab-switch display:**
+> User report: switching browser tabs and creating a new chat left the panel
+> describing the old tab, and read questions in a fresh chat carried nothing
+> about the page. Root causes: (a) NOTHING listened to browser-tab activation
+> — the page bar / inspector / 📎 strip refreshed only at send; (b) read turns
+> are tier-0 by design (URL/title only); (c) latent bug —
+> `getActiveTabContext` never returned `tabId`, so `currentContext.tabId` was
+> always undefined and `GET_TAB_CONTEXTS`' `isActive` dedup ("this tab,
+> attached above") could never fire. Fixes: (1) captured contexts now carry
+> the source `tabId`; (2) **tier-0 turns auto-reference the active tab as T1**
+> (manifest line + 500-char excerpt, banner-free content-script capture via
+> `ensureActiveTabRef` in lib/tab-contexts.js; refs renumber; full DOM stays
+> opt-in — spec 2026-08-15-auto-active-tab-design.md); (3) the inspector
+> preview mirrors the auto-reference (`previewTabContexts({includeActive})`);
+> (4) `chrome.tabs.onActivated` (scoped to the panel's window) +
+> `startNewConversation` adopt the current tab for DISPLAY via the tabs API —
+> no capture, no debugger banner. Suite: **701 tests / 0 fail** (29 files,
+> 1753 expects) + `bun run verify` fully green.
 
 ## Test suite
 

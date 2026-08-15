@@ -167,3 +167,25 @@ export function noteTabSent(state, tabId, pageHash) {
 export function isTabSentAt(state, tabId, pageHash) {
   return !!(state && state.tabsSent && state.tabsSent[String(tabId)] === pageHash);
 }
+
+/**
+ * Auto-reference the ACTIVE browser tab on tier-0 turns (reads + same-page
+ * follow-ups — any turn whose page content is NOT attached): unless the user
+ * already referenced it, prepend it so it becomes T1 in the manifest. Pure;
+ * returns the input array as-is when there is nothing to add.
+ *
+ * @param {Array<object>} tabContexts  this turn's referenced tabs (strip order)
+ * @param {object|null} activeTabCtx  the active tab's TabContext (or null when
+ *   it couldn't be captured — chrome:// pages, missing tabId)
+ * @returns {Array<object>}
+ */
+export function ensureActiveTabRef(tabContexts, activeTabCtx) {
+  const hasActive = activeTabCtx && typeof activeTabCtx === 'object' && activeTabCtx.tabId != null;
+  if (!Array.isArray(tabContexts)) {
+    return hasActive ? [{ ...activeTabCtx, isActive: true }] : [];
+  }
+  // No-op paths return the input array unchanged (reference-stable).
+  if (!hasActive) return tabContexts;
+  if (tabContexts.some((t) => t && typeof t === 'object' && t.tabId === activeTabCtx.tabId)) return tabContexts; // user already referenced it — keep their ref order
+  return [{ ...activeTabCtx, isActive: true }, ...tabContexts];
+}

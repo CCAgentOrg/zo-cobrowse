@@ -15,6 +15,7 @@ import {
   extractReadTabRequests,
   noteTabSent,
   isTabSentAt,
+  ensureActiveTabRef,
 } from "../extension/lib/tab-contexts.js";
 import {
   TabContextSchema,
@@ -266,6 +267,77 @@ describe("tab contexts — background wiring", () => {
   });
 });
 
+// ---- auto-referenced active tab (tier-0 turns) ----
+
+describe("ensureActiveTabRef", () => {
+  const active = (overrides: Record<string, unknown> = {}) => ({
+    tabId: 7,
+    title: "Current page",
+    url: "https://current.example.com",
+    host: "current.example.com",
+    textLength: 9000,
+    elementCount: 40,
+    excerpt: "The current page body text peek.",
+    isActive: true,
+    available: true,
+    ...overrides,
+  });
+
+  it("prepends the active tab (so it becomes T1 after re-assignRefs)", () => {
+    const others = assignRefs([
+      tab({ tabId: 101, ref: "T1" }),
+      tab({ tabId: 102, ref: "T2" }),
+    ]);
+    const out = ensureActiveTabRef(others, active());
+    expect(out).toHaveLength(3);
+    expect(out[0].tabId).toBe(7);
+    expect(out[0].isActive).toBe(true);
+    const renumbered = assignRefs(out);
+    expect(renumbered[0].ref).toBe("T1");
+    expect(renumbered[0].tabId).toBe(7);
+    for (const t of renumbered) expectValid(TabContextSchema, t, "auto-ref entry");
+  });
+
+  it("keeps the list untouched when the active tab is already referenced", () => {
+    const list = assignRefs([tab({ tabId: 7 }), tab({ tabId: 101 })]);
+    const out = ensureActiveTabRef(list, active());
+    expect(out.map((t: { tabId: number }) => t.tabId)).toEqual([7, 101]);
+  });
+
+  it("no-ops on null/blank active contexts and junk entries", () => {
+    const list = assignRefs([tab({ tabId: 101 })]);
+    expect(ensureActiveTabRef(list, null)).toBe(list);
+    expect(ensureActiveTabRef(list, active({ tabId: undefined }))).toBe(list);
+    expect(ensureActiveTabRef(undefined, active())).toEqual([active()]);
+    expect(ensureActiveTabRef([null, list[0]], active())[0].tabId).toBe(7);
+  });
+});
+
+describe("auto-active-tab — background wiring", () => {
+  it("stamps the captured context with the source tabId (isActive dedup root cause)", () => {
+    expect(bgCode).toMatch(/context\.tabId = tab\.id/);
+  });
+});
+
+describe("auto-active-tab — sidepanel wiring", () => {
+  it("auto-references the active tab on tier-0 turns and sends the merged list", () => {
+    expect(spCode).toMatch(/effectiveTier === 0 && currentContext && currentContext\.tabId != null/);
+    expect(spCode).toMatch(/ensureActiveTabRef\(tabContexts, activeRef\)/);
+    expect(spCode).toMatch(/tabContexts: sendTabContexts/);
+  });
+
+  it("mirrors the auto-reference in the inspector preview", () => {
+    expect(spCode).toMatch(/previewTabContexts\(\{ includeActive: decision\.effectiveTier === 0 \}\)/);
+    expect(spCode).toMatch(/includeActive = false/);
+  });
+
+  it("adopts browser-tab switches for display (tabs API, no capture) and on new chats", () => {
+    expect(spCode).toContain("adoptActiveTabDisplay");
+    expect(spCode).toMatch(/chrome\.tabs\??:?\.?onActivated\.addListener|chrome\.tabs\.onActivated\.addListener/);
+    expect(spCode).toMatch(/info\.windowId !== win\.id/); // scoped to this panel's window
+  });
+});
+
 describe("tab contexts — sidepanel wiring", () => {
   it("has the chip strip + @ autocomplete markup", () => {
     expect(htmlCode).toContain('id="tab-contexts"');
@@ -273,9 +345,10 @@ describe("tab contexts — sidepanel wiring", () => {
     expect(htmlCode).toContain('id="tab-autocomplete"');
   });
 
-  it("fetches fresh tab contexts per send and threads them into ASK_ZO", () => {
+  it("fetches fresh tab contexts per send and threads the merged list into ASK_ZO", () => {
     expect(spCode).toContain("fetchTabContextsForSend");
-    expect(spCode).toMatch(/\.\.\.\(tabContexts\.length \? \{ tabContexts \} : \{\}\)/);
+    // sendTabContexts = toggled tabs + the tier-0 auto-referenced active tab.
+    expect(spCode).toMatch(/\.\.\.\(sendTabContexts\.length \? \{ tabContexts: sendTabContexts \} : \{\}\)/);
   });
 
   it("renders referenced-tab pills live and from history", () => {
