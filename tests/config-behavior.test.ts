@@ -107,8 +107,10 @@ describe("DEFAULTS + STORAGE — shape invariants", () => {
     //   - LITE/FULL_PERSONA_ID + PERSONA_MODE: legacy persona-routing keys
     //     (config.js: "read once for migration, then ignored").
     //   - CUSTOM_MODES: managed as its own object, not a scalar default.
+    //   - MODE_OVERRIDES: a per-built-in-id sparse catalog, like CUSTOM_MODES.
     const nonDefaulted = new Set([
       "TOKEN", "LITE_PERSONA_ID", "FULL_PERSONA_ID", "PERSONA_MODE", "CUSTOM_MODES",
+      "MODE_OVERRIDES",
     ]);
     for (const [logical, key] of Object.entries(STORAGE)) {
       if (nonDefaulted.has(logical)) continue;
@@ -123,6 +125,7 @@ describe("DEFAULTS + STORAGE — shape invariants", () => {
     expect(STORAGE.FULL_PERSONA_ID in DEFAULTS).toBe(false);
     expect(STORAGE.PERSONA_MODE in DEFAULTS).toBe(false);
     expect(STORAGE.CUSTOM_MODES in DEFAULTS).toBe(false);
+    expect(STORAGE.MODE_OVERRIDES in DEFAULTS).toBe(false);
   });
 
   it("the sensitive token key is NOT defaulted (never persisted as a default)", () => {

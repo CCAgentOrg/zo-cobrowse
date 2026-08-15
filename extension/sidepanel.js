@@ -3,6 +3,14 @@
 import { parseBangCommand, BANG_COMMANDS } from './lib/bang-commands.js';
 import { BUILTIN_MODES, DEFAULT_MODE_ID, resolveMode, presetToMode, normalizeActions } from './lib/modes.js';
 import { looksLikeActionJson } from './lib/intent.js';
+import {
+  createConversationState,
+  decideTurn,
+  computePageHash,
+  loadConversationState,
+  saveConversationState,
+} from './lib/context-policy.js';
+import { describePrompt } from './lib/prompt.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -47,6 +55,7 @@ function safeText(v) {
 const STORAGE_CONVERSATIONS_KEY = 'cobrowse_convos';
 const STORAGE_ACTIVE_KEY = 'cobrowse_active_id';
 const STORAGE_MODES_KEY = 'cobrowse_modes';
+const STORAGE_OVERRIDES_KEY = 'cobrowse_mode_overrides'; // per-built-in sparse overrides
 const STORAGE_LEGACY_PRESETS_KEY = 'cobrowse_presets'; // migrated once, then ignored
 const STORAGE_ACTIONS_KEY = 'zoQuickActions';
 
@@ -181,7 +190,13 @@ const createModeBtn = $('#create-mode-btn');
 // STORAGE_MODES_KEY. The active Mode id is persisted under 'zoActiveMode'.
 
 let customModes = {};
+// Per-built-in-id sparse overrides (Settings editor). Merged into resolved
+// Modes via resolveMode(id, customModes, modeOverrides).
+let modeOverrides = {};
 let activeModeId = DEFAULT_MODE_ID;
+// Per-conversation context policy state (opt-in DOM + send-once). Hydrated
+// from chrome.storage.session in finishInit(); reset on new conversation.
+let contextState = createConversationState();
 
 
 // ---- Init ----
@@ -201,12 +216,15 @@ async function init() {
 /** Remaining init — called on normal start and from completeOnboarding() */
 async function finishInit() {
   try {
+    // Load Modes (customModes + modeOverrides + activeModeId) BEFORE the first
+    // capture so refreshPageContext resolves the tier with overrides applied.
+    await loadModes();
     await refreshPageContext();
+    contextState = await loadConversationState();
     await checkPendingQuery();
     await migrateOldFormat();
     await loadConversations();
     await fetchModelsAndPersonas();
-    await loadModes();
     await loadQuickActions();
     await loadTtsConfig();
     connectStreamingPort();
@@ -215,6 +233,12 @@ async function finishInit() {
         const actions = changes[STORAGE_ACTIONS_KEY].newValue;
         renderQuickActions(actions || []);
       }
+      // Hot-reload builtin overrides when the Settings editor saves them, and
+      // re-capture so a raised contextTier actually takes effect immediately.
+      if (changes[STORAGE_OVERRIDES_KEY]) {
+        modeOverrides = changes[STORAGE_OVERRIDES_KEY].newValue || {};
+        refreshPageContext().then(renderPromptInspector);
+      }
     });
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg.type === 'PENDING_ZO_QUERY' && msg.text) {
@@ -222,6 +246,7 @@ async function finishInit() {
         sendQuery();
       }
     });
+    renderPromptInspector(); // first paint once modes + context are loaded
   } catch (e) {
     console.error('finishInit error:', e);
   } finally {
@@ -371,6 +396,7 @@ function bindEvents() {
   // Send (disabled while the input is empty, like Zo's Send button)
   const syncSendBtn = () => { sendBtn.disabled = !input.value.trim() || actionRunning; };
   input.addEventListener('input', syncSendBtn);
+  input.addEventListener('input', schedulePromptInspector);
   input.addEventListener('keyup', syncSendBtn);
   syncSendBtn();
   sendBtn.addEventListener('click', () => { sendQuery(); });
@@ -598,8 +624,14 @@ async function startNewConversation() {
   // Reset Zo conversation on the backend
   chrome.runtime.sendMessage({ type: 'NEW_CONVERSATION' });
 
+  // Reset the per-conversation context policy state — a new chat is eligible
+  // for a fresh full-context attach (opt-in DOM / send-once).
+  contextState = createConversationState();
+  saveConversationState(contextState);
+
   // Create new conversation
   createNewConversation();
+  renderPromptInspector();
 
   // Clear UI
   msgsEl.innerHTML = '';
@@ -782,8 +814,11 @@ function formatTime(ts) {
 
 // ---- Page Context ----
 async function refreshPageContext() {
-  // Tell the background how much context the active Mode wants (its tier).
-  const mode = resolveMode(activeModeId, customModes);
+  // Capture at the active Mode's tier — INCLUDING any built-in override, so a
+  // user raising a Mode's contextTier in Settings actually captures the
+  // higher-tier fields (the per-turn effectiveTier from decideTurn can only
+  // thin what was captured; it can never widen it).
+  const mode = resolveMode(activeModeId, customModes, modeOverrides);
   const resp = await chrome.runtime.sendMessage({ type: 'GET_PAGE_CONTEXT', tier: mode.contextTier, modeId: activeModeId });
   if (resp && !resp.error) {
     currentContext = resp;
@@ -793,6 +828,69 @@ async function refreshPageContext() {
     pageUrl.textContent = '— no page —';
     currentContext = null;
   }
+}
+
+// ---- Prompt inspector ----
+// Live preview of the exact prompt that will be sent to Zo for the current
+// input + active Mode, including the context-policy decision (effective tier,
+// opt-in / send-once reason) and a rough token estimate. Computed client-side
+// from the shared lib/prompt.js so it never drifts from what the background
+// actually sends.
+const TIER_NAMES = ['Pointer (URL only)', 'Text', 'Elements', 'Screenshot'];
+let promptInspectorTimer = null;
+function schedulePromptInspector() {
+  clearTimeout(promptInspectorTimer);
+  promptInspectorTimer = setTimeout(renderPromptInspector, 150);
+}
+function renderPromptInspector() {
+  const summary = document.getElementById('prompt-inspector-summary');
+  const meta = document.getElementById('prompt-inspector-meta');
+  const pre = document.getElementById('prompt-preview');
+  if (!summary || !meta || !pre) return;
+
+  const raw = input.value.trim();
+  // If the user is typing a bang, preview the resolved query + its policy effect
+  // (so !context shows full context attaching).
+  let bang = null;
+  if (raw.startsWith('!')) {
+    bang = parseBangCommand(raw);
+  }
+  const isContextBang = !!bang && bang.kind === 'context';
+  const query = bang && typeof bang.query === 'string' && bang.query
+    ? bang.query
+    : (raw || '(your question)');
+  // A mode-switching bang (!summarize, !extract, !research, !qa/!ask) resolves
+  // to a different Mode for the turn — mirror sendQuery so the preview matches
+  // the actual send rather than always showing the active Mode.
+  const bangModeId = bang && bang.kind === 'command' && bang.mode ? bang.mode : null;
+
+  const mode = resolveMode(bangModeId || activeModeId, customModes, modeOverrides);
+  const pageHash = currentContext ? computePageHash(currentContext, mode.contextTier) : null;
+  const decision = decideTurn({
+    mode,
+    query,
+    bang: isContextBang ? bang : null,
+    state: contextState,
+    pageHash,
+  });
+  const described = describePrompt(mode, currentContext, query, { effectiveTier: decision.effectiveTier });
+
+  summary.textContent = `🔎 Prompt preview · ~${described.approxTokens} tokens`;
+  meta.replaceChildren();
+  const chip = (label, value) => {
+    const span = document.createElement('span');
+    const b = document.createElement('b');
+    b.textContent = label + ' ';
+    span.appendChild(b);
+    span.appendChild(document.createTextNode(value));
+    return span;
+  };
+  meta.appendChild(chip('Mode:', `${mode.icon} ${mode.name}`));
+  meta.appendChild(chip('Context:', TIER_NAMES[decision.effectiveTier] || `Tier ${decision.effectiveTier}`));
+  const reasonSpan = document.createElement('span');
+  reasonSpan.textContent = decision.reason;
+  meta.appendChild(reasonSpan);
+  pre.textContent = described.prompt;
 }
 
 // ---- Fetch models and personas ----
@@ -1612,6 +1710,9 @@ async function loadModes() {
   } else {
     customModes = both[STORAGE_MODES_KEY] || {};
   }
+  // Load per-built-in overrides (Settings editor). Hot-reload when Settings saves.
+  const ov = await chrome.storage.local.get(STORAGE_OVERRIDES_KEY);
+  modeOverrides = (ov && ov[STORAGE_OVERRIDES_KEY]) || {};
   rebuildModeOptions();
 
   // Restore last used Mode. Migrate legacy 'zoActivePreset' → 'zoActiveMode'.
@@ -1637,6 +1738,7 @@ function applyMode() {
   syncModeSelect();
   const desc = mode.description ? ` ${mode.description}` : '';
   addSystemMessage(`🔄 **${mode.icon} ${mode.name}** mode active.${desc}`);
+  renderPromptInspector();
 }
 
 function rebuildModeOptions() {
@@ -2420,8 +2522,10 @@ sendQuery = async function() {
   // ---- Quick Commands (!) ----
   let effectiveQuery = query;
   let tempMode = null;
+  let bangResult = null; // preserved for the context-policy decision below
   if (query.startsWith('!')) {
     const bang = parseBangCommand(query);
+    bangResult = bang;
     if (bang.inlineReply) {
       addMessage('user', query);
       addMessage('assistant', bang.inlineReply);
@@ -2512,6 +2616,26 @@ sendQuery = async function() {
   // Resolve the Mode for this turn: a bang command can override the active
   // Mode for a single turn (tempMode), else use the selected Mode.
   const modeId = tempMode || activeModeId;
+  const mode = resolveMode(modeId, customModes, modeOverrides);
+
+  // ---- Context policy: opt-in DOM + send-once ----
+  // Decides how much of the captured page context to embed in the prompt this
+  // turn (effectiveTier). Reads default to URL-only; !context and action turns
+  // attach the Mode's full context; same-page follow-ups dedupe to URL-only.
+  // The capture above is at the Mode tier (IPC, not billed tokens); buildPrompt
+  // (in the background) thins what actually reaches Zo using effectiveTier.
+  const pageHash = computePageHash(currentContext, mode.contextTier);
+  const turnDecision = decideTurn({
+    mode,
+    query: effectiveQuery,
+    bang: bangResult,
+    state: contextState,
+    pageHash,
+  });
+  contextState = turnDecision.newState;
+  saveConversationState(contextState);
+  const effectiveTier = turnDecision.effectiveTier;
+  renderPromptInspector(); // dedup state advanced — refresh the preview
 
   // --- Streaming path: (re)connect port if needed ---
   if (!streamPort) connectStreamingPort();
@@ -2533,6 +2657,8 @@ sendQuery = async function() {
         personaId: config.selectedPersona || undefined,
         modeId,
         customModes,
+        effectiveTier,
+        modeOverrides,
       });
     } catch (e) {
       // Port disconnected between check and postMessage — fall through to non-streaming fallback
@@ -2554,6 +2680,8 @@ sendQuery = async function() {
     personaId: config.selectedPersona || undefined,
     modeId,
     customModes,
+    effectiveTier,
+    modeOverrides,
   });
 
   const thinking = msgsEl.querySelector('.msg-thinking');

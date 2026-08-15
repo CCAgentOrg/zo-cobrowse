@@ -39,99 +39,47 @@ const FORCE = process.argv.includes("--force");
 
 // ── Load extension libs (pure ES modules, no chrome.* deps) ────────────────
 let BUILTIN_MODES: Record<string, any>;
-let ACTION_SCHEMA_COMPACT: string;
-let PLAIN_RESPONSE_HINT: string;
-let shouldDowngradeToJsonDisabled: (mode: any, query: string) => boolean;
-let detectIntent: (query: string) => "action" | "read";
+let buildPrompt: (mode: any, pageContext: any, userQuery: string, opts?: any) => string;
 
 try {
   const modesMod = await import(resolve(EXT_LIB, "modes.js"));
   BUILTIN_MODES = modesMod.BUILTIN_MODES;
-  ACTION_SCHEMA_COMPACT = modesMod.ACTION_SCHEMA_COMPACT;
-  PLAIN_RESPONSE_HINT = modesMod.PLAIN_RESPONSE_HINT;
-  const intentMod = await import(resolve(EXT_LIB, "intent.js"));
-  shouldDowngradeToJsonDisabled = intentMod.shouldDowngradeToJsonDisabled;
-  detectIntent = intentMod.detectIntent;
+  const promptMod = await import(resolve(EXT_LIB, "prompt.js"));
+  buildPrompt = promptMod.buildPrompt;
 } catch (err) {
   console.error("❌ Failed to load extension libs:", (err as Error).message);
   process.exit(1);
 }
 
-// ── Prompt builder (mirrors extension/background.js buildPrompt) ───────────
-function buildPrompt(
-  mode: any,
-  pageContext: { url: string; title: string; text?: string; elements?: string; forms?: string },
-  userQuery: string,
-): string {
-  const lines: string[] = [];
-
-  // system prompt
-  if (mode.systemPrompt) lines.push(mode.systemPrompt);
-
-  // page context
-  if (pageContext.url) {
-    lines.push("## Page");
-    lines.push(`URL: ${pageContext.url}`);
-    if (pageContext.title) lines.push(`Title: ${pageContext.title}`);
-    lines.push("Viewport: 1920x1080");
-  }
-  if (pageContext.text && mode.contextTier >= 1) {
-    lines.push("## Page Content");
-    lines.push(pageContext.text.slice(0, mode.textBudget || 2000));
-  }
-  if (pageContext.elements && mode.contextTier >= 2) {
-    lines.push("## Elements");
-    lines.push(pageContext.elements);
-  }
-  if (pageContext.forms && mode.contextTier >= 2) {
-    lines.push("## Forms");
-    lines.push(pageContext.forms);
-  }
-  if (mode.contextTier >= 3) {
-    // No real screenshot; note it's absent
-    lines.push("## Screenshot");
-    lines.push("(No screenshot available — capture context only for stream shape testing.)");
-  }
-
-  // instructions (if any)
-  if (mode.instructions) lines.push(mode.instructions);
-
-  // user query
-  lines.push("## User Request");
-  lines.push(userQuery);
-
-  // action schema or plain markdown hint
-  const wantJson = mode.expectJson && !shouldDowngradeToJsonDisabled(mode, userQuery);
-  if (wantJson) {
-    lines.push(ACTION_SCHEMA_COMPACT);
-  } else {
-    lines.push(PLAIN_RESPONSE_HINT);
-  }
-
-  return lines.join("\n\n");
-}
+// ── Prompt assembly is imported from extension/lib/prompt.js (single source
+//    of truth — the inspector, Settings editor, background, and this harness
+//    all build the exact same prompt). Only the synthetic page context is
+//    synthesized here, in the real capture shape. ──────────────────────────
 
 // ── Synthetic page context (representative, not live) ──────────────────────
 function makePageContext(tier: number) {
   const ctx: any = {
     url: "https://example.com/test-page",
     title: "Test Page for Zo Co-browse",
+    viewport: { w: 1920, h: 1080 },
   };
   if (tier >= 1) {
-    ctx.text = `Welcome to the Zo co-browsing test page. This page contains a navigation header with links to Pricing, Features, Docs, and About sections. The main content includes a hero section with a headline "Build Smarter with Zo" and a subheading describing the platform. There is a search box in the top right corner. Below the hero are three feature cards: Instant DuckDB Queries, Web Research Automation, and Custom Skill Builder. Each card has a "Learn More" link. The page footer contains copyright information and links to Privacy Policy and Terms of Service.`;
+    ctx.visibleText = `Welcome to the Zo co-browsing test page. This page contains a navigation header with links to Pricing, Features, Docs, and About sections. The main content includes a hero section with a headline "Build Smarter with Zo" and a subheading describing the platform. There is a search box in the top right corner. Below the hero are three feature cards: Instant DuckDB Queries, Web Research Automation, and Custom Skill Builder. Each card has a "Learn More" link. The page footer contains copyright information and links to Privacy Policy and Terms of Service.`;
   }
   if (tier >= 2) {
-    ctx.elements = `- link "Pricing" (#pricing)
-- link "Features" (#features)
-- link "Docs" (#docs)
-- link "About" (#about)
-- link "Learn More" (card-1 .cta)
-- link "Learn More" (card-2 .cta)
-- link "Learn More" (card-3 .cta)
-- link "Privacy Policy" (footer .privacy)
-- link "Terms of Service" (footer .terms)
-- input "Search…" (#search-box)`;
-    ctx.forms = `- form #search with fields: input[name="q"] (Search query)`;
+    ctx.clickable = [
+      { text: "Pricing", tag: "a", selector: "#pricing" },
+      { text: "Features", tag: "a", selector: "#features" },
+      { text: "Docs", tag: "a", selector: "#docs" },
+      { text: "About", tag: "a", selector: "#about" },
+      { text: "Learn More", tag: "a", selector: ".cta" },
+      { text: "Privacy Policy", tag: "a", selector: ".privacy" },
+      { text: "Terms of Service", tag: "a", selector: ".terms" },
+      { text: "Search", tag: "input", selector: "#search-box" },
+    ];
+    ctx.formFields = [
+      { tag: "input", type: "search", name: "q", selector: 'input[name="q"]', placeholder: "Search…" },
+    ];
   }
   return ctx;
 }

@@ -22,6 +22,17 @@ export type Mode = z.infer<typeof ModeSchema>;
 
 export const ModeCatalogSchema = z.record(z.string(), ModeSchema);
 
+// A sparse per-built-in override (Settings editor). Only the editable knobs;
+// identity fields (id/name/icon/builtin) come from the base built-in.
+export const OverrideSchema = z.object({
+  systemPrompt: z.string().min(1).optional(),
+  instructions: z.string().min(1).optional(),
+  contextTier: z.number().int().min(0).max(3).optional(),
+  textBudget: z.number().int().min(0).optional(),
+  expectJson: z.boolean().optional(),
+}).passthrough();
+export const OverrideCatalogSchema = z.record(z.string(), OverrideSchema);
+
 // Built-in Mode ids — the canonical set shipped with the extension.
 export const BUILTIN_MODE_IDS = [
   "cobrowse",

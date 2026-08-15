@@ -13,6 +13,9 @@ export const STORAGE = {
   // Mode system (replaces presets + personaMode):
   ACTIVE_MODE: 'zoActiveMode',
   CUSTOM_MODES: 'cobrowse_modes',
+  // Per-built-in-id sparse overrides (editable knobs only). A catalog like
+  // CUSTOM_MODES — intentionally NOT in DEFAULTS.
+  MODE_OVERRIDES: 'cobrowse_mode_overrides',
   SPACE_ENDPOINT: 'zoSpaceEndpoint',
   ENABLE_SCREENSHOTS: 'enableScreenshots',
   ENABLED_MENUS: 'enabledMenus',

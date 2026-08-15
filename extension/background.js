@@ -4,12 +4,10 @@
 import {
   resolveMode,
   presetToMode,
-  ACTION_SCHEMA_COMPACT,
-  PLAIN_RESPONSE_HINT,
   DEFAULT_MODE_ID,
   normalizeActions,
 } from './lib/modes.js';
-import { shouldDowngradeToJsonDisabled } from './lib/intent.js';
+import { buildPrompt } from './lib/prompt.js';
 
 function safePost(port, msg) {
   if (!port || port._dead) return false;
@@ -137,6 +135,10 @@ function extractStreamContent(parsed) {
 }
 
 // ---- Safe text helper ----
+// Also defined in ./lib/prompt.js (pure copy, so the inspector + Settings
+// editor can use it without chrome.* deps). Kept here because the SSE test
+// harnesses VM-extract it from background.js source by name as a boundary
+// marker. buildPrompt itself is imported from ./lib/prompt.js.
 function safeText(v) {
   if (typeof v === 'string') return v;
   if (v === null || v === undefined) return '';
@@ -218,7 +220,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
     case 'ASK_ZO': {
-      askZo(request.pageContext, request.userQuery, request.modelName, request.personaId, request.modeId, request.customModes).then(sendResponse);
+      askZo(request.pageContext, request.userQuery, request.modelName, request.personaId, request.modeId, request.customModes, request.effectiveTier, request.modeOverrides).then(sendResponse);
       return true;
     }
     case 'RECREATE_CONTEXT_MENUS':
@@ -529,76 +531,10 @@ async function getActiveTabContext(tabId, tier, modeId) {
 }
 
 // ---- Prompt assembly (shared by streaming + non-streaming paths) ----
-
-/** Compact one-line serializer for a clickable element. */
-function compactEl(e) {
-  const text = (e.text || '').replace(/\s+/g, ' ').trim().slice(0, 40);
-  const t = text ? ` "${text}"` : '';
-  const sel = e.selector || '';
-  return `[${e.tag || 'a'}${t}${sel ? ' ' + sel : ''}]`;
-}
-
-/** Compact one-line serializer for a form field. */
-function compactForm(f) {
-  const ph = (f.placeholder || '').replace(/\s+/g, ' ').trim().slice(0, 30);
-  const sel = f.selector || '';
-  const ty = f.type ? ` type=${f.type}` : '';
-  const p = ph ? ` "${ph}"` : '';
-  return `[${f.tag || 'input'}${sel}${ty}${p}]`;
-}
-
-/**
- * Build the single `input` string sent to /zo/ask. The Mode decides system
- * prompt, instructions, how much page context (tier), the text budget, and
- * whether to append the action protocol.
- */
-function buildPrompt(mode, pageContext, userQuery) {
-  const parts = [
-    mode.systemPrompt,
-    '',
-    '## Page',
-    `- URL: ${safeText(pageContext.url)}`,
-    `- Title: ${safeText(pageContext.title)}`,
-    `- Viewport: ${pageContext.viewport?.w || '?'}x${pageContext.viewport?.h || '?'}`,
-  ];
-
-  if (mode.contextTier >= 1) {
-    const text = safeText(pageContext.visibleText || '—empty—').substring(0, mode.textBudget);
-    parts.push('', '## Page Content', '```', text, '```');
-  }
-  if (mode.contextTier >= 2) {
-    const els = pageContext.clickable;
-    if (Array.isArray(els) && els.length) {
-      parts.push('', '## Elements', els.slice(0, 50).map(compactEl).join(''));
-    }
-    const forms = pageContext.formFields;
-    if (Array.isArray(forms) && forms.length) {
-      parts.push('## Forms', forms.slice(0, 30).map(compactForm).join(''));
-    }
-  }
-  if (mode.contextTier >= 3 && pageContext.screenshotDataUrl) {
-    parts.push('', `## Screenshot`, `![page](${pageContext.screenshotDataUrl})`);
-  }
-
-  parts.push('', `## User Request`, safeText(userQuery), '');
-
-  // Intent-aware downgrade: if this is an action (JSON) mode but the query is
-  // a read-only intent ("Summarize", "What is this page?", "Explain the
-  // pricing"), answer in plain markdown instead of forcing the action
-  // envelope. The action schema + the action-oriented instruction are swapped
-  // for read-only equivalents so Zo replies as prose, not {actions:[...]}.
-  const jsonDisabled = shouldDowngradeToJsonDisabled(mode, userQuery);
-  const wantJson = mode.expectJson && !jsonDisabled;
-  if (jsonDisabled) {
-    parts.push('Answer the request directly using the page content provided.');
-    parts.push(PLAIN_RESPONSE_HINT);
-  } else {
-    parts.push(mode.instructions);
-    parts.push(wantJson ? ACTION_SCHEMA_COMPACT : PLAIN_RESPONSE_HINT);
-  }
-  return parts.join('\n');
-}
-
+// buildPrompt() + compactEl/compactForm/safeText live in ./lib/prompt.js now
+// (pure, shared with the side-panel inspector + Settings editor). The two
+// call sites below pass { effectiveTier } when the context policy has thinned
+// the turn to a lower tier than the Mode's default.
 // ---- Streaming port handler ----
 
 /** Persistent port connections from sidepanel for streaming Zo responses. */
@@ -848,7 +784,7 @@ chrome.omnibox.onInputEntered.addListener(async (text, disposition) => {
   }
 });
 async function _askZoStreamImpl(port, msg) {
-  const { pageContext, userQuery, modelName, personaId, modeId, customModes } = msg;
+  const { pageContext, userQuery, modelName, personaId, modeId, customModes, effectiveTier, modeOverrides } = msg;
   const sid = msg.sessionId;
 
   if (!config.zoAccessToken) {
@@ -857,12 +793,15 @@ async function _askZoStreamImpl(port, msg) {
   }
 
   // Resolve the Mode — single source of truth for prompt + context tier.
-  const mode = resolveMode(modeId || config.zoActiveMode || DEFAULT_MODE_ID, customModes || {});
+  const mode = resolveMode(modeId || config.zoActiveMode || DEFAULT_MODE_ID, customModes || {}, modeOverrides || {});
   // Persona is now orthogonal: the dropdown chooses it, else fall back to the
   // configured default persona id. No lite/full routing.
   const resolvedPersonaId = personaId || config.zoPersonaId || '';
 
-  const prompt = buildPrompt(mode, pageContext, userQuery);
+  // effectiveTier is resolved by the side-panel context policy (opt-in DOM +
+  // send-once) and passed on the ASK_ZO payload. When absent (legacy callers),
+  // buildPrompt falls back to the Mode's configured tier.
+  const prompt = buildPrompt(mode, pageContext, userQuery, { effectiveTier });
 
   try {
     const response = await fetch(config.zoApiUrl, {
@@ -1226,16 +1165,16 @@ function finishStream(port, sid, output, extra = {}) {
   emitStreamDiagnostic(port, sid);
 }
 
-async function askZo(pageContext, userQuery, modelName, personaId, modeId, customModes) {
+async function askZo(pageContext, userQuery, modelName, personaId, modeId, customModes, effectiveTier, modeOverrides) {
   if (!config.zoAccessToken) {
     return { error: '❌ Zo access token not configured. Open extension settings to set it up.' };
   }
 
   // Resolve the Mode — single source of truth for prompt + context tier.
-  const mode = resolveMode(modeId || config.zoActiveMode || DEFAULT_MODE_ID, customModes || {});
+  const mode = resolveMode(modeId || config.zoActiveMode || DEFAULT_MODE_ID, customModes || {}, modeOverrides || {});
   const resolvedPersonaId = personaId || config.zoPersonaId || '';
 
-  const prompt = buildPrompt(mode, pageContext, userQuery);
+  const prompt = buildPrompt(mode, pageContext, userQuery, { effectiveTier });
 
   try {
     const response = await fetch(config.zoApiUrl, {

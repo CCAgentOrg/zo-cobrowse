@@ -16,6 +16,7 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 import * as vm from "node:vm";
 import { normalizeActions } from "../../extension/lib/modes.js";
+import { safeText } from "../../extension/lib/prompt.js";
 
 import type { ReplayResult, StreamMessage } from "./schema.js";
 
@@ -80,6 +81,21 @@ function summarizeToolResult(result: any): string {
   return body.slice(0, 300);
 }
 
+// safePost — faithful reimplementation of background.js's port-post helper
+// (post a message to a streaming port, tolerating disconnects). finishStream
+// uses it to emit STREAM_* messages; replaySse's recording port stands in for
+// a real runtime port. Mirrors background.js byte-for-byte.
+function safePost(port: any, msg: any): boolean {
+  if (!port || (port as any)._dead) return false;
+  try {
+    port.postMessage(msg);
+    return true;
+  } catch {
+    (port as any)._dead = true;
+    return false;
+  }
+}
+
 interface LoadedParsers {
   extractStreamContent: (parsed: any) => string;
   safeText: (input: any) => string;
@@ -94,26 +110,25 @@ let loadedParsers: LoadedParsers | null = null;
 function loadParsers(): LoadedParsers {
   if (loadedParsers) return loadedParsers;
 
-  // Locate each function. braceEndFromBody starts brace-matching at the
-  // function BODY's `{` (not the signature), so a default-param `{}` such as
-  // `finishStream(port, sid, output, extra = {})` isn't mistaken for the body.
-  const safeStart = bgSource.indexOf("function safeText(");
-  const safeEnd = braceEndFromBody(bgSource, safeStart);
-  const spStart = bgSource.indexOf("function safePost(");
-  const spEnd = braceEndFromBody(bgSource, spStart);
-  const ecStart = bgSource.indexOf("// ---- Stream content extraction ----");
-  const ffEnd = bgSource.indexOf("\n// ---- End stream content extraction ----");
-  if (ffEnd === -1) {
-    // No end marker; extractStreamContent is just before safeText
-    const ecEnd = safeStart;
-    // Actually: find extractStreamContent function start
-  }
+  // Only finishStream is still VM-extracted from background.js (too large to
+  // re-implement like the helpers above). safeText + safePost are injected
+  // directly from their pure/reimpl forms so the extracted finishStream can
+  // call them as free variables. braceEndFromBody starts brace-matching at
+  // the function BODY's `{` (not the signature), so a default-param `{}`
+  // such as `finishStream(port, sid, output, extra = {})` isn't mistaken for it.
   const fsStart = bgSource.indexOf("function finishStream(");
   const fsEnd = braceEndFromBody(bgSource, fsStart);
 
   // Build sandbox
   const sandbox: any = {
     normalizeActions,
+    // safeText is imported from the pure lib/prompt.js (single source of
+    // truth, shared with the inspector + Settings editor) and injected here so
+    // the VM-extracted background functions can call it as a free variable.
+    safeText,
+    // safePost is re-implemented above (mirrors background.js byte-for-byte)
+    // and injected so finishStream can post STREAM_* messages.
+    safePost,
     // finishStream calls emitStreamDiagnostic (a diagnostics-only helper that
     // posts a STREAM_DIAGNOSTIC message). Stub it as a no-op so the slice can
     // run without pulling in sessionEventShapes / safePost wiring.
@@ -127,10 +142,9 @@ function loadParsers(): LoadedParsers {
   };
   vm.createContext(sandbox);
 
-  // Run safeText
-  vm.runInContext(bgSource.slice(safeStart, safeEnd), sandbox);
-  // Run safePost
-  vm.runInContext(bgSource.slice(spStart, spEnd), sandbox);
+  // safeText + safePost are injected above (no longer VM-extracted). The
+  // remaining extractions (extractStreamContent, finishStream) still run their
+  // background.js source slices in this sandbox.
 
   // For extractStreamContent: find the function start (it has a comment marker)
   // Pattern: locate "function extractStreamContent("

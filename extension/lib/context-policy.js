@@ -1,0 +1,149 @@
+// Context policy — decides, per turn, how much page context to capture + send
+// to Zo. Encodes the two efficiency rules the user asked for:
+//
+//   1. Opt-in DOM — page content (text/elements/screenshot) is NOT sent by
+//      default. Read turns send URL/title only (tier 0). The user attaches
+//      full context for one turn with the `!context` / `!dom` bang command
+//      (or a manual refresh). Co-browse action turns attach element selectors
+//      when Zo needs to click/fill.
+//
+//   2. Send once per conversation — within a conversation, full context is
+//      attached at most once per stable page; follow-ups send URL-only and
+//      rely on Zo's `conversation_id` threading. Navigation (a page-hash
+//      change) re-enables a fresh attach.
+//
+// Pure logic (no chrome.* or DOM deps) EXCEPT the two storage.session helpers
+// at the bottom, which follow config.js's precedent. decideTurn/computePageHash/
+// stripToPointer/createConversationState are fully unit-testable.
+
+import { shouldDowngradeToJsonDisabled } from './intent.js';
+
+/** chrome.storage.session key for the per-conversation context state. */
+export const CONVERSATION_STATE_KEY = 'cobrowse_ctx_state';
+
+/**
+ * A fresh conversation-context state: nothing captured yet. Stored in
+ * chrome.storage.session (survives MV3 service-worker restarts, clears on
+ * browser close) — peers with the `zoConversationId` session value.
+ */
+export function createConversationState() {
+  return {
+    conversationId: null,
+    lastCaptureHash: null,
+    lastCaptureTier: null,
+    turnsSinceFullCapture: 0,
+  };
+}
+
+/**
+ * Cheap, structure-aware page signature. Detects navigation (url/title) and
+ * structural changes (text length, element/form counts at the capture tier).
+ * Not cryptographic — a false "changed" only costs one extra capture, so a
+ * simple join is enough and keeps the policy free of a hash dependency.
+ *
+ * @param {object} pageContext
+ * @param {number} tier  the tier at which pageContext was captured
+ * @returns {string}
+ */
+export function computePageHash(pageContext, tier) {
+  const ctx = pageContext || {};
+  const sig = [ctx.url || '', ctx.title || ''];
+  if (tier >= 1) sig.push(String((ctx.visibleText || '').length));
+  if (tier >= 2) {
+    sig.push(String(Array.isArray(ctx.clickable) ? ctx.clickable.length : 0));
+    sig.push(String(Array.isArray(ctx.formFields) ? ctx.formFields.length : 0));
+  }
+  return sig.join('|');
+}
+
+/** Reduce a captured context to the tier-0 (URL-only) envelope. */
+export function stripToPointer(pageContext) {
+  const ctx = pageContext || {};
+  return {
+    url: ctx.url,
+    title: ctx.title,
+    viewport: ctx.viewport || { w: '?', h: '?' },
+  };
+}
+
+/**
+ * The per-turn context decision. Pure.
+ *
+ * Resolution (honoring opt-in DOM + send-once):
+ *   - `!context` (bang.kind === 'context') or `forceRefresh` → always attach at
+ *     the Mode's tier this turn (explicit user intent overrides dedup).
+ *   - action intent (mode.expectJson && not read-downgraded) → attach when the
+ *     page hash changed since the last attach. This covers the first turn of a
+ *     conversation (lastCaptureHash is null) and any navigation. A same-page
+ *     follow-up action turn sends URL-only, relying on Zo retaining the
+ *     selectors it already received via conversation_id.
+ *   - read intent → URL only (tier 0) unless explicitly requested.
+ *
+ * `attach === false` means effectiveTier 0; the caller captures at tier 0 and
+ * buildPrompt emits only `## Page`. `newState` is the updated conversation
+ * state (attach records the hash; non-attach just advances the turn counter).
+ *
+ * @returns {{ effectiveTier: number, reason: string, attach: boolean, newState: object }}
+ */
+export function decideTurn({ mode, query, bang, state, pageHash, forceRefresh = false }) {
+  const st = state || createConversationState();
+  const isAction = !!mode && !!mode.expectJson && !shouldDowngradeToJsonDisabled(mode, query);
+  const contextRequested = !!bang && bang.kind === 'context';
+  const explicit = contextRequested || !!forceRefresh;
+  const hasCaptured = st.lastCaptureHash !== null && st.lastCaptureHash !== undefined;
+  const pageChanged = st.lastCaptureHash !== pageHash; // true on the first turn (null !== hash)
+
+  let attach;
+  if (explicit) attach = true;
+  else if (isAction) attach = pageChanged; // first turn (pageChanged) or navigation
+  else attach = false; // reads: opt-in only
+
+  const modeTier = mode && Number.isInteger(mode.contextTier) ? mode.contextTier : 0;
+  const effectiveTier = attach ? modeTier : 0;
+
+  let reason;
+  if (forceRefresh) reason = 'Manual refresh · full context';
+  else if (contextRequested) reason = '!context · full context';
+  else if (isAction && !hasCaptured) reason = 'First turn · action context';
+  else if (isAction && pageChanged) reason = 'Page changed · re-attaching';
+  else if (isAction && !pageChanged) reason = 'Follow-up · URL only (context already sent)';
+  else reason = 'Read · URL only (type !context to attach)';
+
+  const newState = attach
+    ? {
+        ...st,
+        lastCaptureHash: pageHash,
+        lastCaptureTier: effectiveTier,
+        turnsSinceFullCapture: 0,
+      }
+    : { ...st, turnsSinceFullCapture: st.turnsSinceFullCapture + 1 };
+
+  return { effectiveTier, reason, attach, newState };
+}
+
+// ---- chrome.storage.session helpers (the only chrome.* touch in this module)
+
+/** Load conversation context state, falling back to a fresh state. */
+export function loadConversationState() {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.session.get(CONVERSATION_STATE_KEY, (result) => {
+        const s = result && result[CONVERSATION_STATE_KEY];
+        resolve(s && typeof s === 'object' ? { ...createConversationState(), ...s } : createConversationState());
+      });
+    } catch {
+      resolve(createConversationState());
+    }
+  });
+}
+
+/** Persist conversation context state to session storage. Best-effort. */
+export function saveConversationState(state) {
+  try {
+    return new Promise((resolve) => {
+      chrome.storage.session.set({ [CONVERSATION_STATE_KEY]: state }, () => resolve());
+    });
+  } catch {
+    return Promise.resolve();
+  }
+}

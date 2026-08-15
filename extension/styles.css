@@ -2169,3 +2169,47 @@ body.options-page {
 }
 .db-table tbody tr:last-child td { border-bottom: none; }
 .db-table tbody tr:hover td { background: var(--bg-hover); }
+
+/* ── Prompt inspector — live preview of what's sent to Zo ── */
+.prompt-inspector {
+  margin: 0 12px 6px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+.prompt-inspector > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  user-select: none;
+}
+.prompt-inspector > summary::-webkit-details-marker { display: none; }
+.prompt-inspector[open] > summary { border-bottom: 1px solid var(--border-soft); }
+.prompt-inspector-meta {
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--bg-input);
+}
+.prompt-inspector-meta b { color: var(--text); font-weight: 600; }
+.prompt-preview {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 220px;
+  overflow: auto;
+  font-family: var(--font-code);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

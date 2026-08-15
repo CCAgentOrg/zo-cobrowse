@@ -44,6 +44,14 @@ const ExpandedQuery = z.object({
   mode: z.string().nullable(),
 });
 
+// !context / !dom / !ctx — attach full page context for one turn (no mode switch)
+const ContextAttach = z.object({
+  handled: z.literal(true),
+  kind: z.literal("context"),
+  isContext: z.literal(true),
+  query: z.string().min(1),
+});
+
 export const BangCommandResultSchema = z.discriminatedUnion("kind", [
   Passthrough,
   InlineReply,
@@ -51,6 +59,7 @@ export const BangCommandResultSchema = z.discriminatedUnion("kind", [
   Automation,
   DuckdbQuery,
   ExpandedQuery,
+  ContextAttach,
 ]);
 
 export type BangCommandResult = z.infer<typeof BangCommandResultSchema>;
@@ -68,4 +77,7 @@ export const BANG_COMMAND_NAMES = [
   "auto",
   "query",
   "data",
+  "context",
+  "dom",
+  "ctx",
 ] as const;

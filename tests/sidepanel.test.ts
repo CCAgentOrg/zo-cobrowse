@@ -53,6 +53,43 @@ describe("sidepanel model/persona selectors", () => {
     expect(code).toContain('personaId:');
   });
 
+  it("attaches effectiveTier to every ASK_ZO payload (opt-in DOM / send-once)", () => {
+    // The context policy (lib/context-policy.js) decides effectiveTier per
+    // turn; both the streaming port post and the non-streaming fallback must
+    // carry it so buildPrompt can thin the prompt.
+    expect(code).toMatch(/import\s*\{[^}]*\bdecideTurn\b[^}]*\}\s*from\s*['"]\.\/lib\/context-policy\.js['"]/);
+    expect(code).toContain('decideTurn(');
+    expect(code).toContain('effectiveTier,');
+    // Both payload sites (stream post + fallback) include it.
+    expect((code.match(/effectiveTier,/g) || []).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("renders a live prompt inspector using the shared prompt lib", () => {
+    const html = readFileSync(resolve(import.meta.dir, "../extension/sidepanel.html"), "utf-8");
+    expect(html).toContain('id="prompt-inspector"');
+    expect(html).toContain('id="prompt-preview"');
+    // Computed client-side from lib/prompt.js (single source of truth).
+    expect(code).toMatch(/import\s*\{[^}]*\bdescribePrompt\b[^}]*\}\s*from\s*['"]\.\/lib\/prompt\.js['"]/);
+    expect(code).toContain("function renderPromptInspector");
+    expect(code).toContain("schedulePromptInspector");
+  });
+
+  it("captures at the OVERRIDDEN mode tier (Settings contextTier raises actually capture)", () => {
+    // Regression: refreshPageContext must resolve the Mode with modeOverrides —
+    // otherwise raising a built-in's contextTier in Settings never captures the
+    // higher-tier fields (effectiveTier can only thin, never widen).
+    expect(code).toMatch(
+      /const mode = resolveMode\(activeModeId, customModes, modeOverrides\);\s*\n\s*const resp = await chrome\.runtime\.sendMessage\(\{ type: 'GET_PAGE_CONTEXT'/
+    );
+  });
+
+  it("inspector previews mode-switching bangs (!summarize etc.) with the turn's real Mode", () => {
+    // Regression: the preview must honor bang.mode (tempMode) exactly like
+    // sendQuery, else !summarize previews the cobrowse prompt while the send
+    // uses the summarize Mode.
+    expect(code).toContain("bangModeId || activeModeId");
+  });
+
   it("persists selections to chrome.storage.sync", () => {
     expect(code).toContain('zoModel');
     expect(code).toContain('zoPersonaId');
