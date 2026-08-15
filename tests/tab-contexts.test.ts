@@ -284,8 +284,11 @@ describe("tab contexts — sidepanel wiring", () => {
     expect(spCode).toContain("appendMentionPill");
   });
 
-  it("resets chip toggles when the conversation changes", () => {
-    expect(spCode).toMatch(/resetTabRefs\(\)/);
+  it("resets/swaps chip toggles when the conversation changes", () => {
+    // Per-chat toggles: switching chats stashes the outgoing set and restores
+    // the incoming one (supersedes the old flat resetTabRefs).
+    expect(spCode).toMatch(/stashTabRefs\(\)/);
+    expect(spCode).toMatch(/restoreTabRefs\(\)/);
   });
 
   it("filters read_tab out of DOM action handling (defensive)", () => {

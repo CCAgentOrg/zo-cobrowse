@@ -12,6 +12,15 @@ import {
 } from './lib/context-policy.js';
 import { describePrompt } from './lib/prompt.js';
 import { assignRefs } from './lib/tab-contexts.js';
+import {
+  openChatTab,
+  closeChatTab,
+  activateChatTab,
+  pruneChatTabs,
+  tabTitleFor,
+  renameConversation,
+  searchConversations,
+} from './lib/chat-tabs.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -55,6 +64,7 @@ function safeText(v) {
 
 const STORAGE_CONVERSATIONS_KEY = 'cobrowse_convos';
 const STORAGE_ACTIVE_KEY = 'cobrowse_active_id';
+const STORAGE_TABS_KEY = 'cobrowse_open_tabs'; // open chat-tab ids (ordered)
 const STORAGE_MODES_KEY = 'cobrowse_modes';
 const STORAGE_OVERRIDES_KEY = 'cobrowse_mode_overrides'; // per-built-in sparse overrides
 const STORAGE_LEGACY_PRESETS_KEY = 'cobrowse_presets'; // migrated once, then ignored
@@ -141,6 +151,8 @@ const DEFAULT_QUICK_ACTIONS = [
 let config = { hasToken: false };
 let conversations = {};     // all conversations keyed by id
 let activeId = null;        // current conversation id
+let tabsState = { openIds: [], activeId: null }; // chat tab bar (lib/chat-tabs.js ops)
+const chatTabRefs = new Map(); // chatId → Set<tabId> — per-chat tab-context toggles
 let pendingActions = null;
 let pendingActionsReasoning = '';   // reasoning to attach to the done-answer bubble
 let currentContext = null;
@@ -178,9 +190,11 @@ const skipBtn = $('#skip-btn');
 const newChatBtn = $('#new-chat-btn');
 const historyBtn = $('#history-btn');
 const helpBtn = $('#help-btn');
+const chatTabsEl = $('#chat-tabs');
 const chatView = $('#chat-view');
 const historyViewEl = $('#history-view');
 const historyList = $('#history-list');
+const historySearch = $('#history-search');
 const backToChatBtn = $('#back-to-chat-btn');
 const modeSelect = $('#mode-select');
 const createModeBtn = $('#create-mode-btn');
@@ -221,7 +235,6 @@ async function finishInit() {
     // capture so refreshPageContext resolves the tier with overrides applied.
     await loadModes();
     await refreshPageContext();
-    contextState = await loadConversationState();
     await checkPendingQuery();
     await migrateOldFormat();
     await loadConversations();
@@ -246,6 +259,12 @@ async function finishInit() {
       if (msg.type === 'PENDING_ZO_QUERY' && msg.text) {
         input.value = msg.text;
         sendQuery();
+      }
+      // Ctrl+Shift+N shortcut: the background broadcasts NEW_CONVERSATION; the
+      // panel starts a fresh chat locally (its startNewConversation also tells
+      // the background to reset the ambient Zo thread).
+      if (msg.type === 'NEW_CONVERSATION' && msg.source === 'shortcut') {
+        startNewConversation();
       }
     });
     renderPromptInspector(); // first paint once modes + context are loaded
@@ -440,7 +459,10 @@ function bindEvents() {
 
   // Pending actions
   runAllBtn.addEventListener('click', runPendingActions);
-  skipBtn.addEventListener('click', () => { pendingActions = null; actionsBar.classList.add('hidden'); });
+  skipBtn.addEventListener('click', () => {
+    hidePendingActionsBar();
+    clearStoredPendingActions(activeId);
+  });
 
   // New conversation
   newChatBtn.addEventListener('click', startNewConversation);
@@ -448,6 +470,7 @@ function bindEvents() {
   // History toggle
   historyBtn.addEventListener('click', toggleHistoryView);
   backToChatBtn.addEventListener('click', toggleHistoryView);
+  if (historySearch) historySearch.addEventListener('input', () => renderHistoryView());
   helpBtn.addEventListener('click', () => chrome.tabs.create({ url: 'https://cashlessconsumer.zo.space/co-browse' }));
 
   // Open settings on status dot click (not double-click)
@@ -484,6 +507,7 @@ function toggleHistoryView() {
   // If switching to history, save current conversation first
   if (!isHistoryView) {
     saveCurrentConversation();
+    if (historySearch) historySearch.value = ''; // fresh list each visit
   }
   isHistoryView = !isHistoryView;
   renderView();
@@ -507,6 +531,7 @@ async function migrateOldFormat() {
     messages: oldMessages,
   };
   activeId = id;
+  tabsState = openChatTab(tabsState, id); // the migrated chat opens as its tab
 
   await saveConversations();
   await chrome.storage.local.remove(OLD_STORAGE_KEY);
@@ -517,17 +542,30 @@ function generateId() {
 }
 
 async function loadConversations() {
-  const result = await chrome.storage.local.get([STORAGE_CONVERSATIONS_KEY, STORAGE_ACTIVE_KEY]);
+  const result = await chrome.storage.local.get([STORAGE_CONVERSATIONS_KEY, STORAGE_ACTIVE_KEY, STORAGE_TABS_KEY]);
   conversations = result[STORAGE_CONVERSATIONS_KEY] || {};
   activeId = result[STORAGE_ACTIVE_KEY] || null;
+
+  // Restore the open-tab set; pre-tab-bar installs have no stored set, so the
+  // active chat opens as the single tab (upgrade default).
+  const storedOpen = Array.isArray(result[STORAGE_TABS_KEY]) ? result[STORAGE_TABS_KEY] : [];
+  tabsState = pruneChatTabs({ openIds: storedOpen, activeId }, Object.keys(conversations));
 
   // If no active conversation, create one
   if (!activeId || !conversations[activeId]) {
     createNewConversation();
   } else {
+    if (!tabsState.openIds.length) tabsState = openChatTab(tabsState, activeId);
     renderCurrentConversation();
   }
 
+  // Per-chat context-policy state (dedup must not leak across chats).
+  contextState = await loadConversationState(activeId);
+
+  renderChatTabs();
+  // Stored pending actions (chat was backgrounded when its stream finished)
+  // re-arm the Run All / Skip bar on load, not just on switch.
+  restorePendingActionsFor(activeId);
   // Update history button badge
   updateHistoryBadge();
 }
@@ -536,6 +574,7 @@ async function saveConversations() {
   await chrome.storage.local.set({
     [STORAGE_CONVERSATIONS_KEY]: conversations,
     [STORAGE_ACTIVE_KEY]: activeId,
+    [STORAGE_TABS_KEY]: tabsState.openIds,
   });
 }
 
@@ -580,20 +619,31 @@ function createNewConversation() {
     messages: [],
   };
   activeId = id;
+  tabsState = openChatTab(tabsState, id); // every chat opens as a tab
   saveConversations();
 }
 
-async function saveCurrentConversation() {
-  const conv = getActiveConversation();
-  if (conv) {
-    conv.updatedAt = Date.now();
-    // Auto-title from first user message
-    const firstUserMsg = conv.messages.find(m => m.role === 'user');
-    if (firstUserMsg && conv.title === 'New Chat') {
-      conv.title = String(firstUserMsg.text || '').substring(0, 60);
-    }
-    saveConversations();
+/**
+ * Stamp + persist one conversation (auto-title from the first user message).
+ * Targets the ACTIVE chat by default; background-stream persistence passes
+ * the streaming chat's id explicitly. Also refreshes the tab bar (title may
+ * have auto-titled).
+ */
+async function saveConversationById(id = activeId) {
+  const conv = conversations[id];
+  if (!conv) return;
+  conv.updatedAt = Date.now();
+  // Auto-title from first user message
+  const firstUserMsg = conv.messages.find(m => m.role === 'user');
+  if (firstUserMsg && conv.title === 'New Chat') {
+    conv.title = String(firstUserMsg.text || '').substring(0, 60);
   }
+  await saveConversations();
+  renderChatTabs();
+}
+
+async function saveCurrentConversation() {
+  await saveConversationById(activeId);
 }
 
 async function ensureActiveConversation() {
@@ -621,25 +671,28 @@ function renderCurrentConversation() {
 }
 
 async function startNewConversation() {
-  // Cancel any active stream
+  // The in-flight stream belongs to the OLD chat — cancel it (a new chat with
+  // a stale live bubble would be confusing).
   cancelStream();
   // Save current if it has messages
   const current = getActiveConversation();
   if (current && current.messages.length > 0) {
-    saveCurrentConversation();
+    await saveCurrentConversation();
   }
+  stashTabRefs(); // remember this chat's tab-context toggles
 
   // Reset Zo conversation on the backend
   chrome.runtime.sendMessage({ type: 'NEW_CONVERSATION' });
 
-  // Reset the per-conversation context policy state — a new chat is eligible
-  // for a fresh full-context attach (opt-in DOM / send-once).
-  contextState = createConversationState();
-  saveConversationState(contextState);
-  resetTabRefs(); // chip toggles are per-conversation
-
-  // Create new conversation
+  // Create new conversation (opens its tab)
   createNewConversation();
+
+  // Reset the per-conversation context policy state — a new chat is eligible
+  // for a fresh full-context attach (opt-in DOM / send-once), keyed per chat.
+  contextState = createConversationState();
+  await saveConversationState(activeId, contextState);
+  restoreTabRefs(); // loads the new chat's (empty) toggle set
+
   renderPromptInspector();
 
   // Clear UI
@@ -652,37 +705,74 @@ async function startNewConversation() {
     renderView();
   }
 
+  renderChatTabs();
   updateHistoryBadge();
 }
 
+/**
+ * Switch the active chat. The in-flight stream is NOT cancelled — it keeps
+ * accumulating into its own conversation (routed by streamSession.chatId) and
+ * its tab shows a pulse; switching back re-creates the live bubble.
+ */
 async function switchToConversation(id) {
-  // Cancel any active stream
-  cancelStream();
-  if (id === activeId) return;
+  if (id === activeId) {
+    if (isHistoryView) { isHistoryView = false; renderView(); }
+    return;
+  }
 
-  // Save current conversation first
-  saveCurrentConversation();
+  // Save current conversation + its UI state first
+  await saveCurrentConversation();
+  stashTabRefs();
 
-  // Switch
+  // Switch (opening the tab covers history-view switches to unopened chats)
   activeId = id;
-  resetTabRefs(); // chip toggles are per-conversation
+  tabsState = openChatTab(tabsState, id);
   await saveConversations();
 
-  // Render
-  msgsEl.innerHTML = '';
-  const conv = getActiveConversation();
-  if (conv && conv.messages.length > 0) {
-    for (const msg of conv.messages) {
-      const m = msg.role === 'assistant' ? healAssistantMessage(msg) : msg;
-      const opts = m.role === 'assistant' ? { timestamp: m.timestamp, durationMs: m.durationMs } : {};
-      const el = addMessageDOM(m.role, m.text, opts);
-      if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning);
-      if (m.role === 'assistant' && m.tools) addExploredRegion(el, m.tools);
-      if (m.role === 'user' && Array.isArray(m.tabRefs)) renderTabRefPills(el, m.tabRefs);
+  // Per-chat context-policy state + tab-ref toggles
+  contextState = await loadConversationState(activeId);
+  restoreTabRefs();
+  hidePendingActionsBar();
+  renderCurrentConversation();
+  restorePendingActionsFor(id);
+
+  // If this chat is the one generating, re-create the live bubble from the
+  // accumulated session state and restart the elapsed timer.
+  if (streamSession.active && streamSession.chatId === id) {
+    streamSession.msgEl = addMessageDOM('assistant', '', { streaming: true });
+    const body = streamSession.msgEl.querySelector('.msg-body');
+    if (body && streamSession.reasoningText) {
+      const details = document.createElement('details');
+      details.className = 'msg-stream-reasoning';
+      const summary = document.createElement('summary');
+      summary.className = 'msg-stream-reasoning-summary';
+      summary.textContent = '💭 Thought';
+      const content = document.createElement('div');
+      content.className = 'msg-stream-reasoning-content';
+      const span = document.createElement('span');
+      span.className = 'msg-thought';
+      span.textContent = streamSession.reasoningText;
+      content.appendChild(span);
+      details.appendChild(summary);
+      details.appendChild(content);
+      body.appendChild(details);
     }
-  } else {
-    addMessageDOM('system', 'Connected to Zo. Ask me about this page, or tell me what to do.');
+    if (body && streamSession.fullText && !looksLikeActionJson(streamSession.fullText)) {
+      const span = document.createElement('span');
+      span.className = 'msg-streaming-text';
+      span.textContent = streamSession.fullText;
+      body.appendChild(span);
+    }
+    startStreamTimer(streamSession.msgEl);
+  } else if (streamSession.active) {
+    // Another chat is generating — the composer stays disabled until it ends
+    // (one stream at a time); the pulsing tab dot says where.
+    input.disabled = true;
+    sendBtn.disabled = true;
   }
+
+  renderChatTabs();
+  renderPromptInspector();
 
   // If in history view, switch back to chat
   if (isHistoryView) {
@@ -692,34 +782,102 @@ async function switchToConversation(id) {
 }
 
 async function deleteConversation(id) {
+  // A generating chat can't outlive its stream — cancel first.
+  if (streamSession.active && streamSession.chatId === id) cancelStream();
   delete conversations[id];
+  chatTabRefs.delete(id);
+  tabsState = pruneChatTabs(tabsState, Object.keys(conversations));
   if (activeId === id) {
     // If deleting active, find another or create new
     const ids = Object.keys(conversations);
-    if (ids.length > 0) {
+    if (tabsState.openIds.length && tabsState.activeId) {
+      activeId = tabsState.activeId;
+    } else if (ids.length > 0) {
       activeId = ids[0];
+      tabsState = openChatTab(tabsState, activeId);
     } else {
       createNewConversation();
     }
+    contextState = await loadConversationState(activeId);
+    restoreTabRefs();
+    hidePendingActionsBar();
+    renderCurrentConversation();
+    restorePendingActionsFor(activeId);
   }
   await saveConversations();
+  renderChatTabs();
   updateHistoryBadge();
   if (isHistoryView) {
     renderHistoryView();
   }
 }
 
+// ---- Chat tab bar ----
+
+/** Render the open-chat tab strip (call after any conversation mutation). */
+function renderChatTabs() {
+  if (!chatTabsEl) return;
+  tabsState = pruneChatTabs(tabsState, Object.keys(conversations));
+  if (activeId && tabsState.openIds.includes(activeId)) {
+    tabsState = activateChatTab(tabsState, activeId);
+  }
+  chatTabsEl.replaceChildren();
+  if (tabsState.openIds.length <= 1) return; // a single tab adds noise, not value
+  const streamingId = streamSession.active ? streamSession.chatId : null;
+  for (const id of tabsState.openIds) {
+    const convo = conversations[id];
+    if (!convo) continue;
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'chat-tab' + (id === activeId ? ' chat-tab-active' : '');
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-selected', String(id === activeId));
+    tab.title = tabTitleFor(convo) + (id === streamingId ? ' — generating…' : '');
+    if (id === streamingId) {
+      const dot = document.createElement('span');
+      dot.className = 'chat-tab-stream-dot';
+      tab.appendChild(dot);
+    }
+    const label = document.createElement('span');
+    label.className = 'chat-tab-label';
+    label.textContent = tabTitleFor(convo);
+    tab.appendChild(label);
+    const close = document.createElement('span');
+    close.className = 'chat-tab-close';
+    close.textContent = '✕';
+    close.title = 'Close tab';
+    close.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeChatTabById(id);
+    });
+    tab.appendChild(close);
+    tab.addEventListener('click', () => switchToConversation(id));
+    // Middle-click closes, like a browser tab.
+    tab.addEventListener('auxclick', (e) => {
+      if (e.button === 1) {
+        e.preventDefault();
+        closeChatTabById(id);
+      }
+    });
+    chatTabsEl.appendChild(tab);
+  }
+}
+
+/** Close one chat tab (the conversation itself stays in history). */
+async function closeChatTabById(id) {
+  if (streamSession.active && streamSession.chatId === id) cancelStream();
+  const next = closeChatTab(tabsState, id);
+  if (next.activeId && next.activeId !== activeId) {
+    await switchToConversation(next.activeId);
+    return; // switchToConversation already saved + re-rendered
+  }
+  tabsState = next;
+  await saveConversations();
+  renderChatTabs();
+}
+
 function listConversationSummaries() {
-  return Object.values(conversations)
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-    .map(c => ({
-      id: c.id,
-      title: c.title,
-      createdAt: c.createdAt,
-      updatedAt: c.updatedAt,
-      messageCount: c.messages.length,
-      isActive: c.id === activeId,
-    }));
+  return searchConversations(conversations, '', { activeId });
 }
 
 function updateHistoryBadge() {
@@ -735,11 +893,12 @@ function renderHistoryView() {
   chatView.classList.add('hidden');
   historyBtn.classList.add('active');
 
-  const summaries = listConversationSummaries();
+  const query = historySearch ? historySearch.value : '';
+  const summaries = searchConversations(conversations, query, { activeId });
   historyList.innerHTML = '';
 
   if (summaries.length === 0) {
-    historyList.innerHTML = '<div class="history-empty">No past conversations yet.</div>';
+    historyList.innerHTML = `<div class="history-empty">${query ? 'No matching chats.' : 'No past conversations yet.'}</div>`;
     return;
   }
 
@@ -768,6 +927,15 @@ function renderHistoryView() {
       const timeStr = formatTime(item.updatedAt);
       metaEl.textContent = `${item.messageCount} msg · ${timeStr}`;
 
+      const renameBtn = document.createElement('button');
+      renameBtn.className = 'history-card-rename';
+      renameBtn.textContent = '✎';
+      renameBtn.title = 'Rename conversation';
+      renameBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        startCardRename(card, item);
+      });
+
       const deleteBtn = document.createElement('button');
       deleteBtn.className = 'history-card-delete';
       deleteBtn.textContent = '✕';
@@ -781,6 +949,7 @@ function renderHistoryView() {
 
       card.appendChild(titleEl);
       card.appendChild(metaEl);
+      card.appendChild(renameBtn);
       card.appendChild(deleteBtn);
 
       card.addEventListener('click', () => switchToConversation(item.id));
@@ -790,6 +959,47 @@ function renderHistoryView() {
 
     historyList.appendChild(groupEl);
   }
+}
+
+/**
+ * Inline rename: swap the card's title for an input. Enter/blur commits
+ * (via lib renameConversation — empty no-ops), Esc cancels. Re-renders the
+ * list + tab bar on commit.
+ */
+function startCardRename(card, item) {
+  const titleEl = card.querySelector('.history-card-title');
+  if (!titleEl || card.querySelector('.history-rename-input')) return;
+  const inputEl = document.createElement('input');
+  inputEl.className = 'history-rename-input';
+  inputEl.type = 'text';
+  inputEl.value = item.title;
+  inputEl.maxLength = 60;
+  inputEl.placeholder = 'Chat title';
+  inputEl.addEventListener('click', (e) => e.stopPropagation());
+  inputEl.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') commit(true);
+    else if (e.key === 'Escape') commit(false);
+  });
+  inputEl.addEventListener('blur', () => commit(true));
+
+  let settled = false;
+  function commit(save) {
+    if (settled) return;
+    settled = true;
+    if (save) {
+      const r = renameConversation(conversations, item.id, inputEl.value);
+      if (r.changed) {
+        conversations = r.convos;
+        saveConversations().then(renderChatTabs);
+      }
+    }
+    renderHistoryView();
+  }
+
+  titleEl.replaceWith(inputEl);
+  inputEl.focus();
+  inputEl.select();
 }
 
 function groupByDate(summaries) {
@@ -1324,29 +1534,72 @@ async function runPendingActions() {
 
   pendingActions = null;
   pendingActionsReasoning = '';
+  clearStoredPendingActions(activeId);
   setTimeout(() => actionsBar.classList.add('hidden'), 1200);
   actionRunning = false;
   runAllBtn.disabled = false;
 }
 
-// ---- Messages ----
-function addMessage(role, text) {
-  text = safeText(text);
-  const div = addMessageDOM(role, text);
-  // Auto-read assistant messages via TTS
-  if (role === 'assistant' && ttsAutoRead && text) {
-    speakText(text);
+/**
+ * Actions that finished streaming while their chat was backgrounded are
+ * stored on the conversation (conv.pendingActions). Switching to that chat
+ * restores the Run All / Skip bar WITHOUT auto-running — the user decides
+ * (the page may have changed since).
+ */
+function restorePendingActionsFor(id) {
+  const conv = conversations[id];
+  const stored = conv && conv.pendingActions;
+  if (!stored || !Array.isArray(stored.actions) || !stored.actions.length) return;
+  pendingActions = stored.actions;
+  pendingActionsReasoning = safeText(stored.reasoning);
+  actionsReasoning.textContent = `🧠 ${pendingActionsReasoning.substring(0, 200)}`;
+  actionsBar.classList.remove('hidden');
+}
+
+function hidePendingActionsBar() {
+  pendingActions = null;
+  pendingActionsReasoning = '';
+  actionsBar.classList.add('hidden');
+}
+
+/** Clear a chat's stored pending actions (Run All finished or Skipped). */
+function clearStoredPendingActions(id) {
+  const conv = conversations[id];
+  if (conv && conv.pendingActions) {
+    delete conv.pendingActions;
+    saveConversations();
   }
-  // Persist non-system, non-thinking messages to current conversation
+}
+
+// ---- Messages ----
+/**
+ * Append a message. Renders into the visible chat AND persists it — except
+ * when `opts.chatId` targets a non-active chat (background-stream
+ * persistence): then it only persists. Returns the DOM element (null for
+ * background writes).
+ */
+function addMessage(role, text, opts = {}) {
+  text = safeText(text);
+  const chatId = opts.chatId || activeId;
+  const isBackground = !!chatId && chatId !== activeId;
+  let div = null;
+  if (!isBackground) {
+    div = addMessageDOM(role, text);
+    // Auto-read assistant messages via TTS
+    if (role === 'assistant' && ttsAutoRead && text) {
+      speakText(text);
+    }
+  }
+  // Persist non-system, non-thinking messages to the target conversation
   if (role !== 'system' && role !== 'thinking') {
-    const conv = getActiveConversation();
+    const conv = conversations[chatId];
     if (conv) {
       conv.messages.push({ role, text, timestamp: Date.now() });
       // Trim to MAX_HISTORY per conversation
       if (conv.messages.length > MAX_HISTORY) {
         conv.messages = conv.messages.slice(-MAX_HISTORY);
       }
-      saveCurrentConversation();
+      saveConversationById(chatId);
     }
   }
   return div;
@@ -1561,10 +1814,16 @@ async function refreshOpenTabs() {
   try {
     const resp = await chrome.runtime.sendMessage({ type: 'GET_OPEN_TABS' });
     openTabs = (resp && Array.isArray(resp.tabs)) ? resp.tabs : [];
-    // Drop toggles for tabs that no longer exist.
+    // Drop toggles for tabs that no longer exist — in the active set AND in
+    // every chat's stashed set.
     const live = new Set(openTabs.map((t) => t.tabId));
     for (const id of [...tabRefsEnabled]) {
       if (!live.has(id)) tabRefsEnabled.delete(id);
+    }
+    for (const set of chatTabRefs.values()) {
+      for (const id of [...set]) {
+        if (!live.has(id)) set.delete(id);
+      }
     }
     renderTabStrip();
   } catch { /* background unavailable — keep last render */ }
@@ -1619,8 +1878,16 @@ function renderTabRefPills(userMsgEl, tabRefs) {
   }
 }
 
-function resetTabRefs() {
+/** Stash the active chat's tab-context toggles (before switching chats). */
+function stashTabRefs() {
+  if (activeId) chatTabRefs.set(activeId, new Set(tabRefsEnabled));
+}
+
+/** Load the active chat's toggles into the strip (after switching chats). */
+function restoreTabRefs() {
+  const saved = activeId ? chatTabRefs.get(activeId) : null;
   tabRefsEnabled.clear();
+  if (saved) for (const id of saved) tabRefsEnabled.add(id);
   renderTabStrip();
   renderPromptInspector();
 }
@@ -2259,7 +2526,7 @@ let streamPort = null;
 // body — a live feed. The final STREAM_DONE may render a collapsed reasoning
 // summary bubble above the body if the user wants a compact view, but the
 // full reasoning stream is always visible in chronological order.
-let streamSession = { active: false, sessionId: 0, msgEl: null, fullText: '', reasoningText: '', remainingActions: null, startTime: 0 };
+let streamSession = { active: false, sessionId: 0, chatId: null, msgEl: null, fullText: '', reasoningText: '', remainingActions: null, startTime: 0 };
 
 // Live "processing" timer: ticks the elapsed time on the in-flight assistant
 // bubble's first line until STREAM_DONE replaces it with the real footer
@@ -2318,8 +2585,10 @@ function cancelStream() {
   streamSession.reasoningText = '';
   streamSession.remainingActions = null;
   streamSession.startTime = 0;
+  streamSession.chatId = null;
   if (typeof input !== 'undefined' && input) input.disabled = false;
   if (typeof sendBtn !== 'undefined' && sendBtn) { sendBtn.disabled = !input?.value?.trim(); }
+  renderChatTabs();
 }
 
 function connectStreamingPort() {
@@ -2353,6 +2622,10 @@ function connectStreamingPort() {
 function handleStreamMessage(msg) {
   // Ignore stale messages from previous sessions
   if (msg.sessionId && msg.sessionId !== streamSession.sessionId) return;
+  // True when this stream belongs to a chat the user has switched away from —
+  // keep accumulating into streamSession, never touch the visible chat DOM.
+  const streamIsBackground = () =>
+    streamSession.active && !!streamSession.chatId && streamSession.chatId !== activeId;
   switch (msg.type) {
     case 'STREAM_REASONING': {
       // Live thinking channel (PartDeltaEvent part_delta_kind:"thinking").
@@ -2360,6 +2633,8 @@ function handleStreamMessage(msg) {
       clearThinkingTimeout();
       msgsEl.querySelectorAll('.msg-reconnecting').forEach(el => el.remove());
       if (!streamSession.active) return;
+      streamSession.reasoningText = safeText(msg.text);
+      if (streamIsBackground()) return;
       if (!streamSession.msgEl) {
         const thinking = msgsEl.querySelector('.msg-thinking');
         if (thinking) thinking.remove();
@@ -2400,6 +2675,7 @@ function handleStreamMessage(msg) {
       // card-like block in chronological order.
       clearThinkingTimeout();
       if (!streamSession.active) return;
+      if (streamIsBackground()) return;
       if (!streamSession.msgEl) {
         const thinking = msgsEl.querySelector('.msg-thinking');
         if (thinking) thinking.remove();
@@ -2469,6 +2745,11 @@ function handleStreamMessage(msg) {
       // Co-browse streams the action envelope as text deltas: the raw JSON
       // accumulates here. Never render it as prose; show a placeholder instead.
       const isActionJson = looksLikeActionJson(msg.text);
+      if (streamIsBackground()) {
+        // Background chat: accumulate only; the bubble re-creates on switch-back.
+        streamSession.fullText += safeText(msg.text);
+        break;
+      }
       if (!streamSession.msgEl) {
         const thinking = msgsEl.querySelector('.msg-thinking');
         if (thinking) thinking.remove();
@@ -2536,6 +2817,44 @@ function handleStreamMessage(msg) {
         ? '_Done — see the action timeline above._'
         : candidateText;
 
+      const doneTimestamp = Date.now();
+      const doneDuration = streamSession.startTime ? doneTimestamp - streamSession.startTime : 0;
+
+      // ---- Background chat: persist into its conversation, no DOM ----
+      if (streamSession.chatId && streamSession.chatId !== activeId) {
+        const conv = conversations[streamSession.chatId];
+        if (conv) {
+          if (msg.conversationId) conv.zoThreadId = msg.conversationId;
+          if (responseText) {
+            const reasoningVal = safeText(msg.reasoning) || safeText(streamSession.reasoningText) || undefined;
+            conv.messages.push({ role: 'assistant', text: responseText, reasoning: reasoningVal, timestamp: doneTimestamp, durationMs: doneDuration || undefined });
+            if (conv.messages.length > MAX_HISTORY) {
+              conv.messages = conv.messages.slice(-MAX_HISTORY);
+            }
+          }
+          // Actions from a backgrounded chat are never auto-run against a page
+          // the user isn't looking at — store them as pending for that chat.
+          const bgDom = (msg.actions || []).filter((a) => a.type !== 'navigate' && a.type !== 'done' && a.type !== 'read_tab');
+          if (bgDom.length) {
+            conv.pendingActions = { reasoning: safeText(msg.reasoning), actions: bgDom };
+          }
+          const bgNav = (msg.actions || []).filter((a) => a.type === 'navigate');
+          if (bgNav.length) {
+            conv.messages.push({ role: 'system', text: `📍 Navigation to ${safeText(bgNav[0].url)} deferred — re-ask from this chat.`, timestamp: Date.now() });
+          }
+          saveConversationById(streamSession.chatId);
+        }
+        renderChatTabs(); // clear the pulse
+        input.disabled = false;
+        sendBtn.disabled = false;
+        streamSession.msgEl = null;
+        streamSession.fullText = '';
+        streamSession.reasoningText = '';
+        streamSession.chatId = null;
+        break;
+      }
+      // Active chat: render + persist below.
+
       // Chronological feed: the body already contains everything streamed in order
       // (reasoning tokens → tool cards → answer tokens). At this point, replace
       // the streaming text spans with fully-rendered markdown for proper formatting
@@ -2583,9 +2902,7 @@ function handleStreamMessage(msg) {
 
       // Finalize: stop the live processing timer and render the full footer
       // (Copy / mode / model / timestamp · total-duration) on the streamed bubble.
-      const doneDuration = streamSession.startTime ? Date.now() - streamSession.startTime : 0;
       stopStreamTimer();
-      const doneTimestamp = Date.now();
       if (streamSession.msgEl) {
         const timerLine = streamSession.msgEl.querySelector('.msg-processing-timer');
         if (timerLine) timerLine.remove();
@@ -2598,18 +2915,19 @@ function handleStreamMessage(msg) {
         });
       }
 
-      // Persist to conversation
-      if (responseText) {
-        const conv = getActiveConversation();
-        if (conv) {
+      // Persist to conversation (thread id echo + assistant message)
+      const conv = getActiveConversation();
+      if (conv) {
+        if (msg.conversationId) conv.zoThreadId = msg.conversationId;
+        if (responseText) {
           const reasoningVal = safeText(msg.reasoning) || safeText(streamSession.reasoningText) || undefined;
           // Persist to conversation (chronological feed is already in the body; just save reasoning)
           conv.messages.push({ role: 'assistant', text: responseText, reasoning: reasoningVal, timestamp: doneTimestamp, durationMs: doneDuration || undefined });
-          if (conv.messages.length > 50) {
-            conv.messages = conv.messages.slice(-50);
+          if (conv.messages.length > MAX_HISTORY) {
+            conv.messages = conv.messages.slice(-MAX_HISTORY);
           }
-          saveCurrentConversation();
         }
+        saveCurrentConversation();
       }
 
       // Handle structured actions (navigate, dom, done)
@@ -2625,6 +2943,7 @@ function handleStreamMessage(msg) {
       streamSession.msgEl = null;
       streamSession.fullText = '';
       streamSession.reasoningText = '';
+      streamSession.chatId = null;
       break;
     }
     case 'STREAM_ERROR': {
@@ -2635,6 +2954,23 @@ function handleStreamMessage(msg) {
       const reconnErr = msgsEl.querySelector('.msg-reconnecting');
       if (reconnErr) reconnErr.remove();
       streamSession.active = false;
+      // Background chat: persist the error into its conversation; no DOM.
+      if (streamSession.chatId && streamSession.chatId !== activeId) {
+        const conv = conversations[streamSession.chatId];
+        if (conv) {
+          conv.messages.push({ role: 'error', text: `Response interrupted: ${safeText(msg.error)}`, timestamp: Date.now() });
+          saveConversationById(streamSession.chatId);
+        }
+        renderChatTabs(); // clear the pulse
+        input.disabled = false;
+        sendBtn.disabled = false;
+        streamSession.msgEl = null;
+        streamSession.fullText = '';
+        streamSession.reasoningText = '';
+        streamSession.startTime = 0;
+        streamSession.chatId = null;
+        break;
+      }
       const thinking = msgsEl.querySelector('.msg-thinking');
       if (thinking) thinking.remove();
       // Drop the partial assistant bubble (if any) so the processing timer line doesn't linger.
@@ -2653,6 +2989,7 @@ function handleStreamMessage(msg) {
       streamSession.fullText = '';
       streamSession.reasoningText = '';
       streamSession.startTime = 0;
+      streamSession.chatId = null;
       break;
     }
       case 'STREAM_RECONNECT_DONE': {
@@ -2662,7 +2999,8 @@ function handleStreamMessage(msg) {
       break;
     }
       case 'STREAM_RECONNECT': {
-      if (!streamSession.active) return;
+        if (!streamSession.active) return;
+        if (streamIsBackground()) return; // banner belongs to the streaming chat's view
       let reconn = msgsEl.querySelector('.msg-reconnecting');
       if (!reconn) {
         reconn = document.createElement('div');
@@ -2726,6 +3064,9 @@ sendQuery = async function() {
   sendBtn.disabled = true;
 
   await ensureActiveConversation();
+  // The active chat always has an open tab (covers sends after a storage reset).
+  tabsState = openChatTab(tabsState, activeId);
+  renderChatTabs();
   await refreshPageContext();
   if (!currentContext) {
     addMessage('error', 'Could not capture page context. Try loading a webpage first.');
@@ -2873,9 +3214,14 @@ sendQuery = async function() {
     pageHash,
   });
   contextState = turnDecision.newState;
-  saveConversationState(contextState);
+  saveConversationState(activeId, contextState);
   const effectiveTier = turnDecision.effectiveTier;
   renderPromptInspector(); // dedup state advanced — refresh the preview
+
+  // Per-chat threading: send the chat's stored Zo thread id (the background
+  // echoes the effective id back on STREAM_DONE / the fallback response).
+  const activeConv = getActiveConversation();
+  const threadId = (activeConv && activeConv.zoThreadId) || undefined;
 
   // --- Streaming path: (re)connect port if needed ---
   if (!streamPort) connectStreamingPort();
@@ -2883,6 +3229,7 @@ sendQuery = async function() {
     streamSession.sessionId++;
     const thisSessionId = streamSession.sessionId;
     streamSession.active = true;
+    streamSession.chatId = activeId; // routes background-stream persistence
     streamSession.msgEl = null;
     streamSession.fullText = '';
     streamSession.reasoningText = '';
@@ -2891,6 +3238,8 @@ sendQuery = async function() {
       streamPort.postMessage({
         sessionId: thisSessionId,
         type: 'ASK_ZO',
+        chatId: activeId,
+        conversationId: threadId,
         pageContext: currentContext,
         userQuery: effectiveQuery,
         modelName: config.selectedModel || undefined,
@@ -2915,6 +3264,8 @@ sendQuery = async function() {
   // --- Fallback: one-shot sendMessage if port unavailable ---
   const resp = await chrome.runtime.sendMessage({
     type: 'ASK_ZO',
+    chatId: activeId,
+    conversationId: threadId,
     pageContext: currentContext,
     userQuery: effectiveQuery,
     modelName: config.selectedModel || undefined,
@@ -2925,6 +3276,12 @@ sendQuery = async function() {
     modeOverrides,
     ...(tabContexts.length ? { tabContexts } : {}),
   });
+
+  // Persist the echoed thread id for this chat (before any early return).
+  if (resp && resp.conversationId && activeConv) {
+    activeConv.zoThreadId = resp.conversationId;
+    saveConversationById(activeId);
+  }
 
   const thinking = msgsEl.querySelector('.msg-thinking');
   if (thinking) thinking.remove();

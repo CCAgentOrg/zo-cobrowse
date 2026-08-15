@@ -177,12 +177,19 @@ const DEFAULTS = {
 };
 
 let config = { ...DEFAULTS };
-// Track Zo API conversation ID for multi-turn context
+// Track Zo API conversation ID for multi-turn context. This global is the
+// AMBIENT thread (context menu / omnibox callers); the sidepanel's chat tabs
+// each carry their own thread id on the ASK_ZO payload and win when present.
 let zoConversationId = null;
 // Recover conversation ID from session storage (survives MV3 SW restart but not browser close)
 chrome.storage.session.get('zoConversationId').then(s => {
   if (s.zoConversationId) zoConversationId = s.zoConversationId;
 }).catch(e => console.debug('session.get(zoConversationId):', e));
+
+/** Coerce a payload thread id to a trimmed string ('' when absent). */
+function msgThreadId(conversationId) {
+  return typeof conversationId === 'string' ? conversationId.trim() : '';
+}
 
 
 // ---- Init ----
@@ -231,7 +238,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
     case 'ASK_ZO': {
-      askZo(request.pageContext, request.userQuery, request.modelName, request.personaId, request.modeId, request.customModes, request.effectiveTier, request.modeOverrides).then(sendResponse);
+      askZo(request.pageContext, request.userQuery, request.modelName, request.personaId, request.modeId, request.customModes, request.effectiveTier, request.modeOverrides, request.conversationId).then(sendResponse);
       return true;
     }
     case 'RECREATE_CONTEXT_MENUS':
@@ -869,11 +876,14 @@ async function _askZoStreamImpl(port, msg) {
   // Tab-context read_tab loop state. Created fresh for a user turn; the
   // follow-up cycles below re-enter with _loop + _followUpInput (the
   // pre-assembled follow-up bypasses buildPrompt — it is a tool-result turn,
-  // not a user turn).
+  // not a user turn). `threadId` carries the per-chat Zo thread: initialized
+  // from the payload's stored id, then advanced at each capture point so a
+  // mid-loop rotation can't strand follow-up cycles on a stale thread.
   const loop = msg._loop || {
     tabContexts: Array.isArray(msg.tabContexts) ? msg.tabContexts.filter((t) => t && typeof t === 'object') : [],
     cyclesUsed: 0,
     budgetSent: false,
+    threadId: msgThreadId(msg.conversationId) || null,
     msg,
     mode,
   };
@@ -894,7 +904,8 @@ async function _askZoStreamImpl(port, msg) {
       body: JSON.stringify({
         input: prompt,
         model_name: (modelName || config.zoModel) || undefined,
-        conversation_id: zoConversationId || undefined,
+        // Per-chat thread id first (chat tabs); the global covers ambient callers.
+        conversation_id: (loop.threadId ?? zoConversationId) || undefined,
         stream: true,
         ...(resolvedPersonaId ? { persona_id: resolvedPersonaId } : {}),
       }),
@@ -916,7 +927,7 @@ async function _askZoStreamImpl(port, msg) {
     if (contentType.includes('application/json')) {
       try {
         const data = await response.json();
-        if (data.conversation_id) { zoConversationId = data.conversation_id; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
+        if (data.conversation_id) { zoConversationId = data.conversation_id; loop.threadId = data.conversation_id; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
         await finishStreamWithTabLoop(port, sid, data.output || '', {}, loop);
       } catch (e) {
         safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: `Non-streaming parse error: ${e.message}` });
@@ -926,7 +937,7 @@ async function _askZoStreamImpl(port, msg) {
 
     // Capture conversation_id from response headers
     const convHeaderId = response.headers.get('x-conversation-id');
-    if (convHeaderId) { zoConversationId = convHeaderId; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
+    if (convHeaderId) { zoConversationId = convHeaderId; loop.threadId = convHeaderId; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -1208,6 +1219,9 @@ function finishStream(port, sid, output, extra = {}) {
     reasoning,
     actions,
     fullText,
+    // The effective Zo thread id for this stream (per-chat when the sidepanel
+    // sent one) — echoed back so the sidepanel persists it on the chat.
+    conversationId: extra.conversationId,
   });
   // Stream-shape discovery: surface which events/fields Zo actually emitted.
   emitStreamDiagnostic(port, sid);
@@ -1227,9 +1241,11 @@ async function finishStreamWithTabLoop(port, sid, output, extra, loop) {
     finishStream(port, sid, output, extra);
     return;
   }
+  // Every finish from here on belongs to this stream's Zo thread — echo it.
+  const withThread = { ...extra, conversationId: loop.threadId ?? undefined };
   const reqs = extractReadTabRequests(parseZoOutput(output).actions);
   if (!reqs.length) {
-    finishStream(port, sid, output, extra);
+    finishStream(port, sid, output, withThread);
     return;
   }
 
@@ -1263,7 +1279,10 @@ async function finishStreamWithTabLoop(port, sid, output, extra, loop) {
   const capture = await getActiveTabContext(tabCtx.tabId, tier, null, { skipDebugger: !tabCtx.isActive });
   const good = capture && !capture.error ? capture : null;
   const pageHash = good ? computePageHash(good, tier >= 1 ? tier : 1) : `closed-${tabCtx.tabId}`;
-  const state = await loadConversationState();
+  // Send-once state is per chat (loop.msg.chatId) — tabsSent dedup must not
+  // leak across the sidepanel's chat tabs.
+  const chatId = loop.msg?.chatId;
+  const state = await loadConversationState(chatId);
   const alreadySent = isTabSentAt(state, tabCtx.tabId, pageHash);
   const fu = buildTabFollowUp(
     tabCtx,
@@ -1271,7 +1290,7 @@ async function finishStreamWithTabLoop(port, sid, output, extra, loop) {
     alreadySent ? { reason: 'duplicate' } : { textBudget: loop.mode?.textBudget }
   );
   if (!alreadySent && good) {
-    await saveConversationState(noteTabSent(state, tabCtx.tabId, pageHash));
+    await saveConversationState(chatId, noteTabSent(state, tabCtx.tabId, pageHash));
   }
   emitTabReadTrace(port, sid, req.ref, tabCtx, fu);
   await _askZoStreamImpl(port, { ...loop.msg, sessionId: sid, _followUpInput: fu.input, _loop: loop });
@@ -1298,7 +1317,7 @@ function emitTabReadTrace(port, sid, ref, tabCtx, fu) {
   });
 }
 
-async function askZo(pageContext, userQuery, modelName, personaId, modeId, customModes, effectiveTier, modeOverrides) {
+async function askZo(pageContext, userQuery, modelName, personaId, modeId, customModes, effectiveTier, modeOverrides, conversationId) {
   if (!config.zoAccessToken) {
     return { error: '❌ Zo access token not configured. Open extension settings to set it up.' };
   }
@@ -1308,6 +1327,9 @@ async function askZo(pageContext, userQuery, modelName, personaId, modeId, custo
   const resolvedPersonaId = personaId || config.zoPersonaId || '';
 
   const prompt = buildPrompt(mode, pageContext, userQuery, { effectiveTier });
+  // Per-chat threading: the sidepanel sends the chat's stored thread id; the
+  // global stays as the fallback for ambient callers (context menu, omnibox).
+  const threadId = msgThreadId(conversationId);
 
   try {
     const response = await fetch(config.zoApiUrl, {
@@ -1320,7 +1342,7 @@ async function askZo(pageContext, userQuery, modelName, personaId, modeId, custo
       body: JSON.stringify({
         input: prompt,
         model_name: (modelName || config.zoModel) || undefined,
-        conversation_id: zoConversationId || undefined,
+        conversation_id: threadId || undefined,
         ...(resolvedPersonaId ? { persona_id: resolvedPersonaId } : {}),
       }),
     });
@@ -1333,8 +1355,10 @@ async function askZo(pageContext, userQuery, modelName, personaId, modeId, custo
     }
 
     const data = await response.json();
-    if (data.conversation_id) { zoConversationId = data.conversation_id; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
-    return { success: true, output: data.output };
+    // Echo the effective thread id back so the sidepanel can persist it per chat.
+    let effectiveId = threadId;
+    if (data.conversation_id) { zoConversationId = data.conversation_id; effectiveId = data.conversation_id; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
+    return { success: true, output: data.output, conversationId: effectiveId };
   } catch (err) {
     return { error: `Connection failed: ${err.message}` };
   }

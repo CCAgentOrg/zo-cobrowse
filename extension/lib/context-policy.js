@@ -18,7 +18,7 @@
 
 import { shouldDowngradeToJsonDisabled } from './intent.js';
 
-/** chrome.storage.session key for the per-conversation context state. */
+/** chrome.storage.session key prefix for the per-chat context state. */
 export const CONVERSATION_STATE_KEY = 'cobrowse_ctx_state';
 
 /**
@@ -125,26 +125,50 @@ export function decideTurn({ mode, query, bang, state, pageHash, forceRefresh = 
 }
 
 // ---- chrome.storage.session helpers (the only chrome.* touch in this module)
+//
+// State is keyed PER CHAT (chat tabs are isolated threads — dedup state must
+// not leak across conversations): `cobrowse_ctx_state:<chatId>`. Callers
+// without a chatId (legacy/ambient) use the bare legacy key.
+
+/** The session-storage key for a given chat id (no id → legacy global key). */
+export function stateKeyFor(chatId) {
+  const id = chatId == null ? '' : String(chatId).trim();
+  return id ? `${CONVERSATION_STATE_KEY}:${id}` : CONVERSATION_STATE_KEY;
+}
 
 /** Load conversation context state, falling back to a fresh state. */
-export function loadConversationState() {
-  return new Promise((resolve) => {
-    try {
-      chrome.storage.session.get(CONVERSATION_STATE_KEY, (result) => {
-        const s = result && result[CONVERSATION_STATE_KEY];
-        resolve(s && typeof s === 'object' ? { ...createConversationState(), ...s } : createConversationState());
+export function loadConversationState(chatId) {
+  const key = stateKeyFor(chatId);
+  const fresh = () => {
+    const s = createConversationState();
+    if (chatId) s.conversationId = chatId;
+    return s;
+  };
+  // Guard BEFORE building the promise — a throw inside a Promise executor
+  // rejects that promise; it never reaches the surrounding try/catch.
+  if (typeof chrome === 'undefined' || !chrome?.storage?.session) return Promise.resolve(fresh());
+  try {
+    return new Promise((resolve) => {
+      chrome.storage.session.get(key, (result) => {
+        const s = result && result[key];
+        const merged = s && typeof s === 'object' ? { ...fresh(), ...s } : fresh();
+        if (chatId) merged.conversationId = chatId;
+        resolve(merged);
       });
-    } catch {
-      resolve(createConversationState());
-    }
-  });
+    });
+  } catch {
+    return Promise.resolve(fresh());
+  }
 }
 
 /** Persist conversation context state to session storage. Best-effort. */
-export function saveConversationState(state) {
+export function saveConversationState(chatId, state) {
+  const key = stateKeyFor(chatId);
+  const st = chatId ? { ...(state || createConversationState()), conversationId: chatId } : (state || createConversationState());
+  if (typeof chrome === 'undefined' || !chrome?.storage?.session) return Promise.resolve();
   try {
     return new Promise((resolve) => {
-      chrome.storage.session.set({ [CONVERSATION_STATE_KEY]: state }, () => resolve());
+      chrome.storage.session.set({ [key]: st }, () => resolve());
     });
   } catch {
     return Promise.resolve();
