@@ -172,6 +172,52 @@ describe("sidepanel history view", () => {
     expect(code).toContain("'Yesterday'");
   });
 });
+
+describe("sidepanel chat tabs", () => {
+  it("has the chat tab bar element in HTML", () => {
+    const htmlPath = resolve(import.meta.dir, "../extension/sidepanel.html");
+    const html = readFileSync(htmlPath, "utf-8");
+    expect(html).toContain('id="chat-tabs"');
+    expect(html).toContain('role="tablist"');
+  });
+
+  it("persists the open-tab set alongside the conversation map", () => {
+    expect(code).toContain("STORAGE_TABS_KEY");
+    expect(code).toMatch(/\[STORAGE_TABS_KEY\]: tabsState\.openIds/);
+  });
+
+  it("opens a tab for every new/migrated conversation", () => {
+    expect(code).toMatch(/tabsState = openChatTab\(tabsState, id\)/);
+  });
+
+  it("keeps context-policy state per chat (load + save keyed by activeId)", () => {
+    expect(code).toMatch(/loadConversationState\(activeId\)/);
+    expect(code).toMatch(/saveConversationState\(activeId, contextState\)/);
+  });
+
+  it("stream survives tab switches and is routed by chat id", () => {
+    expect(code).toMatch(/streamSession\.chatId = activeId/);
+    expect(code).toMatch(/streamSession\.active && streamSession\.chatId === id/);
+    expect(code).toMatch(/streamIsBackground/);
+  });
+
+  it("background-chat actions are stored, not auto-run", () => {
+    expect(code).toMatch(/conv\.pendingActions = \{ reasoning: /);
+    expect(code).toContain("restorePendingActionsFor");
+    expect(code).toContain("clearStoredPendingActions");
+  });
+
+  it("history view: search input wired + inline rename", () => {
+    expect(code).toMatch(/historySearch\.value/);
+    expect(code).toContain("startCardRename");
+    expect(code).toContain("history-rename-input");
+    expect(code).toMatch(/renameConversation\(conversations, item\.id/);
+  });
+
+  it("delete prunes the open-tab set and re-renders", () => {
+    expect(code).toMatch(/pruneChatTabs\(tabsState, Object\.keys\(conversations\)\)/);
+  });
+});
 describe("sidepanel Mode system", () => {
   it("has a Mode select element in HTML", () => {
     const htmlPath = resolve(import.meta.dir, "../extension/sidepanel.html");

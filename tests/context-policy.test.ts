@@ -5,6 +5,9 @@ import {
   stripToPointer,
   decideTurn,
   CONVERSATION_STATE_KEY,
+  stateKeyFor,
+  loadConversationState,
+  saveConversationState,
 } from "../extension/lib/context-policy.js";
 import { BUILTIN_MODES, TIER } from "../extension/lib/modes.js";
 import { ConversationStateSchema, TurnDecisionSchema } from "./schemas/context-policy.js";
@@ -194,5 +197,74 @@ describe("context-policy module constants", () => {
   it("exposes a stable session-storage key", () => {
     expect(typeof CONVERSATION_STATE_KEY).toBe("string");
     expect(CONVERSATION_STATE_KEY.length).toBeGreaterThan(0);
+  });
+});
+
+// ---- per-chat keyed storage (chat tabs isolation) ----
+
+function stubSessionStore() {
+  const store = new Map<string, unknown>();
+  (globalThis as Record<string, unknown>).chrome = {
+    storage: {
+      session: {
+        get: (key: string, cb: (r: Record<string, unknown>) => void) => cb(store.has(key) ? { [key]: store.get(key) } : {}),
+        set: (obj: Record<string, unknown>, cb: () => void) => {
+          for (const [k, v] of Object.entries(obj)) store.set(k, v);
+          cb();
+        },
+      },
+    },
+  };
+  return store;
+}
+
+describe("stateKeyFor", () => {
+  it("keys per chat and falls back to the legacy global key", () => {
+    expect(stateKeyFor("conv_1")).toBe(`${CONVERSATION_STATE_KEY}:conv_1`);
+    expect(stateKeyFor(null)).toBe(CONVERSATION_STATE_KEY);
+    expect(stateKeyFor(undefined)).toBe(CONVERSATION_STATE_KEY);
+    expect(stateKeyFor("  ")).toBe(CONVERSATION_STATE_KEY);
+  });
+});
+
+describe("loadConversationState / saveConversationState (per chat)", () => {
+  it("stores each chat's state under its own key — no cross-chat leak", async () => {
+    const store = stubSessionStore();
+    const s1 = { ...createConversationState(), lastCaptureHash: "hash-a" };
+    const s2 = { ...createConversationState(), lastCaptureHash: "hash-b" };
+    await saveConversationState("chat1", s1);
+    await saveConversationState("chat2", s2);
+    expect(store.has(`${CONVERSATION_STATE_KEY}:chat1`)).toBe(true);
+    expect(store.has(`${CONVERSATION_STATE_KEY}:chat2`)).toBe(true);
+
+    const loaded1 = await loadConversationState("chat1");
+    const loaded2 = await loadConversationState("chat2");
+    expect(loaded1.lastCaptureHash).toBe("hash-a");
+    expect(loaded2.lastCaptureHash).toBe("hash-b");
+    expectValidState(loaded1);
+  });
+
+  it("stamps the reserved conversationId field with the chat id", async () => {
+    stubSessionStore();
+    await saveConversationState("chat9", createConversationState());
+    const loaded = await loadConversationState("chat9");
+    expect(loaded.conversationId).toBe("chat9");
+    expectValidState(loaded);
+  });
+
+  it("returns a fresh state for a chat with nothing stored (and for legacy no-chat callers)", async () => {
+    stubSessionStore();
+    const fresh = await loadConversationState("never-seen");
+    expect(fresh.lastCaptureHash).toBeNull();
+    expect(fresh.conversationId).toBe("never-seen");
+    const legacy = await loadConversationState();
+    expect(legacy.conversationId).toBeNull();
+  });
+
+  it("survives a missing chrome runtime without throwing", async () => {
+    (globalThis as Record<string, unknown>).chrome = undefined;
+    const fresh = await loadConversationState("chat1");
+    expect(fresh.lastCaptureHash).toBeNull();
+    await expect(saveConversationState("chat1", createConversationState())).resolves.toBeUndefined();
   });
 });
