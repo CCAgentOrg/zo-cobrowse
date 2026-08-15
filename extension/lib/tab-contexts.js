@@ -31,6 +31,40 @@ export function hostOf(url) {
   }
 }
 
+/** Blank-page hosts by scheme: new tabs / about:blank (cold-start family). */
+const BLANK_HOSTS = {
+  'about:': new Set(['blank', 'newtab']),
+  'chrome:': new Set(['newtab', 'new-tab-page']),
+};
+
+/**
+ * True for URLs that carry no page content: the empty/missing url and the
+ * new-tab / about:blank family (matched on scheme+host, so case, trailing
+ * slashes, and queries don't matter). Cold-start turns skip page context
+ * entirely for these — see
+ * docs/superpowers/specs/2026-08-15-cold-start-open-all-design.md
+ */
+export function isBlankPage(url) {
+  const u = typeof url === 'string' ? url.trim() : '';
+  if (!u) return true;
+  try {
+    const parsed = new URL(u);
+    const hosts = BLANK_HOSTS[parsed.protocol];
+    if (!hosts) return false;
+    // about: URLs are opaque-path (no hostname) — `about:blank` lives in the
+    // pathname; chrome:// hosts parse normally.
+    const host = (parsed.hostname || parsed.pathname.replace(/^\/+|\/+$/g, '')).toLowerCase();
+    return hosts.has(host);
+  } catch {
+    return false; // unparseable non-empty → treat as a page, not a new tab
+  }
+}
+
+/** True for URLs page capture works on (http/https). The chip-strip filter. */
+export function isCapturableUrl(url) {
+  return typeof url === 'string' && /^https?:/i.test(url);
+}
+
 /** ~18k chars / 840 chars — compact text-size hint for manifest lines. */
 export function formatChars(n) {
   if (!Number.isFinite(n) || n <= 0) return '0 chars';
@@ -114,6 +148,12 @@ export function buildTabFollowUp(refData, capture, opts) {
       kind: 'budget',
     };
   }
+  if (o.reason === 'blank') {
+    return {
+      input: `${head}\n(that tab is on a blank/new-tab page — nothing to read)`,
+      kind: 'blank',
+    };
+  }
   if (o.reason === 'duplicate') {
     return {
       input: `${head}\n(content already provided above — continue with what you have)`,
@@ -176,16 +216,18 @@ export function isTabSentAt(state, tabId, pageHash) {
  *
  * @param {Array<object>} tabContexts  this turn's referenced tabs (strip order)
  * @param {object|null} activeTabCtx  the active tab's TabContext (or null when
- *   it couldn't be captured — chrome:// pages, missing tabId)
+ *   it couldn't be captured — chrome:// pages, missing tabId). A blank/new-tab
+ *   active tab is NEVER auto-referenced (cold start carries no page pointer).
  * @returns {Array<object>}
  */
 export function ensureActiveTabRef(tabContexts, activeTabCtx) {
   const hasActive = activeTabCtx && typeof activeTabCtx === 'object' && activeTabCtx.tabId != null;
+  const blankActive = hasActive && isBlankPage(activeTabCtx.url);
   if (!Array.isArray(tabContexts)) {
-    return hasActive ? [{ ...activeTabCtx, isActive: true }] : [];
+    return hasActive && !blankActive ? [{ ...activeTabCtx, isActive: true }] : [];
   }
   // No-op paths return the input array unchanged (reference-stable).
-  if (!hasActive) return tabContexts;
+  if (!hasActive || blankActive) return tabContexts;
   if (tabContexts.some((t) => t && typeof t === 'object' && t.tabId === activeTabCtx.tabId)) return tabContexts; // user already referenced it — keep their ref order
   return [{ ...activeTabCtx, isActive: true }, ...tabContexts];
 }
