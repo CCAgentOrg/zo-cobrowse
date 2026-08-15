@@ -6,6 +6,8 @@ import { z } from "zod";
 
 export const MESSAGE_TYPES = [
   "GET_PAGE_CONTEXT",
+  "GET_OPEN_TABS",
+  "GET_TAB_CONTEXTS",
   "ASK_ZO",
   "TEST_CONNECTION",
   "GET_CONFIG",

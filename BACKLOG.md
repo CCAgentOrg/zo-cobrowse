@@ -47,5 +47,5 @@
 | Tier 1 | #20 Tab Compare / Side-by-Side | P1 — depends on #10 |
 | Tier 2 | #21 Page Context Export (PDF/MD) | P2 | |
 | Tier 2 | #14 Page Monitoring (basic) | P2 | |
-| Parity | #10 Multi-Tab Context | P3 | |
+| Parity | #10 Multi-Tab Context | P3 — context half DONE (`feature/tab-contexts`): tab references (manifest + excerpt + `read_tab` on-demand, chip strip + `@` mention); cross-tab actions + tab management remain | Spec: docs/superpowers/specs/2026-08-14-tab-contexts-design.md |
 | Parity | Image/file upload, #23 Workflow Recording, Download files, Risk dialogs, #11 Web Store Listing | P3–P4 | |

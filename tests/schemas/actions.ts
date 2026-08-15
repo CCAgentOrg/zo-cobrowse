@@ -43,6 +43,14 @@ export const DoneAction = z.object({
   response: z.string(),
 });
 
+// Context-only action: Zo requests the full content of a referenced tab
+// (manifest refs T1…Tn). Intercepted by the background for the follow-up
+// loop — never reaches executeDomAction.
+export const ReadTabAction = z.object({
+  type: z.literal("read_tab"),
+  ref: z.string().min(1),
+});
+
 export const Action = z.discriminatedUnion("type", [
   NavigateAction,
   ClickAction,
@@ -51,6 +59,7 @@ export const Action = z.discriminatedUnion("type", [
   ScrollAction,
   WaitAction,
   DoneAction,
+  ReadTabAction,
 ]);
 
 export const ActionArray = z.array(Action);
@@ -66,4 +75,5 @@ export const ACTION_TYPES = [
   "scroll",
   "wait",
   "done",
+  "read_tab",
 ] as const;

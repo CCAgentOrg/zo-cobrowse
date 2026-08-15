@@ -94,6 +94,17 @@
         <pre class="prompt-preview" id="prompt-preview"></pre>
       </details>
 
+      <!-- Tab contexts: reference open tabs as VSCode-style context (chips +
+           @ autocomplete). Toggled tabs ride along as a compact manifest +
+           excerpt; Zo can pull full content via read_tab. -->
+      <div id="tab-contexts" class="tab-contexts hidden">
+        <button id="tab-strip-collapse" class="tab-strip-collapse" type="button" title="Show/hide open tabs">
+          📎 Tabs <span id="tab-strip-count"></span> <span class="tab-strip-caret">▾</span>
+        </button>
+        <div id="tab-strip" class="tab-strip" role="listbox" aria-label="Open tabs — click to reference as context"></div>
+      </div>
+      <div id="tab-autocomplete" class="tab-autocomplete hidden"></div>
+
       <!-- Input area -->
       <div class="input-area">
         <button id="mic-btn" class="btn btn-ghost btn-icon mic-btn" title="Voice input">🎤</button>

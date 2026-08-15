@@ -9,6 +9,7 @@ import { z } from "zod";
 export const SECTION_IDS = [
   "system",
   "page",
+  "tabs",
   "content",
   "elements",
   "forms",

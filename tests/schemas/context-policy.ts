@@ -9,6 +9,9 @@ export const ConversationStateSchema = z.object({
   lastCaptureHash: z.union([z.string(), z.null()]),
   lastCaptureTier: z.union([z.number().int().min(0).max(3), z.null()]),
   turnsSinceFullCapture: z.number().int().min(0),
+  // Tab contexts (send-once per tab): { [tabId]: pageHash }. Optional so
+  // legacy persisted states still validate.
+  tabsSent: z.record(z.string(), z.string()).optional(),
 }).passthrough();
 export type ConversationState = z.infer<typeof ConversationStateSchema>;
 

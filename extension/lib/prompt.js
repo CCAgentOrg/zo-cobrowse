@@ -16,6 +16,7 @@
 
 import { ACTION_SCHEMA_COMPACT, PLAIN_RESPONSE_HINT } from './modes.js';
 import { shouldDowngradeToJsonDisabled, detectIntent } from './intent.js';
+import { buildTabManifest } from './tab-contexts.js';
 
 /**
  * Section ids used to tag each assembled part. Stable ids so the inspector
@@ -24,6 +25,7 @@ import { shouldDowngradeToJsonDisabled, detectIntent } from './intent.js';
 export const SECTION_IDS = Object.freeze([
   'system',
   'page',
+  'tabs',
   'content',
   'elements',
   'forms',
@@ -36,6 +38,7 @@ export const SECTION_IDS = Object.freeze([
 export const SECTION_LABELS = Object.freeze({
   system: 'System Prompt',
   page: 'Page',
+  tabs: 'Referenced Tabs',
   content: 'Page Content',
   elements: 'Elements',
   forms: 'Forms',
@@ -113,6 +116,18 @@ function _compose(mode, pageContext, userQuery, opts) {
   push('page', `- URL: ${safeText(ctx.url)}`);
   push('page', `- Title: ${safeText(ctx.title)}`);
   push('page', `- Viewport: ${ctx.viewport?.w || '?'}x${ctx.viewport?.h || '?'}`);
+
+  // Referenced tabs (tab contexts). Manifest + excerpt only — full content is
+  // pulled on demand via read_tab. When this turn attaches the active tab
+  // (tier >= 1) its manifest line dedups ("attached above") since the content
+  // already rides in ## Page Content.
+  const tabs = Array.isArray(opts && opts.tabContexts) ? opts.tabContexts.filter((t) => t && typeof t === 'object') : [];
+  if (tabs.length) {
+    const { rendered } = buildTabManifest(tabs, { activeTabAttached: tier >= 1 });
+    push('sep', '');
+    push('tabs', '## Referenced Tabs');
+    for (const line of rendered.split('\n')) push('tabs', line);
+  }
 
   if (tier >= 1) {
     const text = safeText(ctx.visibleText || '—empty—').substring(0, mode.textBudget);
@@ -222,10 +237,12 @@ export function describePrompt(mode, pageContext, userQuery, opts) {
   const sections = _groupSections(parts);
 
   // Richer per-section meta where it's cheap to compute.
+  const tabsCount = Array.isArray(opts && opts.tabContexts) ? opts.tabContexts.filter((t) => t && typeof t === 'object').length : 0;
   for (const s of sections) {
     if (s.id === 'elements') s.meta = `${(pageContext?.clickable || []).length} elements`;
     else if (s.id === 'forms') s.meta = `${(pageContext?.formFields || []).length} fields`;
     else if (s.id === 'content') s.meta = `${s.text.length} chars`;
+    else if (s.id === 'tabs') s.meta = `${tabsCount} tab${tabsCount === 1 ? '' : 's'}`;
   }
 
   // The tail section's label depends on the response-format decision.

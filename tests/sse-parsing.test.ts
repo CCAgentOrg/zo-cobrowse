@@ -3,6 +3,7 @@ import { readFileSync } from "fs";
 import { resolve } from "path";
 import * as vm from "node:vm";
 import { normalizeActions } from "../extension/lib/modes.js";
+import { parseZoOutput, stripCodeFence } from "../extension/lib/parse-output.js";
 import { replaySse } from "./test-prompts/replay.js";
 
 /**
@@ -315,9 +316,14 @@ describe("finishStream plain-text path (ticket #29)", () => {
   // Reuse the real finishStream by extracting it too is heavy; instead assert
   // the source-level fix: non-JSON output is surfaced as plainText, and the
   // bare "Done." fallback is removed from sidepanel.js.
-  it("background.js finishStream has a plainText path for non-JSON output", () => {
-    expect(bgSource).toMatch(/let plainText/);
-    expect(bgSource).toMatch(/plainText = normalizedOutput/);
+  it("the parse path has a plainText branch for non-JSON output (lib/parse-output.js)", () => {
+    const po = readFileSync(
+      resolve(import.meta.dir, "../extension/lib/parse-output.js"),
+      "utf-8",
+    );
+    expect(po).toMatch(/let plainText/);
+    expect(po).toMatch(/plainText = normalizedOutput/);
+    // finishStream (background.js) still resolves plainText into fullText.
     expect(bgSource).toMatch(/safeDoneResponse \|\| plainText/);
   });
 
@@ -363,14 +369,11 @@ describe("finishStream preserves reasoning into STREAM_DONE", () => {
       safePost: (port: any, msg: any) => { port.postMessage(msg); },
       // finishStream calls normalizeActions (imported from lib/modes.js).
       normalizeActions,
-      // finishStream calls stripCodeFence (to unwrap ```json fences around cobrowse
-      // action envelopes). Provide a faithful inline stub.
-      stripCodeFence: (str: any) => {
-        if (typeof str !== "string") return str;
-        const trimmed = str.trim();
-        const m = trimmed.match(/^```[a-zA-Z0-9]*\s*\n([\s\S]*?)\n```\s*$/);
-        return m ? m[1] : str;
-      },
+      // finishStream's parse half (parseZoOutput, incl. stripCodeFence) now
+      // lives in lib/parse-output.js — injected so the VM slice calls the
+      // exact production parse, same pattern as normalizeActions above.
+      parseZoOutput,
+      stripCodeFence,
       // finishStream ends by emitting a stream-shape diagnostic; a no-op here
       // (the real one lives in background.js and just console.debug + posts a
       // STREAM_DIAGNOSTIC message we don't need in these unit tests).
@@ -426,12 +429,9 @@ describe("finishStream preserves reasoning into STREAM_DONE", () => {
       // (no-op) helper + module var so the extracted function runs.
       sessionEventShapes: null,
       emitStreamDiagnostic: () => {},
-      stripCodeFence: (str: any) => {
-        if (typeof str !== "string") return str;
-        const trimmed = str.trim();
-        const m = trimmed.match(/^```[a-zA-Z0-9]*\s*\n([\s\S]*?)\n```\s*$/);
-        return m ? m[1] : str;
-      },
+      // Parse half is canonical in lib/parse-output.js — inject the real one.
+      parseZoOutput,
+      stripCodeFence,
     };
     vm.createContext(sandbox);
     vm.runInContext(

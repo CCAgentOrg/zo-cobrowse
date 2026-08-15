@@ -246,7 +246,7 @@ describe("prompt helpers", () => {
   });
 
   it("SECTION_LABELS covers every section id describePrompt can emit", () => {
-    const ids = new Set(["system", "page", "content", "elements", "forms", "screenshot", "userRequest", "tail"]);
+    const ids = new Set(["system", "page", "tabs", "content", "elements", "forms", "screenshot", "userRequest", "tail"]);
     for (const id of ids) expect(SECTION_LABELS[id]).toBeTruthy();
   });
 
@@ -255,5 +255,97 @@ describe("prompt helpers", () => {
     const p = buildPrompt(BUILTIN_MODES.ask, {}, "q");
     expect(p).toContain("- Viewport: ?x?");
     expect(p).toContain("## Page Content"); // tier 1 → '—empty—' placeholder
+  });
+});
+
+// ---- tab contexts (referenced tabs as manifest + excerpt) ---------------------
+
+function makeTabCtx(overrides: Partial<{
+  tabId: number; ref: string; title: string; url: string; host: string;
+  textLength: number; elementCount: number; excerpt: string; isActive: boolean; available: boolean;
+}> = {}) {
+  return {
+    tabId: 7,
+    ref: "T1",
+    title: "Pricing",
+    url: "https://acme.com/pricing",
+    host: "acme.com",
+    textLength: 4200,
+    elementCount: 33,
+    excerpt: "Plans start free.",
+    isActive: false,
+    available: true,
+    ...overrides,
+  };
+}
+
+describe("buildPrompt — tab contexts", () => {
+  it("omits the Referenced Tabs section entirely when no tabs are referenced (byte-parity preserved)", () => {
+    const p = buildPrompt(BUILTIN_MODES.ask, makeCtx(), "q");
+    expect(p).not.toContain("## Referenced Tabs");
+  });
+
+  it("emits the section between Page and Page Content with manifest line + excerpt", () => {
+    const p = buildPrompt(BUILTIN_MODES.ask, makeCtx(), "q", {
+      tabContexts: [makeTabCtx()],
+    });
+    const pageAt = p.indexOf("## Page");
+    const tabsAt = p.indexOf("## Referenced Tabs");
+    const contentAt = p.indexOf("## Page Content");
+    expect(tabsAt).toBeGreaterThan(pageAt);
+    expect(tabsAt).toBeLessThan(contentAt);
+    expect(p).toContain('- [T1] "Pricing" — acme.com — ~4k chars text, 33 links — not attached');
+    expect(p).toContain("> Excerpt: Plans start free.");
+  });
+
+  it("dedups the active tab when the policy attached it this turn (tier ≥ 1)", () => {
+    const p = buildPrompt(BUILTIN_MODES.ask, makeCtx(), "q", {
+      tabContexts: [makeTabCtx({ isActive: true })],
+    });
+    expect(p).toContain("(this tab, attached above)");
+    expect(p).not.toContain("> Excerpt:");
+  });
+
+  it("keeps the active tab's excerpt at tier 0 (not attached)", () => {
+    const p = buildPrompt(BUILTIN_MODES.cobrowse, makeCtx(), "go", {
+      effectiveTier: TIER.POINTER,
+      tabContexts: [makeTabCtx({ isActive: true })],
+    });
+    expect(p).toContain("> Excerpt: Plans start free.");
+    expect(p).not.toContain("(this tab, attached above)");
+  });
+
+  it("degrades unavailable tabs to URL-only manifest lines", () => {
+    const p = buildPrompt(BUILTIN_MODES.ask, makeCtx(), "q", {
+      tabContexts: [makeTabCtx({ available: false, excerpt: "", textLength: 0, elementCount: 0 })],
+    });
+    expect(p).toContain("unavailable, URL only");
+    expect(p).not.toContain("> Excerpt:");
+  });
+
+  it("filters junk entries without throwing", () => {
+    const p = buildPrompt(BUILTIN_MODES.ask, makeCtx(), "q", {
+      tabContexts: [null, "x", makeTabCtx()] as unknown as ReturnType<typeof makeTabCtx>[],
+    });
+    expect(p).toContain("- [T1]");
+  });
+});
+
+describe("describePrompt — tab contexts in the structured view", () => {
+  it("shows the tabs section with meta and feeds the token estimate", () => {
+    const base = describePrompt(BUILTIN_MODES.ask, makeCtx(), "q");
+    const withTabs = describePrompt(BUILTIN_MODES.ask, makeCtx(), "q", {
+      tabContexts: [makeTabCtx(), makeTabCtx({ tabId: 8, ref: "T2", title: "Docs", host: "docs.acme.com", url: "https://docs.acme.com" })],
+    });
+    expectValid(withTabs);
+    const tabs = withTabs.sections.find((s) => s.id === "tabs");
+    expect(tabs).toBeDefined();
+    expect(tabs!.meta).toBe("2 tabs");
+    expect(withTabs.approxTokens).toBeGreaterThan(base.approxTokens);
+  });
+
+  it("never emits a tabs section without tabContexts", () => {
+    const d = describePrompt(BUILTIN_MODES.ask, makeCtx(), "q");
+    expect(d.sections.find((s) => s.id === "tabs")).toBeUndefined();
   });
 });

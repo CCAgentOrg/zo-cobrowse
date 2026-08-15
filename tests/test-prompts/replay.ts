@@ -54,15 +54,10 @@ function braceEndFromBody(src: string, fnStart: number): number {
   return braceEnd(src, src.indexOf("{", sigEnd));
 }
 
-// stripCodeFence — faithful reimplementation of background.js's helper that
-// unwraps the ```json fence around cobrowse action envelopes. finishStream
-// calls it; the real source is unit-tested directly in sse-parsing.test.ts.
-function stripCodeFence(str: any): any {
-  if (typeof str !== "string") return str;
-  const trimmed = str.trim();
-  const m = trimmed.match(/^```[a-zA-Z0-9]*\s*\n([\s\S]*?)\n```\s*$/);
-  return m ? m[1] : str;
-}
+// stripCodeFence + parseZoOutput — now canonical in lib/parse-output.js
+// (finishStream's parse half moved there so the read_tab loop and the replay
+// harness share one implementation, no VM slice, no reimplementation drift).
+import { stripCodeFence, parseZoOutput } from "../../extension/lib/parse-output.js";
 
 // summarizeToolResult — faithful reimplementation of background.js's tool-
 // result truncation (used by the replay byte-loop's STREAM_TOOL emission).
@@ -133,10 +128,11 @@ function loadParsers(): LoadedParsers {
     // posts a STREAM_DIAGNOSTIC message). Stub it as a no-op so the slice can
     // run without pulling in sessionEventShapes / safePost wiring.
     emitStreamDiagnostic: () => {},
-    // finishStream also calls stripCodeFence (to unwrap ```json fences around
-    // cobrowse action envelopes). Provide the real helper directly so the
-    // replay exercises identical stripping without an extra VM extraction.
+  // finishStream also calls stripCodeFence + parseZoOutput. Both now live in
+  // lib/parse-output.js — imported above and injected as free variables so the
+  // replay exercises the exact production parse without a VM slice.
     stripCodeFence,
+    parseZoOutput,
     summarizeToolResult,
     console: { debug: () => {}, log: () => {}, warn: () => {}, error: () => {} },
   };

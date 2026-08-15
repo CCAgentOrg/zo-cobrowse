@@ -5,6 +5,16 @@
 **Effort**: Large
 **Labels**: `phase-4`, `priority-medium`
 
+> **Status update (2026-08-15):** the **context half** is implemented on
+> `feature/tab-contexts` — see `docs/superpowers/specs/2026-08-14-tab-contexts-design.md`.
+> Referenced tabs now travel as a compact manifest + excerpt (chip strip +
+> `@` autocomplete), with full content pulled on demand via the `read_tab`
+> action (max 3 cycles/turn, send-once per page hash). Still open: cross-tab
+> DOM actions (`action.tabId` targeting), tab management
+> (`openTab`/`closeTab`/`switchTab`/`groupTabs`), and the tab bar/selector
+> acceptance criteria below that assume eager full-context capture (superseded
+> by the reference-based design).
+
 ## Description
 
 Currently Zo only sees a single tab. Parchi already supports 5 concurrent subagents across multiple tabs. Zo Co-browse needs to capture context across all open tabs and enable cross-tab actions like "compare prices on these 3 tabs."
