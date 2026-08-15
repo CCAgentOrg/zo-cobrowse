@@ -375,6 +375,33 @@ describe("auto-active-tab — background wiring", () => {
   });
 });
 
+// ---- cold start — background wiring ------------------------------------------------
+
+describe("cold start — background wiring", () => {
+  it("short-circuits blank pages BEFORE any capture path (no debugger banner, no doomed injections)", () => {
+    const guard = bgCode.indexOf("isBlankPage(tab.url");
+    const debuggerPath = bgCode.indexOf("// Path 1: Debugger-based eval");
+    expect(guard).toBeGreaterThanOrEqual(0);
+    expect(debuggerPath).toBeGreaterThan(guard);
+    // The short-circuit returns metadata only (url/title/tabId + blank stamp).
+    expect(bgCode).toMatch(/blank: true/);
+  });
+
+  it("treats a blank capture in the read_tab loop as unreadable (reason 'blank')", () => {
+    expect(bgCode).toMatch(/capture && !capture\.error && !capture\.blank/);
+    expect(bgCode).toMatch(/reason: ['"]blank['"]/);
+  });
+
+  it("GET_OPEN_TABS filters via the shared isCapturableUrl helper (single source of truth)", () => {
+    expect(bgCode).toMatch(/isCapturableUrl\(t\.url\)/);
+    expect(bgCode).not.toMatch(/\/\^https\?:\/i\.test\(t\.url\)/);
+  });
+
+  it("getTabContexts skips capture for blank urls (degraded base only)", () => {
+    expect(bgCode).toMatch(/isBlankPage\(base\.url\)/);
+  });
+});
+
 describe("auto-active-tab — sidepanel wiring", () => {
   it("auto-references the active tab on tier-0 turns and sends the merged list", () => {
     expect(spCode).toMatch(/effectiveTier === 0 && currentContext && currentContext\.tabId != null/);

@@ -14,6 +14,8 @@ import {
   STRIP_MAX_TABS,
   MAX_READ_TAB_CYCLES,
   hostOf,
+  isBlankPage,
+  isCapturableUrl,
   buildTabFollowUp,
   extractReadTabRequests,
   isTabSentAt,
@@ -278,9 +280,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     case 'GET_OPEN_TABS': {
       // Tab-context chip strip source: capturable tabs in the current window,
       // most recently used first, capped.
-      chrome.tabs.query({ currentWindow: true }).then((tabs) => {
-        const list = (tabs || [])
-          .filter((t) => t.url && /^https?:/i.test(t.url))
+      chrome.tabs.query({ currentWindow: true }).then((allTabs) => {
+        const list = (allTabs || [])
+          .filter((t) => isCapturableUrl(t.url))
           .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))
           .slice(0, STRIP_MAX_TABS)
           .map((t) => ({ tabId: t.id, title: t.title || '', url: t.url, host: hostOf(t.url), active: !!t.active }));
@@ -465,6 +467,14 @@ async function getActiveTabContext(tabId, tier, modeId, opts) {
   }
   if (!tab?.id) return { error: 'No active tab' };
 
+  // Cold start: a blank/new-tab page has no content to capture — return
+  // metadata only, before any capture path (no debugger attach/banner, no
+  // doomed script injections). The `blank` stamp lets the read_tab loop and
+  // the sidepanel treat it as "no page" rather than a capture failure.
+  if (isBlankPage(tab.url)) {
+    return { url: tab.url || '', title: tab.title || '', tabId: tab.id, blank: true };
+  }
+
   let context;
 
   // Inlined selector builder — kept in sync with content.js buildSelector.
@@ -604,6 +614,9 @@ async function getTabContexts(tabIds, activeTabId) {
       base.title = tab.title || '';
       base.url = tab.url || '';
       base.host = hostOf(base.url);
+      // Blank/new-tab pages have nothing to capture — keep the degraded base
+      // (they never appear in the chip strip; this covers direct GET_TAB_CONTEXTS callers).
+      if (isBlankPage(base.url)) return base;
       const c = await getActiveTabContext(tabId, 2, null, { skipDebugger: true });
       if (c && !c.error) {
         base.available = true;
@@ -1284,7 +1297,9 @@ async function finishStreamWithTabLoop(port, sid, output, extra, loop) {
 
   const tier = Math.min(Number.isInteger(loop.mode?.contextTier) ? loop.mode.contextTier : 2, 2); // screenshots impossible for background tabs
   const capture = await getActiveTabContext(tabCtx.tabId, tier, null, { skipDebugger: !tabCtx.isActive });
-  const good = capture && !capture.error ? capture : null;
+  // A blank capture (new/blank tab navigated to mid-stream) is unreadable —
+  // same degraded shape as a failed capture, but with its own reason.
+  const good = capture && !capture.error && !capture.blank ? capture : null;
   const pageHash = good ? computePageHash(good, tier >= 1 ? tier : 1) : `closed-${tabCtx.tabId}`;
   // Send-once state is per chat (loop.msg.chatId) — tabsSent dedup must not
   // leak across the sidepanel's chat tabs.
@@ -1294,7 +1309,11 @@ async function finishStreamWithTabLoop(port, sid, output, extra, loop) {
   const fu = buildTabFollowUp(
     tabCtx,
     good,
-    alreadySent ? { reason: 'duplicate' } : { textBudget: loop.mode?.textBudget }
+    capture && capture.blank
+      ? { reason: 'blank' }
+      : alreadySent
+        ? { reason: 'duplicate' }
+        : { textBudget: loop.mode?.textBudget }
   );
   if (!alreadySent && good) {
     await saveConversationState(chatId, noteTabSent(state, tabCtx.tabId, pageHash));
