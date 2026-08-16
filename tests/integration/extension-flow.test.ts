@@ -398,6 +398,70 @@ describe("sidepanel ↔ background ↔ content — action turn end-to-end", () =
   }, 30000);
 });
 
+describe("sidepanel ↔ background ↔ content — pull round-trip (#24)", () => {
+  it("get_form action → in-stream capture → follow-up ask carries the schema → final actions run", async () => {
+    // Fresh chat: the pull loop's send-once state (tabsSent) is per chat.
+    panelWin.document.querySelector("#new-chat-btn").click();
+    await waitUntil(() => panelWin.document.querySelector("#messages .msg-system"));
+
+    let askCount = 0;
+    fm.handle((url) => {
+      if (url.includes("/models/available")) return jsonResponse({ models: [] });
+      if (url.includes("/personas/available")) return jsonResponse({ personas: [] });
+      askCount++;
+      if (askCount === 1) {
+        // Zo asks for the complete form schema instead of acting on the
+        // budget-sliced 2-field capture.
+        return sseResponse(zoSseText({ text: JSON.stringify({
+          reasoning: "Need the full form first.",
+          actions: [{ type: "get_form" }],
+        }) }));
+      }
+      // The follow-up turn (auto-injected schema) → Zo fills and finishes.
+      return sseResponse(zoSseText({ text: JSON.stringify({
+        reasoning: "Schema received.",
+        actions: [
+          { type: "fill", selector: "#name", value: "Pulled Via GetForm" },
+          { type: "done", response: "Filled using the pulled form schema." },
+        ],
+      }) }));
+    });
+
+    const asks = fm.to("/zo/ask").length;
+    const callsBase = bus.tabs._calls.length; // exec log is file-global — scope to this turn
+    await typeAndSend("Fill the name field using the form schema");
+    await waitUntil(() => fm.to("/zo/ask").length > asks, 8000);
+
+    // The pull cycle fired INSIDE the stream: a second /zo/ask whose body
+    // carries the auto-fetched form schema (all fields, uncapped).
+    await waitUntil(() => fm.to("/zo/ask").length >= asks + 2, 15000);
+    const followUp = fm.to("/zo/ask")[fm.to("/zo/ask").length - 1];
+    expect(followUp.body.input).toContain("## Auto-fetched: form fields on \"Trio Form Page\"");
+    expect(followUp.body.input).toContain("[input#name type=text \"Full name\"]");
+    expect(followUp.body.input).toContain("using this form schema");
+
+    // A tool-trace card for the pull rendered on the STREAM_TOOL channel…
+    await waitUntil(() => {
+      const cards = [...panelWin.document.querySelectorAll(".msg-stream-tool-card")];
+      return cards.some((c: any) => c.textContent.includes("get_form"));
+    }, 15000);
+
+    // …and the pulled get_form never reached the DOM executor.
+    await waitUntil(() => (pageWin.document.querySelector("#name") as any)?.value === "Pulled Via GetForm", 15000);
+    const execs = bus.tabs._calls.slice(callsBase).filter(
+      (c: any) => c.api === "tabs.sendMessage" && c.tabId === TAB_ID && c.msg?.type === "EXECUTE_ACTION",
+    );
+    expect(execs.map((c: any) => c.msg.action.type)).toEqual(["fill"]);
+
+    // The turn completed with Zo's done response persisted.
+    await waitUntil(() => {
+      const convs: any[] = Object.values(bus.storage.local._store.cobrowse_convos || {});
+      return convs.some((c: any) => (c.messages || []).some((m: any) => m.role === "assistant" && m.text === "Filled using the pulled form schema."));
+    }, 15000);
+    expect(panelWin.document.querySelector("#query-input").disabled).toBe(false);
+  }, 30000);
+});
+
 describe("sidepanel onboarding gate (separate DOM, same instance)", () => {
   it("shows the tour when cobrowse_onboarding_done is unset — no port, no chat view", async () => {
     // Drive the REAL condition through storage: flip the flag off, reload the

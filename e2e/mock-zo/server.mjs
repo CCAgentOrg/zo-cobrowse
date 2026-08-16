@@ -73,7 +73,11 @@ function userRequest(input) {
 }
 
 function pickScenario(input) {
+  // A pull follow-up is NOT a new user turn — route by its auto-fetched
+  // header, not the (absent) ## User Request section.
+  if (String(input || "").includes("## Auto-fetched:")) return "pull-followup";
   const q = userRequest(input);
+  if (q.includes("schema")) return "pull-form";
   if (q.includes("fill")) return "fill";
   if (q.includes("click")) return "click";
   if (q.includes("scroll")) return "scroll";
@@ -150,6 +154,25 @@ const server = http.createServer(async (req, res) => {
     requests.push({ ts: Date.now(), method: "POST", url: "/zo/ask", body });
 
     const scenario = pickScenario(body.input);
+    if (scenario === "pull-form") {
+      // Zo asks for the complete form schema before acting (#24 pull loop).
+      const envelope = JSON.stringify({
+        reasoning: "I need the complete form schema first.",
+        actions: [{ type: "get_form" }],
+      });
+      return streamSse(res, [textStart(envelope), completed()], { delayMs: 40 });
+    }
+    if (scenario === "pull-followup") {
+      // The auto-injected schema arrived — now act on it.
+      const envelope = JSON.stringify({
+        reasoning: "Schema received; filling the name field.",
+        actions: [
+          { type: "fill", selector: "#name", value: "Pulled E2E" },
+          { type: "done", response: "Filled using the pulled form schema." },
+        ],
+      });
+      return streamSse(res, [textStart(envelope), completed()], { delayMs: 40 });
+    }
     if (scenario === "fill") {
       const envelope = JSON.stringify({
         reasoning: "I will fill the name, email, and plan, then submit.",

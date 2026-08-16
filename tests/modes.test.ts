@@ -97,19 +97,22 @@ describe("BUILTIN_MODES — tier invariants", () => {
 
 describe("ACTION_SCHEMA_COMPACT", () => {
   it("mentions every action type from the action protocol", () => {
-    for (const action of ["click", "fill", "extract", "navigate", "scroll", "wait", "done", "read_tab"]) {
+    for (const action of ["click", "fill", "extract", "navigate", "scroll", "wait", "done", "read_tab", "read_page", "get_dom", "get_form"]) {
       expect(ACTION_SCHEMA_COMPACT).toContain(action);
     }
   });
 
-  it("teaches read_tab as context-only (never cross-tab DOM actions)", () => {
+  it("teaches the context-only pull actions (never cross-tab DOM actions)", () => {
     expect(ACTION_SCHEMA_COMPACT).toContain("read_tab{ref}");
+    expect(ACTION_SCHEMA_COMPACT).toContain("read_page");
+    expect(ACTION_SCHEMA_COMPACT).toContain("get_dom");
+    expect(ACTION_SCHEMA_COMPACT).toContain("get_form");
     expect(ACTION_SCHEMA_COMPACT).toContain("context only");
   });
 
   it("is much shorter than the legacy commented JSON block (sanity)", () => {
     // The old schema block was ~600 chars / ~130 tokens. Compact should be well under.
-    expect(ACTION_SCHEMA_COMPACT.length).toBeLessThan(300);
+    expect(ACTION_SCHEMA_COMPACT.length).toBeLessThan(600);
   });
 
   it("demands ACTIONS only — not a {reasoning, actions} envelope (declubbing)", () => {

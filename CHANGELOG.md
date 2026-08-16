@@ -7,6 +7,49 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — #24 Context-on-demand (pull protocol)
+
+- **Three new context-only actions** — `read_page`, `get_dom`, `get_form`. When
+  Zo needs the complete version of the current page's context (full page text
+  ~12k chars, the complete interactive-element map, or every form field), it
+  emits a pull action instead of guessing from the budget-sliced prompt
+  excerpt. The extension captures the requested context and auto-sends it back
+  into the conversation as a `## Auto-fetched:` follow-up turn, then Zo continues
+  with it. All inside the same stream, before STREAM_DONE.
+- **`lib/pull.js`** — the generalized pull mechanism: `extractPullRequests()`,
+  `buildPullFollowUp()` (with compact `read_page` / `get_dom` / `get_form`
+  serializers + render caps), `pullHash()` (send-once per `kind:page-hash` —
+  re-asking an unchanged page returns "already provided above"), and
+  `pullTier()`/`pullCaptureOpts()` (capture-shape hints threaded through
+  `getActiveTabContext` → `CAPTURE_CONTEXT`).
+- **`finishStreamWithPullLoop`** — generalizes the `read_tab` follow-up loop to
+  all four pull kinds. Shares the same 3-cycle budget (`MAX_PULL_CYCLES` =
+  `MAX_READ_TAB_CYCLES`) so a single user turn can mix reads and pulls without
+  runaway round-trips. A tool-trace card (`emitPullTrace` on `STREAM_TOOL`)
+  renders the pull in the live bubble.
+- **`CONTEXT_ACTION_NAMES` + `isContextAction`** — single source of truth for
+  "context-only, never reaches `executeDomAction`". Applied at every executor
+  gate (background `EXECUTE_ACTIONS`, sidepanel `STREAM_DONE` + pending-actions
+  filter). This also closes a latent bug where a canonical `{type:'read_tab',
+  ref:'T1'}` from Zo was silently dropped by `normalizeActions` (it survived
+  only in key-first form).
+
+### Changed
+- **Capture caps respond to pull hints** — `captureContext(tier, {pull})` and
+  `getActiveTabContext(tabId, tier, modeId, {pull})` raise the text budget
+  (`read_page`) and element caps (`get_dom`, `get_form`) only on demand;
+  normal prompt capture keeps its 30-field / 50-clickable / 8k-char budget.
+
+### Tests
+- `tests/pull.test.ts` (16 tests) + `tests/schemas/pull.ts` (protocol schemas
+  for `PullRequest`, `FollowUp`, `PullCapture`). Updated
+  `tests/schemas/actions.ts` with `ReadPageAction` / `GetDomAction` /
+  `GetFormAction` (now 11 action types). Integration: a full
+  sidepanel↔background↔content round-trip asserts the loop fires inside the
+  stream and `get_form` never reaches the DOM executor. E2E: `e2e/07-pull.spec.ts`
+  runs the round-trip in a real Chromium against the mock Zo server.
+- **Suite: 791 tests / 0 fail (34 files, 2070 expect calls) + 16 Playwright E2E specs.**
+
 ### Added — #25 Vision-gated screenshots
 
 - **`lib/vision.js`** — the vision gate: tier-3 screenshot capture now checks
@@ -26,11 +69,11 @@ and this project uses [Semantic Versioning](https://semver.org/).
   `zoActiveMode` changes in storage (another tab's mode change previously
   didn't reflect until reload).
 
-### Tests
+### Tests (#25)
 - `tests/vision.test.ts` (21 unit tests) + 2 integration round-trips
   (gate suppresses capture for `supports_images:false`; captures for `:true`).
 - Mock Zo server serves `/models/catalog` with `supports_images` per model.
-- **Suite: 790 tests / 0 fail (34 files) + 16 Playwright E2E specs.**
+- **Suite: 790 tests / 0 fail (34 files) + 15 Playwright E2E specs.**
 
 ## [v0.0.2] - 2026-08-10
 

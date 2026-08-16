@@ -10,10 +10,14 @@
 
   /** Grab structured page context for Zo's AI.
    *  tier 0 = URL/title/viewport only; 1 = +visibleText; 2 = +clickable+forms.
-   *  (Screenshots for tier 3 are captured separately by the background.) */
-  function captureContext(tier) {
+   *  (Screenshots for tier 3 are captured separately by the background.)
+   *  opts.pull — capture-shape hint from the pull loop (#24): 'page' raises
+   *  the text cap (read_page), 'dom' raises element caps (get_dom), 'form'
+   *  returns all form fields (get_form). */
+  function captureContext(tier, opts) {
     const t = (typeof tier === 'number' && tier >= 0 && tier <= 3) ? tier : 2;
-    const maxTextLen = 8000;
+    const pull = opts && typeof opts.pull === 'string' ? opts.pull : null;
+    const maxTextLen = pull === 'page' ? 20000 : 8000;
     const doc = document;
 
     const base = {
@@ -56,8 +60,8 @@
       clickableEls.push({ text, tag: el.tagName.toLowerCase(), selector: buildSelector(el) });
     });
 
-    out.formFields = formFields.slice(0, 30);
-    out.clickable = clickableEls.slice(0, 50);
+    out.formFields = formFields.slice(0, pull === 'form' ? 300 : pull === 'dom' ? 150 : 30);
+    out.clickable = clickableEls.slice(0, pull === 'dom' ? 200 : 50);
     out.documentSize = { w: doc.documentElement.scrollWidth, h: doc.documentElement.scrollHeight };
     return out;
   }
@@ -161,7 +165,7 @@
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     switch (request.type) {
       case 'CAPTURE_CONTEXT':
-        sendResponse(isAlive() ? captureContext(request.tier) : { error: 'Extension context unavailable' });
+        sendResponse(isAlive() ? captureContext(request.tier, { pull: request.pull }) : { error: 'Extension context unavailable' });
         break;
       case 'EXECUTE_ACTION':
         if (request.actions && Array.isArray(request.actions)) {

@@ -82,7 +82,7 @@ When Zo decides to interact with the browser, it returns:
   "reasoning": "step-by-step thinking before acting",
   "actions": [
     {
-      "type": "navigate" | "click" | "fill" | "extract" | "scroll" | "wait" | "done" | "read_tab",
+      "type": "navigate" | "click" | "fill" | "extract" | "scroll" | "wait" | "done" | "read_tab" | "read_page" | "get_dom" | "get_form",
       "selector": "css-selector",
       "value": "text to type",
       "url": "https://...",
@@ -112,6 +112,26 @@ is **not** attached. If you need a referenced tab's content to answer, return
   return "already provided above".
 - `read_tab` is context-only. You cannot click/fill/extract in another tab;
   DOM actions always run in the tab the user is looking at.
+
+### Context on demand — `read_page` / `get_dom` / `get_form` (pull actions)
+
+Page context in the prompt is deliberately thin (budget-sliced text and
+element lists). When you need the complete version of the CURRENT page's
+context, return a pull action instead of guessing from the slice:
+
+- `{"type": "read_page"}` — the full page text (up to ~12k chars, far beyond
+  the prompt slice).
+- `{"type": "get_dom"}` — the complete interactive-element map: every
+  clickable (label + selector) and every form field.
+- `{"type": "get_form"}` — every form field on the page (labels, types,
+  selectors), not capped at the prompt's 30-field slice.
+
+The extension captures the requested context and auto-sends it back into the
+conversation as a follow-up — continue your answer with it. Pulls share the
+read_tab budget (max 3 per user turn) and are send-once per page state:
+re-asking for the same content on an unchanged page returns "already
+provided above". Like `read_tab`, pull actions are context-only — they never
+touch the DOM; follow up with `fill`/`click` once you know the targets.
 
 ## Use Cases
 
