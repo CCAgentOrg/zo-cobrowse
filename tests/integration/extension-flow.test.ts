@@ -374,6 +374,16 @@ describe("sidepanel ↔ background ↔ content — action turn end-to-end", () =
       return cards.length === 2 && cards.every((c: any) => c.classList.contains("done"));
     }, 15000);
 
+    // Settle the run COMPLETELY before the test ends: runPendingActions keeps
+    // a trailing sleep(600)→refreshPageContext per action plus the bar-hide
+    // timer, and a late refreshPageContext after another test file has swapped
+    // the shared `chrome` global would throw (bun attributes it to whatever
+    // test is then running). The bar re-hides only after the loop finishes.
+    await waitUntil(
+      () => panelWin.document.querySelector("#actions-bar")?.classList.contains("hidden"),
+      15000,
+    );
+
     // The turn persisted into the conversation (done response + assistant msg).
     await waitUntil(() => {
       const convs: any[] = Object.values(bus.storage.local._store.cobrowse_convos || {});
