@@ -73,6 +73,11 @@ export function stripToPointer(pageContext) {
  * The per-turn context decision. Pure.
  *
  * Resolution (honoring opt-in DOM + send-once):
+ *   - `pageBlank` (active tab is a new/blank page — cold start) → never
+ *     attach: there is no page content to send, so even explicit `!context`
+ *     and manual refresh degrade to tier 0. The blank turn records NO capture
+ *     hash, so the first action turn after navigating to a real page still
+ *     attaches.
  *   - `!context` (bang.kind === 'context') or `forceRefresh` → always attach at
  *     the Mode's tier this turn (explicit user intent overrides dedup).
  *   - action intent (mode.expectJson && not read-downgraded) → attach when the
@@ -86,9 +91,10 @@ export function stripToPointer(pageContext) {
  * buildPrompt emits only `## Page`. `newState` is the updated conversation
  * state (attach records the hash; non-attach just advances the turn counter).
  *
+ * @param {{ mode: object, query: string, bang?: object, state?: object, pageHash?: string, pageBlank?: boolean, forceRefresh?: boolean }} args
  * @returns {{ effectiveTier: number, reason: string, attach: boolean, newState: object }}
  */
-export function decideTurn({ mode, query, bang, state, pageHash, forceRefresh = false }) {
+export function decideTurn({ mode, query, bang, state, pageHash, pageBlank = false, forceRefresh = false }) {
   const st = state || createConversationState();
   const isAction = !!mode && !!mode.expectJson && !shouldDowngradeToJsonDisabled(mode, query);
   const contextRequested = !!bang && bang.kind === 'context';
@@ -97,7 +103,8 @@ export function decideTurn({ mode, query, bang, state, pageHash, forceRefresh = 
   const pageChanged = st.lastCaptureHash !== pageHash; // true on the first turn (null !== hash)
 
   let attach;
-  if (explicit) attach = true;
+  if (pageBlank) attach = false; // cold start: nothing to attach, ever
+  else if (explicit) attach = true;
   else if (isAction) attach = pageChanged; // first turn (pageChanged) or navigation
   else attach = false; // reads: opt-in only
 
@@ -105,7 +112,8 @@ export function decideTurn({ mode, query, bang, state, pageHash, forceRefresh = 
   const effectiveTier = attach ? modeTier : 0;
 
   let reason;
-  if (forceRefresh) reason = 'Manual refresh · full context';
+  if (pageBlank) reason = 'Blank page · no page context';
+  else if (forceRefresh) reason = 'Manual refresh · full context';
   else if (contextRequested) reason = '!context · full context';
   else if (isAction && !hasCaptured) reason = 'First turn · action context';
   else if (isAction && pageChanged) reason = 'Page changed · re-attaching';

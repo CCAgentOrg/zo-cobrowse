@@ -45,7 +45,7 @@ export const ReadTabActionSchema = z.object({
 export type ReadTabAction = z.infer<typeof ReadTabActionSchema>;
 
 /** Discriminated kind for the auto follow-up input a read_tab cycle produces. */
-export const FollowUpKind = z.enum(["content", "unavailable", "duplicate", "budget"]);
+export const FollowUpKind = z.enum(["content", "unavailable", "duplicate", "budget", "blank"]);
 export const FollowUpResultSchema = z.object({
   input: z.string().min(1),
   kind: FollowUpKind,

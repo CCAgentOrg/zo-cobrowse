@@ -11,7 +11,8 @@ import {
   saveConversationState,
 } from './lib/context-policy.js';
 import { describePrompt } from './lib/prompt.js';
-import { assignRefs, ensureActiveTabRef } from './lib/tab-contexts.js';
+import { assignRefs, ensureActiveTabRef, isBlankPage } from './lib/tab-contexts.js';
+import { extractUrls, MAX_LINK_CHIPS } from './lib/links.js';
 import {
   openChatTab,
   closeChatTab,
@@ -666,6 +667,9 @@ function renderCurrentConversation() {
     const el = addMessageDOM(m.role, m.text, opts);
     if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning);
     if (m.role === 'assistant' && m.tools) addExploredRegion(el, m.tools);
+    // Link chips re-derive deterministically from the persisted text —
+    // nothing extra is stored (auto-referencing fires only on Open all).
+    if (m.role === 'assistant') addLinkChipsCard(el, extractUrls(m.text));
     if (m.role === 'user' && Array.isArray(m.tabRefs)) renderTabRefPills(el, m.tabRefs);
   }
 }
@@ -1123,6 +1127,7 @@ function renderPromptInspector() {
     bang: isContextBang ? bang : null,
     state: contextState,
     pageHash,
+    pageBlank: isBlankPage(currentContext?.url || ''),
   });
   const described = describePrompt(mode, currentContext, query, { effectiveTier: decision.effectiveTier, tabContexts: previewTabContexts({ includeActive: decision.effectiveTier === 0 }) });
 
@@ -1533,6 +1538,7 @@ async function runPendingActions() {
         // Attach the reasoning bubble to the answer element (the message the
         // user actually reads), not the (possibly empty) streamed-text element.
         addReasoningBubble(doneEl, pendingActionsReasoning);
+        addLinkChipsCard(doneEl, extractUrls(action.response));
       }
       continue;
     }
@@ -2250,6 +2256,84 @@ function addExploredRegion(parentMsgEl, tools) {
   else parentMsgEl.appendChild(block);
 }
 
+// ---- Link chips + "Open all (N)" (research answers → tabs, backlog #27) ----
+
+/**
+ * Open every URL: first tab foreground, rest background. The opened tabs
+ * become reference chips for the ACTIVE chat (chip strip + @-mention +
+ * read_tab follow-ups — the #27 synergy). Single failures never stop the rest.
+ */
+async function openAllLinks(links) {
+  const urls = (links || []).map((l) => l && l.url).filter(Boolean);
+  if (!urls.length) return;
+  const openedIds = [];
+  for (let i = 0; i < urls.length; i++) {
+    try {
+      const tab = await chrome.tabs.create({ url: urls[i], active: i === 0 });
+      if (tab && tab.id != null) openedIds.push(tab.id);
+    } catch { /* individual open failure — keep going */ }
+  }
+  if (!openedIds.length) return;
+  for (const id of openedIds) tabRefsEnabled.add(id);
+  if (activeId) chatTabRefs.set(activeId, new Set(tabRefsEnabled));
+  refreshOpenTabs();
+  renderTabStrip();
+  renderPromptInspector();
+}
+
+/**
+ * Attach the link-chips card to an assistant message: one chip per URL
+ * (label = host, click opens foreground) + an "Open all (N)" button. Only
+ * rendered for ≥2 unique URLs (a single link is already clickable in the
+ * rendered markdown). Idempotent — safe on history re-render.
+ */
+function addLinkChipsCard(parentMsgEl, links) {
+  if (!parentMsgEl) return null;
+  const list = (links || []).filter((l) => l && typeof l === 'object' && typeof l.url === 'string');
+  if (list.length < 2) return null;
+  if (parentMsgEl.querySelector('.msg-links')) return null; // idempotent
+  const shown = list.slice(0, MAX_LINK_CHIPS);
+  const hiddenCount = list.length - shown.length;
+
+  const card = document.createElement('div');
+  card.className = 'msg-links';
+  const head = document.createElement('div');
+  head.className = 'msg-links-head';
+  head.textContent = `🔗 ${list.length} link${list.length === 1 ? '' : 's'}`;
+  card.appendChild(head);
+
+  const chips = document.createElement('div');
+  chips.className = 'msg-links-chips';
+  for (const l of shown) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'msg-link-chip';
+    chip.textContent = safeText(l.host || l.url);
+    chip.title = safeText(l.url);
+    chip.addEventListener('click', () => {
+      chrome.tabs.create({ url: l.url, active: true });
+    });
+    chips.appendChild(chip);
+  }
+  if (hiddenCount > 0) {
+    const more = document.createElement('span');
+    more.className = 'msg-links-more';
+    more.textContent = `+${hiddenCount} more`;
+    chips.appendChild(more);
+  }
+  card.appendChild(chips);
+
+  const openAll = document.createElement('button');
+  openAll.type = 'button';
+  openAll.className = 'msg-links-open-all';
+  openAll.textContent = `Open all (${shown.length})`;
+  openAll.addEventListener('click', () => openAllLinks(shown));
+  card.appendChild(openAll);
+
+  parentMsgEl.appendChild(card);
+  return card;
+}
+
 // ---- Presets ----
 
 async function loadModes() {
@@ -2952,19 +3036,23 @@ function handleStreamMessage(msg) {
         }
       } else {
         // No streaming chunks — fallback to addMessage
+        let fallbackEl = null;
         if (responseText) {
-          const el = addMessage('assistant', responseText);
-          addReasoningBubble(el, msg.reasoning);
+          fallbackEl = addMessage('assistant', responseText);
+          addReasoningBubble(fallbackEl, msg.reasoning);
         } else if (msg.actions?.length) {
           // Response is in actions — will be rendered by handleStreamActions
         } else if (msg.fullText || msg.reasoning) {
-          const el = addMessage('assistant', safeText(msg.fullText) || safeText(msg.reasoning));
-          addReasoningBubble(el, msg.reasoning);
+          fallbackEl = addMessage('assistant', safeText(msg.fullText) || safeText(msg.reasoning));
+          addReasoningBubble(fallbackEl, msg.reasoning);
         } else {
           // Truly empty response. Don't claim success ("Done.") — surface a
           // hint so the user knows to check the service-worker console, where
           // background.js logs the first SSE chunk's fields for diagnosis.
           addMessage('assistant', '_Zo returned an empty response. Check the service worker console (chrome://extensions → Inspect views: service worker) for `[zo-cobrowse] first SSE chunk` to see the actual stream format._');
+        }
+        if (!hasActions && fallbackEl && responseText) {
+          addLinkChipsCard(fallbackEl, extractUrls(responseText));
         }
       }
 
@@ -2981,6 +3069,11 @@ function handleStreamMessage(msg) {
           modelName: config.selectedModel || undefined,
           durationMs: doneDuration,
         });
+        // Research answers: link chips + Open all (prose answers only — an
+        // action turn's links already ran as navigate/click).
+        if (!hasActions && responseText) {
+          addLinkChipsCard(streamSession.msgEl, extractUrls(responseText));
+        }
       }
 
       // Persist to conversation (thread id echo + assistant message)
@@ -3238,8 +3331,9 @@ sendQuery = async function() {
   const userMsgEl = addMessage('user', query);
   // When a page is captured for this turn, show a Zo-style mention pill
   // (file-mention badge) in the user message so it reads like Zo's
-  // composer-shell with an attached file/page reference.
-  if (currentContext && (currentContext.title || currentContext.url)) {
+  // composer-shell with an attached file/page reference. Blank/new-tab pages
+  // get no pill — a cold-start turn references nothing.
+  if (currentContext && (currentContext.title || currentContext.url) && !isBlankPage(currentContext.url || '')) {
     const userBody = userMsgEl && userMsgEl.querySelector
       ? userMsgEl.querySelector('.msg-body')
       : null;
@@ -3274,12 +3368,14 @@ sendQuery = async function() {
   // The capture above is at the Mode tier (IPC, not billed tokens); buildPrompt
   // (in the background) thins what actually reaches Zo using effectiveTier.
   const pageHash = computePageHash(currentContext, mode.contextTier);
+  const pageBlank = isBlankPage(currentContext?.url || '');
   const turnDecision = decideTurn({
     mode,
     query: effectiveQuery,
     bang: bangResult,
     state: contextState,
     pageHash,
+    pageBlank,
   });
   contextState = turnDecision.newState;
   saveConversationState(activeId, contextState);
@@ -3291,8 +3387,9 @@ sendQuery = async function() {
   // line + 500-char excerpt) so Zo always knows what page you're on.
   // Banner-free capture (content-script path); full DOM stays opt-in
   // (!context / action turns). Refs renumber so the active tab is T1.
+  // Blank/new-tab pages are never auto-referenced (cold start: no page).
   let sendTabContexts = tabContexts;
-  if (effectiveTier === 0 && currentContext && currentContext.tabId != null) {
+  if (effectiveTier === 0 && currentContext && currentContext.tabId != null && !pageBlank) {
     const activeRef = await fetchTabContext(currentContext.tabId);
     if (activeRef) sendTabContexts = assignRefs(ensureActiveTabRef(tabContexts, activeRef));
   }

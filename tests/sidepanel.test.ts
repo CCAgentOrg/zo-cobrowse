@@ -904,3 +904,169 @@ describe("renderActionTimeline DOM behavior — inline run block", () => {
     expect(cards[1].innerHTML, "single done has no count badge").not.toContain("action-count");
   });
 });
+
+// ---- link chips + "Open all (N)" (research answers → tabs, #27) -----------
+
+describe("addLinkChipsCard / openAllLinks DOM behavior", () => {
+  class El {
+    tag: string;
+    children: El[] = [];
+    attrs: Record<string, string> = {};
+    classes: string[] = [];
+    text = "";
+    listeners: Record<string, Function> = {};
+    constructor(tag: string) { this.tag = tag; }
+    set className(v: string) { this.classes = v ? v.split(/\s+/) : []; }
+    get className() { return this.classes.join(" "); }
+    set textContent(v: string) { this.text = String(v ?? ""); }
+    get textContent() { return this.text; }
+    set title(v: string) { this.attrs.title = String(v); }
+    get title() { return this.attrs.title ?? ""; }
+    set type(v: string) { this.attrs.type = String(v); }
+    get type() { return this.attrs.type ?? ""; }
+    appendChild(c: El) { this.children.push(c); return c; }
+    addEventListener(ev: string, fn: Function) { this.listeners[ev] = fn; }
+    click() { if (this.listeners.click) (this.listeners.click as () => void)(); }
+    querySelector(sel: string): El | null {
+      const cls = sel.startsWith(".") ? sel.slice(1) : null;
+      const walk = (n: El): El | null => {
+        for (const c of n.children) {
+          if (!cls || c.classes.includes(cls)) return c;
+          const found = walk(c);
+          if (found) return found;
+        }
+        return null;
+      };
+      return walk(this);
+    }
+    queryAllByClass(cls: string): El[] {
+      const out: El[] = [];
+      const walk = (n: El) => {
+        for (const c of n.children) {
+          if (c.classes.includes(cls)) out.push(c);
+          walk(c);
+        }
+      };
+      walk(this);
+      return out;
+    }
+  }
+
+  function extractFn(name: string): string {
+    // Match the optional `async` prefix too — dropping it would strip the
+    // async-ness and every `await` inside would become a syntax error.
+    const start = code.search(new RegExp("(async )?function " + name + "\\("));
+    if (start === -1) throw new Error("fn not found: " + name);
+    let depth = 0, started = false, end = start;
+    for (let i = start; i < code.length; i++) {
+      if (code[i] === "{") { depth++; started = true; }
+      else if (code[i] === "}") { depth--; if (started && depth === 0) { end = i + 1; break; } }
+    }
+    return code.slice(start, end);
+  }
+
+  const createCalls: Array<{ url?: string; active?: boolean }> = [];
+  function loadCard() {
+    createCalls.length = 0; // fresh recorder per test
+    const sandbox: any = {};
+    vm.createContext(sandbox);
+    sandbox.document = { createElement: (t: string) => new El(t) };
+    sandbox.chrome = { tabs: { create: (props: any = {}) => { createCalls.push({ ...props }); return Promise.resolve({ id: 9001 + createCalls.length }); } } };
+    vm.runInContext(
+      // var (not const/let) so the bindings attach to the sandbox object and
+      // the test can inspect tabRefsEnabled / chatTabRefs afterwards.
+      "var MAX_LINK_CHIPS = 10;\n" +
+      "var tabRefsEnabled = new Set();\n" +
+      "var chatTabRefs = new Map();\n" +
+      "var activeId = 'chat-1';\n" +
+      "var refreshOpenTabs = () => {};\n" +
+      "var renderTabStrip = () => {};\n" +
+      "var renderPromptInspector = () => {};\n" +
+      extractFn("safeText") + "\n" +
+      extractFn("openAllLinks") + "\n" +
+      extractFn("addLinkChipsCard"),
+      sandbox,
+    );
+    return sandbox;
+  }
+
+  const links = (n: number) => Array.from({ length: n }, (_, i) => ({
+    url: `https://site-${i + 1}.example.com/page`,
+    host: `site-${i + 1}.example.com`,
+  }));
+
+  it("renders no card below the 2-link threshold", () => {
+    const s = loadCard();
+    const msg = new El("div");
+    expect(s.addLinkChipsCard(msg, links(1))).toBeNull();
+    expect(s.addLinkChipsCard(msg, [])).toBeNull();
+    expect(s.addLinkChipsCard(null, links(3))).toBeNull();
+    expect(msg.children).toHaveLength(0);
+  });
+
+  it("renders header, host-labelled chips (title=url), and Open all (N)", () => {
+    const s = loadCard();
+    const msg = new El("div");
+    const card = s.addLinkChipsCard(msg, links(3));
+    expect(card).not.toBeNull();
+    expect(msg.children[0]).toBe(card);
+    expect(card!.querySelector(".msg-links-head")!.textContent).toBe("🔗 3 links");
+    const chips = card!.queryAllByClass("msg-link-chip");
+    expect(chips).toHaveLength(3);
+    expect(chips[0].textContent).toBe("site-1.example.com");
+    expect(chips[0].title).toBe("https://site-1.example.com/page");
+    expect(card!.querySelector(".msg-links-open-all")!.textContent).toBe("Open all (3)");
+  });
+
+  it("is idempotent (history re-render never stacks cards)", () => {
+    const s = loadCard();
+    const msg = new El("div");
+    expect(s.addLinkChipsCard(msg, links(2))).not.toBeNull();
+    expect(s.addLinkChipsCard(msg, links(2))).toBeNull();
+    expect(msg.queryAllByClass("msg-links")).toHaveLength(1);
+  });
+
+  it("caps display at MAX_LINK_CHIPS with a +N more note", () => {
+    const s = loadCard();
+    const msg = new El("div");
+    const card = s.addLinkChipsCard(msg, links(12))!;
+    expect(card.queryAllByClass("msg-link-chip")).toHaveLength(10);
+    expect(card.querySelector(".msg-links-more")!.textContent).toBe("+2 more");
+    expect(card.querySelector(".msg-links-open-all")!.textContent).toBe("Open all (10)");
+    expect(card.querySelector(".msg-links-head")!.textContent).toBe("🔗 12 links");
+  });
+
+  it("a chip click opens that URL in the foreground", () => {
+    const s = loadCard();
+    const msg = new El("div");
+    const card = s.addLinkChipsCard(msg, links(2))!;
+    (card.queryAllByClass("msg-link-chip")[1] as El).click();
+    expect(createCalls).toEqual([{ url: "https://site-2.example.com/page", active: true }]);
+  });
+
+  it("Open all opens first-foreground/rest-background and adds every tab as a reference chip for the active chat", async () => {
+    const s = loadCard();
+    const msg = new El("div");
+    const card = s.addLinkChipsCard(msg, links(3))!;
+    (card.querySelector(".msg-links-open-all") as El).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(createCalls.map((c) => c.active)).toEqual([true, false, false]);
+    // All three synthetic tab ids became references for chat-1.
+    const refs = s.chatTabRefs.get("chat-1") as Set<number>;
+    expect([...refs].sort()).toEqual([9002, 9003, 9004]);
+    expect((s.tabRefsEnabled as Set<number>).size).toBe(3);
+  });
+});
+
+describe("link chips — wiring", () => {
+  it("attaches the card at every assistant-answer surface (stream, fallback, done, history)", () => {
+    const surfaces = ["addLinkChipsCard(streamSession.msgEl", "addLinkChipsCard(fallbackEl", "addLinkChipsCard(doneEl", "addLinkChipsCard(el, extractUrls(m.text))"];
+    for (const s of surfaces) expect(code).toContain(s);
+    expect(code).toContain("import { extractUrls, MAX_LINK_CHIPS } from './lib/links.js'");
+  });
+
+  it("skips the card on action turns (prose answers only)", () => {
+    expect(code).toMatch(/!hasActions && responseText/);
+    expect(code).toMatch(/!hasActions && fallbackEl/);
+  });
+});

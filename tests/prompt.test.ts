@@ -253,8 +253,40 @@ describe("prompt helpers", () => {
   it("does not throw on an empty pageContext", () => {
     expect(() => buildPrompt(BUILTIN_MODES.ask, {}, "q")).not.toThrow();
     const p = buildPrompt(BUILTIN_MODES.ask, {}, "q");
-    expect(p).toContain("- Viewport: ?x?");
+    expect(p).not.toContain("## Page\n"); // no URL to point at → no Page section
     expect(p).toContain("## Page Content"); // tier 1 → '—empty—' placeholder
+  });
+});
+
+// ---- cold start: blank/new-tab pages carry no Page pointer --------------------
+
+describe("buildPrompt — blank page (cold start)", () => {
+  const newtabCtx = { url: "chrome://newtab/", title: "New Tab", viewport: { w: 1234, h: 756 } };
+
+  it("omits the ## Page section entirely for a new/blank tab", () => {
+    const p = buildPrompt(BUILTIN_MODES.cobrowse, newtabCtx, "find me docs on X", { effectiveTier: 0 });
+    expect(p).not.toContain("## Page\n");
+    expect(p).not.toContain("chrome://newtab");
+    expect(p).toContain("## User Request");
+    expect(p).toContain("find me docs on X");
+  });
+
+  it("omits ## Page for the about:blank family too (and when url is missing)", () => {
+    for (const ctxObj of [{ url: "about:blank", title: "about:blank" }, {}]) {
+      const p = buildPrompt(BUILTIN_MODES.ask, ctxObj, "q");
+      expect(p).not.toContain("## Page\n");
+    }
+  });
+
+  it("keeps ## Page for real pages (regression guard)", () => {
+    const p = buildPrompt(BUILTIN_MODES.ask, makeCtx(), "q", { effectiveTier: 0 });
+    expect(p).toContain("## Page\n- URL: https://example.com");
+  });
+
+  it("describePrompt drops the page section for blank pages (inspector parity)", () => {
+    const d = describePrompt(BUILTIN_MODES.cobrowse, newtabCtx, "find me docs", { effectiveTier: 0 });
+    expect(d.sections.map((s: { id: string }) => s.id)).not.toContain("page");
+    expect(d.prompt).not.toContain("chrome://newtab");
   });
 });
 

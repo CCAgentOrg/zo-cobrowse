@@ -1,6 +1,13 @@
 // Shared Chrome Extension API mock for Zo Co-browse tests
 // All test files import from here instead of duplicating mocks.
 
+// Recorded chrome.tabs.create calls of the current mock (url + active flag).
+export let tabsCreateCalls: Array<{ url?: string; active?: boolean }> = [];
+
+export function resetTabsCreateCalls() {
+  tabsCreateCalls = [];
+}
+
 const mockStorageArea = () => {
   let store: Record<string, any> = {};
   const mock: any = {
@@ -63,7 +70,12 @@ export function createMockChrome(): any {
       query: () => Promise.resolve([]),
       sendMessage: () => Promise.resolve(),
       captureVisibleTab: () => Promise.resolve("data:image/jpeg;base64,/9j/test=="),
-      create: () => Promise.resolve(),
+      // Records calls (open-all tests assert the url + active flags) and
+      // resolves with a distinct synthetic tab id per call.
+      create: (props: any = {}) => {
+        tabsCreateCalls.push({ ...props });
+        return Promise.resolve({ id: 9001 + tabsCreateCalls.length });
+      },
     },
     action: {
       onClicked: { addListener: () => {} },
