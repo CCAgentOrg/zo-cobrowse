@@ -24,3 +24,7 @@ database/
 # Local tool/agent artifacts — never committed
 .mimosa/
 .zcode/
+# Playwright e2e output (reports, traces, test profiles)
+e2e/report/
+e2e/results/
+playwright-report/

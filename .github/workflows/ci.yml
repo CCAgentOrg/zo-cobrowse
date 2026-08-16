@@ -31,7 +31,7 @@ jobs:
         run: bun install
 
       - name: Run tests
-        run: bun test
+        run: bun test tests/
 
       - name: Transpile check (every extension entry point)
         run: |
@@ -45,6 +45,38 @@ jobs:
           for s in config manifest messages actions bang-commands; do
             test -f "tests/schemas/$s.ts" && echo "schema OK: $s.ts" || { echo "MISSING schema: $s.ts"; exit 1; }
           done
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Install Playwright Chromium
+        run: bunx playwright install chromium --with-deps chromium
+
+      - name: Run e2e tests (real Chromium + mock Zo API)
+        run: bun run test:e2e
+
+      - name: Upload e2e report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: e2e/report/
+          retention-days: 7
 
   lint:
     runs-on: ubuntu-latest

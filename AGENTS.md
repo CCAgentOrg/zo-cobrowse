@@ -51,8 +51,9 @@ From `manifest.json`:
 ## Tests & scripts
 
 ```bash
-bun test              # run the suite (also: npm test)
-bun test --watch      # watch mode (npm run test:watch)
+bun test tests/       # unit + integration suite (also: npm test)
+bun test tests/ --watch  # watch mode (npm run test:watch)
+bun run test:e2e      # real-Chromium Playwright E2E (mock Zo API; e2e/)
 bun run verify        # loop-engineering gate → scripts/verify.sh (tests + lint + transpile)
 bun run setup-hooks   # one-time: installs the committed pre-commit gate (scripts/install-hooks.sh)
 bun run lint          # release-readiness checks → scripts/check-release.sh
@@ -61,7 +62,11 @@ bun run package       # zip extension/ → zo-cobrowse.zip
 
 [![CI](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml/badge.svg)](https://github.com/CCAgentOrg/zo-cobrowse/actions/workflows/ci.yml)
 
-**701 tests across 29 files (0 failures, 1753 expect() calls).** Every extension JS file transpiles cleanly via `bun build` (checked by `bun run verify` and CI). The committed pre-commit hook (`scripts/hooks/pre-commit`) runs `bun run verify` before every commit as a hard gate — bypass with `git commit --no-verify`. CI runs the same checks on every branch push + PRs into both `main` and `dev`; tags `v*` trigger the dormant Release workflow (`release.yml`). Adding a feature means adding/updating the corresponding test file under `tests/`. See `QA_REPORT.md` for the audit history.
+**731 tests across 32 files (0 failures, 1869 expect() calls)) + 15 Playwright E2E specs (`e2e/`).** Every extension JS file transpiles cleanly via `bun build` (checked by `bun run verify` and CI). The committed pre-commit hook (`scripts/hooks/pre-commit`) runs `bun run verify` before every commit as a hard gate — bypass with `git commit --no-verify`. CI runs the same checks on every branch push + PRs into both `main` and `dev`, plus a separate `e2e` job (installs Playwright Chromium, runs `bun run test:e2e`); tags `v*` trigger the dormant Release workflow (`release.yml`). Adding a feature means adding/updating the corresponding test file under `tests/`.
+
+**Integration layer (`tests/integration/`)** loads the real background.js/content.js/sidepanel.js on a fake-chrome message bus (`tests/helpers/chrome-mock.ts` — real port pairs, storage, tabs routing) with a recording SSE fetch mock (`tests/helpers/zo-fetch-mock.ts`, incl. gated `deferredSse` streams). bun shares the module registry across test files: import extension scripts with unique `?file=` cache-busters, and keep ONE sidepanel instance per process (all panel scenarios live in `extension-flow.test.ts`).
+
+**Browser E2E (`e2e/`)**: Playwright + persistent context loads the real extension in new-headless Chromium against `e2e/mock-zo/server.mjs` (local mock Zo API streaming real SSE + static fixture site; scenarios keyed off the prompt's `## User Request`). The sidepanel opens as a tab (CDP can't drive the real panel shell); `senderTabId()` in background.js keeps captures/actions routed to the web tab, never the extension's own pages. See `QA_REPORT.md` for the audit history.
 
 ## Ticket & feature status
 

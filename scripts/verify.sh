@@ -41,8 +41,8 @@ if ! command -v bun >/dev/null 2>&1; then
   exit 1
 fi
 
-step "1/3  Test suite (bun test)"
-run_stage "tests" bun test
+step "1/3  Test suite (bun test tests/)"
+run_stage "tests" bun test tests/
 
 step "2/3  Release readiness checks (bun run lint)"
 run_stage "lint" bun run lint

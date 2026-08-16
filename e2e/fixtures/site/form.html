@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>E2E Fixture Form</title>
+  <style>body { font-family: system-ui, sans-serif; margin: 2rem; } label { display: block; margin-top: .75rem; }</style>
+</head>
+<body>
+  <main>
+    <h1>Fixture Form</h1>
+    <p>Fill targets with ids the mock Zo responses reference.</p>
+    <form id="demo-form">
+      <label for="name">Name</label>
+      <input id="name" name="name" placeholder="Full name" />
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" placeholder="you@example.com" />
+      <label for="plan">Plan</label>
+      <select id="plan" name="plan">
+        <option value="">choose…</option>
+        <option value="free">Free</option>
+        <option value="pro">Pro</option>
+      </select>
+      <button id="submit-btn" type="button">Submit</button>
+    </form>
+    <div id="form-result" aria-live="polite"></div>
+  </main>
+  <script>
+    // Framework-style two-way binding so fill{input+change events} is observable.
+    for (const el of document.querySelectorAll("input, select")) {
+      el.addEventListener("input", () => (document.getElementById("form-result").dataset[el.id] = el.value));
+    }
+    document.getElementById("submit-btn").addEventListener("click", () => {
+      document.getElementById("form-result").textContent =
+        "submitted:" + document.getElementById("name").value + ":" + document.getElementById("email").value;
+    });
+  </script>
+</body>
+</html>
