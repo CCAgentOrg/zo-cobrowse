@@ -6,7 +6,7 @@ guards against regressions.
 
 ## The test suite
 
-**731 tests across 32 files, 0 failures (1869 `expect()` calls).** Every
+**767 tests across 33 files, 0 failures (1978 `expect()` calls).** Every
 extension JS file transpiles cleanly via `bun build`.
 
 ```bash

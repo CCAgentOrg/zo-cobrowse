@@ -8,6 +8,8 @@ import {
   TAB_EXCERPT_FLOOR,
   MAX_READ_TAB_CYCLES,
   hostOf,
+  isBlankPage,
+  isCapturableUrl,
   formatChars,
   assignRefs,
   buildTabManifest,
@@ -184,6 +186,13 @@ describe("buildTabFollowUp", () => {
     expect(f.kind).toBe("budget");
     expect(f.input).toContain("tab-read budget for this turn exhausted");
   });
+
+  it("tells Zo a blank/new-tab page has nothing to read", () => {
+    const f = expectValid(FollowUpResultSchema, buildTabFollowUp(refData, null, { reason: "blank" }), "blank follow-up");
+    expect(f.kind).toBe("blank");
+    expect(f.input).toContain("blank/new-tab page — nothing to read");
+    expect(f.input).toContain(`## Auto-attached: tab [T2] "PR #123" — github.com`);
+  });
 });
 
 describe("extractReadTabRequests", () => {
@@ -311,6 +320,53 @@ describe("ensureActiveTabRef", () => {
     expect(ensureActiveTabRef(undefined, active())).toEqual([active()]);
     expect(ensureActiveTabRef([null, list[0]], active())[0].tabId).toBe(7);
   });
+
+  it("never auto-references a blank active tab (cold start)", () => {
+    const list = assignRefs([tab({ tabId: 101 })]);
+    const newtab = active({ url: "chrome://newtab/", host: "newtab", title: "New Tab" });
+    expect(ensureActiveTabRef(list, newtab)).toBe(list); // reference-stable no-op
+    expect(ensureActiveTabRef(undefined, newtab)).toEqual([]); // cold start: no refs at all
+  });
+});
+
+describe("isBlankPage / isCapturableUrl (cold-start predicates)", () => {
+  it("isBlankPage matches the new-tab/blank family and ignores case/slash/query", () => {
+    for (const url of [
+      "",
+      undefined,
+      "about:blank",
+      "about:newtab",
+      "chrome://newtab",
+      "chrome://newtab/",
+      "chrome://new-tab-page/",
+      "chrome://new-tab-page/?foo=1",
+      "CHROME://NEWTAB/",
+      "About:Blank",
+    ]) {
+      expect(isBlankPage(url as string)).toBe(true);
+    }
+  });
+
+  it("isBlankPage is false for real pages (incl. other chrome:// pages)", () => {
+    for (const url of [
+      "https://example.com",
+      "http://example.com/a?b=1",
+      "chrome://settings",
+      "file:///tmp/page.html",
+      "edge://newtab", // alien but harmless — treat unknown schemes as pages
+    ]) {
+      expect(isBlankPage(url)).toBe(false);
+    }
+  });
+
+  it("isCapturableUrl is exactly http(s) — the chip-strip filter, shared", () => {
+    for (const url of ["https://a.com", "http://a.com/x", "HTTPS://A.COM"]) {
+      expect(isCapturableUrl(url)).toBe(true);
+    }
+    for (const url of ["", undefined, "chrome://newtab/", "about:blank", "file:///tmp/a.html", "ftp://a.com"]) {
+      expect(isCapturableUrl(url as string)).toBe(false);
+    }
+  });
 });
 
 describe("auto-active-tab — background wiring", () => {
@@ -319,9 +375,51 @@ describe("auto-active-tab — background wiring", () => {
   });
 });
 
+// ---- cold start — background wiring ------------------------------------------------
+
+describe("cold start — background wiring", () => {
+  it("short-circuits blank pages BEFORE any capture path (no debugger banner, no doomed injections)", () => {
+    const guard = bgCode.indexOf("isBlankPage(tab.url");
+    const debuggerPath = bgCode.indexOf("// Path 1: Debugger-based eval");
+    expect(guard).toBeGreaterThanOrEqual(0);
+    expect(debuggerPath).toBeGreaterThan(guard);
+    // The short-circuit returns metadata only (url/title/tabId + blank stamp).
+    expect(bgCode).toMatch(/blank: true/);
+  });
+
+  it("treats a blank capture in the read_tab loop as unreadable (reason 'blank')", () => {
+    expect(bgCode).toMatch(/capture && !capture\.error && !capture\.blank/);
+    expect(bgCode).toMatch(/reason: ['"]blank['"]/);
+  });
+
+  it("GET_OPEN_TABS filters via the shared isCapturableUrl helper (single source of truth)", () => {
+    expect(bgCode).toMatch(/isCapturableUrl\(t\.url\)/);
+    expect(bgCode).not.toMatch(/\/\^https\?:\/i\.test\(t\.url\)/);
+  });
+
+  it("getTabContexts skips capture for blank urls (degraded base only)", () => {
+    expect(bgCode).toMatch(/isBlankPage\(base\.url\)/);
+  });
+});
+
+// ---- cold start — sidepanel wiring --------------------------------------------------
+
+describe("cold start — sidepanel wiring", () => {
+  it("threads pageBlank into the context policy on BOTH call sites (send + inspector parity)", () => {
+    // sendQuery and renderPromptInspector both compute the same pageBlank.
+    const computes = [...spCode.matchAll(/isBlankPage\(currentContext\?\.url \|\| ''\)/g)].length;
+    expect(computes).toBeGreaterThanOrEqual(2);
+    expect(spCode).toMatch(/pageBlank,\s*\n/);
+  });
+
+  it("skips the page-mention pill on blank pages (no 'New Tab' pill noise)", () => {
+    expect(spCode).toMatch(/\(currentContext\.title \|\| currentContext\.url\)[^\n]*&& !isBlankPage/);
+  });
+});
+
 describe("auto-active-tab — sidepanel wiring", () => {
   it("auto-references the active tab on tier-0 turns and sends the merged list", () => {
-    expect(spCode).toMatch(/effectiveTier === 0 && currentContext && currentContext\.tabId != null/);
+    expect(spCode).toMatch(/effectiveTier === 0 && currentContext && currentContext\.tabId != null && !pageBlank/);
     expect(spCode).toMatch(/ensureActiveTabRef\(tabContexts, activeRef\)/);
     expect(spCode).toMatch(/tabContexts: sendTabContexts/);
   });

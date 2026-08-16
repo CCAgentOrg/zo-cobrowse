@@ -230,56 +230,58 @@ export function createFakeChrome(): any {
     _lastPeer: null as FakePort | null,
   };
 
-  // ---- tabs ----
-  const tabs: any[] = [];
-  const tabTargets = new Map<number, FakeEvent>();
-  const calls: Array<{ api: string; tabId?: number; msg?: any; target?: any; funcName?: string }> = [];
-  let nextTabId = 100;
-  const tabsApi: any = {
-    _tabs: tabs,
-    _calls: calls,
-    registerTab(tab: any) {
-      if (tab.id == null) tab.id = nextTabId++;
-      if (tab.windowId == null) tab.windowId = 1;
-      if (tab.currentWindow == null) tab.currentWindow = true;
-      tabs.push(tab);
-      return tab;
-    },
-    /** Route chrome.tabs.sendMessage(tabId, msg) to a content-script target. */
-    bindTab(tabId: number, evt: FakeEvent) {
-      tabTargets.set(tabId, evt);
-    },
-    query: (q: any = {}) =>
-      Promise.resolve(
-        tabs.filter((t) => (!q.active || t.active) && (!q.currentWindow || t.currentWindow !== false)),
-      ),
-    get: (tabId: number) => {
-      const t = tabs.find((x) => x.id === tabId);
-      return t ? Promise.resolve(t) : Promise.reject(new Error(`No tab with id: ${tabId}`));
-    },
-    update: (tabId: number, props: any) => {
-      const t = tabs.find((x) => x.id === tabId);
-      if (t) Object.assign(t, props);
-      return t ? Promise.resolve(t) : Promise.reject(new Error(`No tab with id: ${tabId}`));
-    },
-    sendMessage: (tabId: number, msg: any) => {
-      calls.push({ api: "tabs.sendMessage", tabId, msg });
-      const target = tabTargets.get(tabId);
-      if (!target) {
-        return Promise.reject(new Error("Could not establish connection. Receiving end does not exist."));
-      }
-      return dispatchToEvent(target, msg, { tab: { id: tabId } });
-    },
-    create: (props: any = {}) => {
-      const t = { id: nextTabId++, active: !!props.active, windowId: 1, currentWindow: true, ...props };
-      tabs.push(t);
-      return Promise.resolve(t);
-    },
-    captureVisibleTab: () => Promise.resolve("data:image/jpeg;base64,/9j/ZmFrZQ=="),
-    onRemoved: new FakeEvent(),
-    onActivated: new FakeEvent(),
-    onUpdated: new FakeEvent(),
-  };
+// ---- tabs ----
+const tabs: any[] = [];
+const tabTargets = new Map<number, FakeEvent>();
+const calls: Array<{ api: string; tabId?: number; msg?: any; target?: any; funcName?: string }> = [];
+let nextTabId = 100;
+
+const tabsApi: any = {
+  _tabs: tabs,
+  _calls: calls,
+  registerTab(tab: any) {
+    if (tab.id == null) tab.id = nextTabId++;
+    if (tab.windowId == null) tab.windowId = 1;
+    if (tab.currentWindow == null) tab.currentWindow = true;
+    tabs.push(tab);
+    return tab;
+  },
+  /** Route chrome.tabs.sendMessage(tabId, msg) to a content-script target. */
+  bindTab(tabId: number, evt: FakeEvent) {
+    tabTargets.set(tabId, evt);
+  },
+  query: (q: any = {}) =>
+    Promise.resolve(
+      tabs.filter((t) => (!q.active || t.active) && (!q.currentWindow || t.currentWindow !== false)),
+    ),
+  get: (tabId: number) => {
+    const t = tabs.find((x) => x.id === tabId);
+    return t ? Promise.resolve(t) : Promise.reject(new Error(`No tab with id: ${tabId}`));
+  },
+  update: (tabId: number, props: any) => {
+    const t = tabs.find((x) => x.id === tabId);
+    if (t) Object.assign(t, props);
+    return t ? Promise.resolve(t) : Promise.reject(new Error(`No tab with id: ${tabId}`));
+  },
+  sendMessage: (tabId: number, msg: any) => {
+    calls.push({ api: "tabs.sendMessage", tabId, msg });
+    const target = tabTargets.get(tabId);
+    if (!target) {
+      return Promise.reject(new Error("Could not establish connection. Receiving end does not exist."));
+    }
+    return dispatchToEvent(target, msg, { tab: { id: tabId } });
+  },
+  create: (props: any = {}) => {
+    tabsCreateCalls.push({ ...props });
+    const t = { id: nextTabId++, active: !!props.active, windowId: 1, currentWindow: true, ...props };
+    tabs.push(t);
+    return Promise.resolve(t);
+  },
+  captureVisibleTab: () => Promise.resolve("data:image/jpeg;base64,/9j/ZmFrZQ=="),
+  onRemoved: new FakeEvent(),
+  onActivated: new FakeEvent(),
+  onUpdated: new FakeEvent(),
+};
 
   // ---- debugger (CDP fast-path) ----
   // Disabled by default so getActiveTabContext()/executeActions() fall through
@@ -425,6 +427,13 @@ export function installChromeMock(globalObj: any, mock: any) {
 }
 export function uninstallChromeMock(globalObj: any) {
   delete globalObj.chrome;
+}
+
+// Recorded chrome.tabs.create calls (url + active flag) — carried over from
+// the pre-bus mock so call-recording assertions keep working.
+export let tabsCreateCalls: Array<{ url?: string; active?: boolean }> = [];
+export function resetTabsCreateCalls() {
+  tabsCreateCalls = [];
 }
 
 /** Poll until pred() is true; throws on timeout. The integration tests' main sync point. */

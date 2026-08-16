@@ -16,7 +16,7 @@
 
 import { ACTION_SCHEMA_COMPACT, PLAIN_RESPONSE_HINT } from './modes.js';
 import { shouldDowngradeToJsonDisabled, detectIntent } from './intent.js';
-import { buildTabManifest } from './tab-contexts.js';
+import { buildTabManifest, isBlankPage } from './tab-contexts.js';
 
 /**
  * Section ids used to tag each assembled part. Stable ids so the inspector
@@ -112,10 +112,16 @@ function _compose(mode, pageContext, userQuery, opts) {
 
   push('system', mode.systemPrompt);
   push('sep', '');
-  push('page', '## Page');
-  push('page', `- URL: ${safeText(ctx.url)}`);
-  push('page', `- Title: ${safeText(ctx.title)}`);
-  push('page', `- Viewport: ${ctx.viewport?.w || '?'}x${ctx.viewport?.h || '?'}`);
+  // Cold start: a blank/new-tab page (or no URL at all) carries no page
+  // pointer — the whole ## Page section is omitted rather than sending
+  // newtab/empty-field noise. Zo reading no Page section = no page attached.
+  const noPagePointer = !safeText(ctx.url) || isBlankPage(ctx.url);
+  if (!noPagePointer) {
+    push('page', '## Page');
+    push('page', `- URL: ${safeText(ctx.url)}`);
+    push('page', `- Title: ${safeText(ctx.title)}`);
+    push('page', `- Viewport: ${ctx.viewport?.w || '?'}x${ctx.viewport?.h || '?'}`);
+  }
 
   // Referenced tabs (tab contexts). Manifest + excerpt only — full content is
   // pulled on demand via read_tab. When this turn attaches the active tab

@@ -193,6 +193,64 @@ describe("decideTurn — opt-in + send-once matrix", () => {
   });
 });
 
+// ---- decideTurn — blank page (cold start: new/blank tab active) --------------
+
+describe("decideTurn — blank page (cold start)", () => {
+  it("read turn → no attach, tier 0, blank reason", () => {
+    const d = decideTurn({
+      mode: BUILTIN_MODES.ask, query: "research the best mechanical keyboards",
+      bang: null, state: createConversationState(), pageHash: "chrome://newtab/|New Tab",
+      pageBlank: true,
+    });
+    expectValidDecision(d);
+    expect(d.attach).toBe(false);
+    expect(d.effectiveTier).toBe(0);
+    expect(d.reason).toMatch(/Blank page/);
+  });
+
+  it("action turn never attaches a blank page (nothing to attach)", () => {
+    const d = decideTurn({
+      mode: BUILTIN_MODES.cobrowse, query: "open hackernews and click the first story",
+      bang: null, state: createConversationState(), pageHash: "chrome://newtab/|New Tab",
+      pageBlank: true,
+    });
+    expect(d.attach).toBe(false);
+    expect(d.effectiveTier).toBe(0);
+    expect(d.reason).toMatch(/Blank page/);
+  });
+
+  it("!context and manual refresh are also skipped on a blank page", () => {
+    for (const extra of [{ bang: { kind: "context" } }, { forceRefresh: true }]) {
+      const d = decideTurn({
+        mode: BUILTIN_MODES.ask, query: "summarize",
+        bang: null, state: createConversationState(), pageHash: "x", pageBlank: true, ...extra,
+      });
+      expect(d.attach).toBe(false);
+      expect(d.effectiveTier).toBe(0);
+      expect(d.reason).toMatch(/Blank page/);
+    }
+  });
+
+  it("blank turns record NO capture hash, so the first real-page action turn still attaches", () => {
+    const afterBlank = decideTurn({
+      mode: BUILTIN_MODES.cobrowse, query: "click go",
+      bang: null, state: createConversationState(), pageHash: "chrome://newtab/|New Tab",
+      pageBlank: true,
+    }).newState;
+    expectValidState(afterBlank);
+    expect(afterBlank.lastCaptureHash).toBeNull();
+    expect(afterBlank.turnsSinceFullCapture).toBe(1);
+    // User navigates to a real page, then asks an action:
+    const realHash = computePageHash(ctx(), TIER.ELEMENTS);
+    const d = decideTurn({
+      mode: BUILTIN_MODES.cobrowse, query: "click go",
+      bang: null, state: afterBlank, pageHash: realHash,
+    });
+    expect(d.attach).toBe(true);
+    expect(d.reason).toMatch(/First turn/);
+  });
+});
+
 describe("context-policy module constants", () => {
   it("exposes a stable session-storage key", () => {
     expect(typeof CONVERSATION_STATE_KEY).toBe("string");

@@ -36,7 +36,7 @@ feature/*  fix/*  chore/*   ← one branch per unit of work, branched from dev
 1. Clone the repo
 2. Run `bun install` (installs zod + bun-types)
 3. Run `bun run setup-hooks` (installs the pre-commit verification gate)
-4. Run `bun test tests/` — all 731 tests should pass
+4. Run `bun test tests/` — all 767 tests should pass
 5. Load `extension/` as an unpacked extension in Chrome (`chrome://extensions` → Developer mode → Load unpacked)
 
 **Start every change from `dev`:**
@@ -75,7 +75,7 @@ zo-cobrowse/
 │   ├── content.js      # Content script (DOM capture, action dispatch)
 │   ├── options.html    # Options page (API URL, model, persona)
 │   └── manifest.json   # Chrome extension manifest (V3)
-├── tests/              # Bun test suite: unit + integration (731 tests)
+├── tests/              # Bun test suite: unit + integration (767 tests)
 ├── e2e/                # Playwright E2E in real Chromium (15 specs, mock Zo API)
 │   ├── schemas/        # Zod schemas for data contracts
 │   └── helpers/        # Test helpers (chrome mock)
@@ -111,7 +111,7 @@ for the full picture.
 
 ## Pull Request Process
 
-1. Run `bun run verify` — all 731 tests plus release/transpile checks pass
+1. Run `bun run verify` — all 767 tests plus release/transpile checks pass
 1. Run `bun run test:e2e` — the 15 browser E2E specs pass (CI runs these too)
 2. Update `CHANGELOG.md` (and `CHECKLIST.md`) if the change is user-visible
 3. Update the ticket completion table in `AGENTS.md` if implementing a tracked feature

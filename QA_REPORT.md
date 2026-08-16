@@ -218,5 +218,5 @@ The extension is green-tested with a hardened streaming path. Remaining work is 
 
 ### Verification
 
-- `bun run verify` green (731 tests / 32 files, lint, transpile).
+- `bun run verify` green (767 tests / 33 files after merging dev's #24 cold-start work in; lint, transpile).
 - `bun run test:e2e` green (15 specs, ~45s).
