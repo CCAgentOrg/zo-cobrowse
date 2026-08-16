@@ -7,6 +7,7 @@
   "scripts": {
     "test": "bun test tests/",
     "test:watch": "bun test tests/ --watch",
+    "test:coverage": "bun test tests/ --coverage --coverage-reporter=text --coverage-reporter=lcov",
     "test:e2e": "playwright test -c e2e/playwright.config.ts",
     "test:e2e:headed": "playwright test -c e2e/playwright.config.ts --headed",
     "test:e2e:debug": "playwright test -c e2e/playwright.config.ts --debug",

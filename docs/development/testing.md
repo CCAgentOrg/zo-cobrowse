@@ -83,6 +83,19 @@ Plus: `action-timeline`, `actions`, `config-behavior`, `error-handling`,
 
 It runs locally (pre-commit hook), and CI mirrors it on every push and PR.
 
+CI also collects **coverage**: the `test` job runs with Bun's built-in
+`--coverage` (text summary in the job log + `coverage/lcov.info` uploaded as
+the `coverage-lcov` artifact). The same summary is available locally with
+`bun run test:coverage`. Two caveats when reading the numbers:
+
+- Only what the bun suite executes counts — the Playwright e2e layer runs in
+  a separate Chromium process and does **not** feed these counters, so paths
+  covered only by real-browser tests (omnibox, panel shell, live extension
+  APIs) show as uncovered.
+- `extension/lib/*` is directly imported (96–100%); the chrome-coupled entry
+  files are exercised through the integration harness, so their percentages
+  reflect the in-process paths only.
+
 ## Adding a feature
 
 1. **Extend the relevant schema first** (`tests/schemas/…`), then write the
