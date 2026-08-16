@@ -193,6 +193,18 @@ function msgThreadId(conversationId) {
   return typeof conversationId === 'string' ? conversationId.trim() : '';
 }
 
+/**
+ * Tab id for routing page work (capture / actions / navigation). The
+ * extension's OWN pages opened as tabs — most commonly the side panel URL,
+ * which users (and the e2e harness) legitimately open as a normal tab — must
+ * never be captured or acted on: treating them as "no tab" makes the caller
+ * fall through to the active web tab, which is always the user's intent.
+ */
+function senderTabId(sender) {
+  const url = (sender && sender.tab && sender.tab.url) || '';
+  return /^(chrome-extension|chrome|about|edge|devtools):/i.test(url) ? undefined : sender?.tab?.id;
+}
+
 
 // ---- Init ----
 chrome.storage.sync.get(
@@ -236,7 +248,7 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   switch (request.type) {
     case 'GET_PAGE_CONTEXT': {
-      getActiveTabContext(sender.tab?.id, request.tier, request.modeId).then(sendResponse);
+      getActiveTabContext(senderTabId(sender), request.tier, request.modeId).then(sendResponse);
       return true;
     }
     case 'ASK_ZO': {
@@ -274,7 +286,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       // stream loop (finishStreamWithTabLoop); filter here so a degenerate
       // Zo response that still asks after the budget note no-ops safely.
       const domActions = (request.actions || []).filter((a) => a && a.type !== 'read_tab');
-      executeActions(domActions, request.tabId || sender.tab?.id).then(sendResponse);
+      executeActions(domActions, request.tabId || senderTabId(sender)).then(sendResponse);
       return true;
     }
     case 'GET_OPEN_TABS': {
@@ -295,7 +307,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
     case 'NAVIGATE': {
-      const navTabId = request.tabId || sender.tab?.id;
+      const navTabId = request.tabId || senderTabId(sender);
       if (!navTabId || !request.url) {
         sendResponse({ ok: false, error: 'NAVIGATE requires tabId and url' });
         return false;

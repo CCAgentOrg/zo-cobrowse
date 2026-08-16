@@ -1516,8 +1516,13 @@ async function runPendingActions() {
   // Live header: count includes the done action.
   updateActionRunHeader('⚡ Performing actions…', actions.length, null);
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const tabId = tab?.id;
+  // Target the active WEB tab, never one of the extension's own pages (the
+  // side panel URL opened as a tab is a legitimate user state — actions must
+  // not run against it). Prefer the active non-extension tab, else the first
+  // non-extension tab in the window.
+  const openTabs = await chrome.tabs.query({ currentWindow: true });
+  const webTabs = openTabs.filter((t) => !/^(chrome-extension|chrome|about|edge|devtools):/i.test(t.url || ''));
+  const tabId = (webTabs.find((t) => t.active) || webTabs[0])?.id;
   if (!tabId) {
     addMessage('error', 'No active tab to execute actions on.');
     pendingActions = null;

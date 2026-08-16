@@ -5,8 +5,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun test",
-    "test:watch": "bun test --watch",
+    "test": "bun test tests/",
+    "test:watch": "bun test tests/ --watch",
+    "test:coverage": "bun test tests/ --coverage --coverage-reporter=text --coverage-reporter=lcov",
+    "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "test:e2e:headed": "playwright test -c e2e/playwright.config.ts --headed",
+    "test:e2e:debug": "playwright test -c e2e/playwright.config.ts --debug",
     "check-icons": "bash scripts/check-release.sh",
     "check-prereqs": "bash scripts/check-release.sh",
     "lint": "bash scripts/check-release.sh",
@@ -16,6 +20,7 @@
     "package": "cd extension && zip -r ../zo-cobrowse.zip . -x '*.git*' -x '*.DS_Store'"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "acorn": "^8.14.0",
     "bun-types": "latest",
     "happy-dom": "^20.11.2",
