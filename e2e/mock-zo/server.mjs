@@ -115,6 +115,17 @@ const server = http.createServer(async (req, res) => {
     return res.end('{"ok":true}');
   }
 
+  // #25: no-auth model catalog — carries supports_images per model.
+  if (url.pathname === "/models/catalog") {
+    res.writeHead(200, { "content-type": "application/json", ...cors });
+    return res.end(JSON.stringify({
+      models: [
+        { model_name: "mock-model", label: "Mock Model", vendor: "e2e", supports_images: false },
+        { model_name: "mock-vision", label: "Mock Vision", vendor: "e2e", supports_images: true },
+      ],
+    }));
+  }
+
   // ---- mock Zo API ----
   if (url.pathname === "/models/available" || url.pathname === "/personas/available") {
     const isModels = url.pathname.includes("models");
