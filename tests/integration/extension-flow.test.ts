@@ -459,6 +459,17 @@ describe("sidepanel ↔ background ↔ content — pull round-trip (#24)", () =>
       return convs.some((c: any) => (c.messages || []).some((m: any) => m.role === "assistant" && m.text === "Filled using the pulled form schema."));
     }, 15000);
     expect(panelWin.document.querySelector("#query-input").disabled).toBe(false);
+
+    // Settle the run COMPLETELY before the test ends (same class as the
+    // action-turn test above): runPendingActions keeps a trailing
+    // sleep(600)→refreshPageContext per action plus the bar-hide timer, and a
+    // late refreshPageContext after the next test file swaps the shared
+    // `chrome` global would throw (bun attributes it to whatever test is then
+    // running). The bar re-hides only after the loop finishes.
+    await waitUntil(
+      () => panelWin.document.querySelector("#actions-bar")?.classList.contains("hidden"),
+      15000,
+    );
   }, 30000);
 });
 
