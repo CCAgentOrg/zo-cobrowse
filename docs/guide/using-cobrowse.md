@@ -43,6 +43,33 @@ Mode commands (`!summarize`, `!extract`, `!research`, `!qa`) set the active
 [Mode](../guide/modes) for a single turn. Others (`!skill`, `!query`, `!auto`)
 open Zo's tooling directly.
 
+## Reference pickers: `/` skills, `%` files, `@` tabs
+
+The composer has three trigger characters that attach references to your next
+message:
+
+| Trigger | Picks from | Rides along as |
+|---------|-----------|----------------|
+| `/` | Your Zo **skills** (`/home/workspace/Skills`) | A `## Skills to Run` section — Zo reads each skill's `SKILL.md` server-side and runs it as part of the turn |
+| `%` | Your Zo **workspace files** (browsable tree) | A `## Referenced Files` manifest — paths only; Zo reads content with its own file tools when needed |
+| `@` | Open **tabs** in this window | A `## Referenced Tabs` manifest + short excerpts (full content via `read_tab`) |
+
+- Type the trigger at the start of a token (after a space), then filter by
+  typing: `/web` filters skills, `%readme` filters the current folder.
+- Arrow keys move, `Enter`/`Tab` selects, `Esc` closes. In the `%` picker,
+  folder rows navigate (and `⬆ ..` climbs); file rows attach.
+- Selected entries arm **chips** above the composer (⚡ skills, 📄 files) —
+  click a chip's ✕ to remove it. Chips are **send-once**: they ride the next
+  message only, then clear (a skill is an invocation, not a sticky setting).
+- The live [prompt inspector](#context-capture) preview shows the exact
+  sections that will be sent before you hit Send.
+
+Skills and files are enumerated over Zo's **MCP server** (`/mcp`) with your
+saved access token — no extra setup. The skills list is cached ~5 minutes per
+panel session; directory listings ~1 minute. Paths in the `%` picker are
+confined to `/home/workspace` — traversal outside it is rejected before any
+request is made.
+
 ## Right-click context menu
 
 Enabled menus are configured in Options. Right-click a page, a selection, a

@@ -14,6 +14,7 @@ import { describePrompt } from './lib/prompt.js';
 import { assignRefs, ensureActiveTabRef, isBlankPage } from './lib/tab-contexts.js';
 import { visionModelSuggestion, modelVisionSupport, findModelEntry } from './lib/vision.js';
 import { extractUrls, MAX_LINK_CHIPS } from './lib/links.js';
+import { WORKSPACE_ROOT, filterPickerEntries } from './lib/pickers.js';
 import {
   openChatTab,
   closeChatTab,
@@ -429,13 +430,17 @@ function bindEvents() {
   input.addEventListener('input', syncSendBtn);
   input.addEventListener('input', schedulePromptInspector);
   input.addEventListener('input', onComposerInputForTabs);
+  input.addEventListener('input', onComposerInputForPickers);
   input.addEventListener('keyup', syncSendBtn);
   syncSendBtn();
   sendBtn.addEventListener('click', () => { sendQuery(); });
   // Tab-context `@` autocomplete keys. Captured on the WRAPPER so Enter-to-
   // select fires before the send-on-Enter listener registered on the input.
   const inputWrap = $('.input-wrap');
-  if (inputWrap) inputWrap.addEventListener('keydown', onComposerKeydownForTabs, true);
+  if (inputWrap) {
+    inputWrap.addEventListener('keydown', onComposerKeydownForTabs, true);
+    inputWrap.addEventListener('keydown', onComposerKeydownForPickers, true);
+  }
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); closeTabAutocomplete(); sendQuery(); }
     // Esc cancels an in-flight stream (Zo: "Press Esc to stop").
@@ -680,6 +685,13 @@ function renderCurrentConversation() {
     // nothing extra is stored (auto-referencing fires only on Open all).
     if (m.role === 'assistant') addLinkChipsCard(el, extractUrls(m.text));
     if (m.role === 'user' && Array.isArray(m.tabRefs)) renderTabRefPills(el, m.tabRefs);
+    if (m.role === 'user') {
+      const userBody = el && el.querySelector ? el.querySelector('.msg-body') : null;
+      if (userBody) {
+        for (const s of (m.skillRefs || [])) appendMentionPill(userBody, `⚡ ${safeText(s && s.name)}`);
+        for (const f of (m.fileRefs || [])) appendMentionPill(userBody, `📄 ${safeText(f && f.path).split('/').pop()}`);
+      }
+    }
   }
 }
 
@@ -1138,7 +1150,7 @@ function renderPromptInspector() {
     pageHash,
     pageBlank: isBlankPage(currentContext?.url || ''),
   });
-  const described = describePrompt(mode, currentContext, query, { effectiveTier: decision.effectiveTier, tabContexts: previewTabContexts({ includeActive: decision.effectiveTier === 0 }) });
+  const described = describePrompt(mode, currentContext, query, { effectiveTier: decision.effectiveTier, tabContexts: previewTabContexts({ includeActive: decision.effectiveTier === 0 }), skills: pickedSkills, workspaceFiles: pickedFiles });
 
   summary.textContent = `🔎 Prompt preview · ~${described.approxTokens} tokens`;
   meta.replaceChildren();
@@ -2095,6 +2107,288 @@ function onComposerKeydownForTabs(e) {
     selectTabAutocomplete(tabAcIndex);
   } else if (e.key === 'Escape') {
     closeTabAutocomplete();
+  }
+}
+
+// ---- Composer reference pickers (#28): `/` skills + `%` workspace files ----
+// Same interaction model as the `@` tab autocomplete: typing the trigger char
+// at a token start opens a popup above the composer; Enter/Tab/click selects;
+// selection attaches a chip for the NEXT turn only (send-once — skills are an
+// invocation, files a reference). Skills are enumerated from the Zo workspace
+// Skills folder over MCP (LIST_SKILLS); files browse /home/workspace via
+// `ls -1F` (LIST_WORKSPACE_DIR). Directory rows navigate; `..` climbs (never
+// above the workspace root).
+
+let skillsCache = null;        // { list: SkillEntry[], fetchedAt } — panel lifetime
+let skillsFetchInFlight = null;
+const pickedSkills = [];       // chips armed for the next send
+const pickedFiles = [];
+let filesDir = { path: WORKSPACE_ROOT, entries: null, loading: false };
+
+const skillAc = { items: [], index: 0 };
+const fileAc = { items: [], index: 0 };
+
+const SKILLS_PANEL_TTL_MS = 5 * 60 * 1000;
+
+function closeSkillPopup() {
+  const popup = document.getElementById('skill-autocomplete');
+  if (popup) popup.classList.add('hidden');
+  skillAc.items = [];
+  skillAc.index = 0;
+}
+
+function closeFilePopup() {
+  const popup = document.getElementById('file-autocomplete');
+  if (popup) popup.classList.add('hidden');
+  fileAc.items = [];
+  fileAc.index = 0;
+}
+
+function closeAllPickerPopups() {
+  closeSkillPopup();
+  closeFilePopup();
+}
+
+async function ensureSkillsLoaded(force = false) {
+  const fresh = skillsCache && (Date.now() - skillsCache.fetchedAt) < SKILLS_PANEL_TTL_MS;
+  if ((skillsCache && fresh) && !force) return skillsCache.list;
+  if (skillsFetchInFlight) return skillsFetchInFlight;
+  skillsFetchInFlight = (async () => {
+    try {
+      const resp = await chrome.runtime.sendMessage({ type: 'LIST_SKILLS' });
+      if (resp && resp.ok && Array.isArray(resp.skills)) {
+        skillsCache = { list: resp.skills, fetchedAt: Date.now() };
+        return resp.skills;
+      }
+      return null; // error rendered by the popup, not a thrown crash
+    } catch {
+      return null;
+    } finally {
+      skillsFetchInFlight = null;
+    }
+  })();
+  return skillsFetchInFlight;
+}
+
+function renderSkillPopup(filterText) {
+  const popup = document.getElementById('skill-autocomplete');
+  if (!popup) return;
+  const list = skillsCache ? skillsCache.list : null;
+  if (!list) {
+    popup.replaceChildren();
+    popup.appendChild(pickerNoteItem(skillsFetchInFlight ? 'Loading skills…' : 'Skills unavailable — check your Zo token.'));
+    popup.classList.remove('hidden');
+    skillAc.items = [];
+    return;
+  }
+  const items = filterPickerEntries(list, filterText);
+  if (!items.length) { closeSkillPopup(); return; }
+  skillAc.items = items;
+  skillAc.index = 0;
+  popup.replaceChildren();
+  items.slice(0, 12).forEach((s, i) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'tab-ac-item' + (i === 0 ? ' tab-ac-active' : '');
+    const desc = String(s.description || '').slice(0, 70);
+    item.textContent = `⚡ ${s.name}${desc ? ` — ${desc}` : ''}`;
+    item.title = `${s.name}\n${s.description || ''}`;
+    item.addEventListener('mousedown', (e) => { e.preventDefault(); selectSkill(i); });
+    popup.appendChild(item);
+  });
+  popup.classList.remove('hidden');
+}
+
+function selectSkill(i) {
+  const s = skillAc.items[i];
+  if (!s) return;
+  if (!pickedSkills.some((p) => p.id === s.id)) pickedSkills.push({ id: s.id, name: s.name, description: s.description });
+  swallowTriggerToken('/');
+  closeSkillPopup();
+  renderPickerChips();
+  syncSendBtn();
+  renderPromptInspector();
+}
+
+async function loadFilesDir(path) {
+  filesDir = { path, entries: null, loading: true };
+  renderFilePopup('', true);
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'LIST_WORKSPACE_DIR', path });
+    if (resp && resp.ok && resp.path === path && Array.isArray(resp.entries)) {
+      filesDir = { path, entries: resp.entries, loading: false };
+    } else {
+      filesDir = { path, entries: null, loading: false, error: (resp && resp.error) || 'Directory unavailable.' };
+    }
+  } catch {
+    filesDir = { path, entries: null, loading: false, error: 'Background unavailable.' };
+  }
+  renderFilePopup('', true);
+}
+
+function renderFilePopup(filterText, keepFilter) {
+  const popup = document.getElementById('file-autocomplete');
+  if (!popup) return;
+  popup.replaceChildren();
+  const header = document.createElement('div');
+  header.className = 'tab-ac-item tab-ac-note';
+  header.textContent = `📄 ${filesDir.path}`;
+  popup.appendChild(header);
+  if (filesDir.loading) {
+    popup.appendChild(pickerNoteItem('Loading…'));
+    popup.classList.remove('hidden');
+    fileAc.items = [];
+    return;
+  }
+  if (!filesDir.entries) {
+    popup.appendChild(pickerNoteItem(filesDir.error || 'Directory unavailable.'));
+    popup.classList.remove('hidden');
+    fileAc.items = [];
+    return;
+  }
+  const rows = [];
+  if (filesDir.path !== WORKSPACE_ROOT) rows.push({ name: '..', path: parentOf(filesDir.path), kind: 'up' });
+  for (const e of filesDir.entries) rows.push(e);
+  const filter = keepFilter ? '' : filterText;
+  const items = filterPickerEntries(rows, filter);
+  if (!items.length) { popup.appendChild(pickerNoteItem('No matches.')); popup.classList.remove('hidden'); fileAc.items = []; return; }
+  fileAc.items = items;
+  fileAc.index = 0;
+  items.slice(0, 12).forEach((e, i) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'tab-ac-item' + (i === 0 ? ' tab-ac-active' : '');
+    item.textContent = e.kind === 'dir' ? `📂 ${e.name}/` : e.kind === 'up' ? '⬆ ..' : `📄 ${e.name}`;
+    item.title = e.path || e.name;
+    item.addEventListener('mousedown', (ev) => { ev.preventDefault(); selectFileRow(i); });
+    popup.appendChild(item);
+  });
+  popup.classList.remove('hidden');
+}
+
+function selectFileRow(i) {
+  const e = fileAc.items[i];
+  if (!e) return;
+  if (e.kind === 'up' || e.kind === 'dir') {
+    // Navigate; keep the `%` token so the user keeps filtering as they browse.
+    loadFilesDir(e.path);
+    return;
+  }
+  if (!pickedFiles.some((p) => p.path === e.path)) pickedFiles.push({ path: e.path });
+  swallowTriggerToken('%');
+  closeFilePopup();
+  renderPickerChips();
+  syncSendBtn();
+  renderPromptInspector();
+}
+
+function pickerNoteItem(text) {
+  const note = document.createElement('div');
+  note.className = 'tab-ac-item tab-ac-note';
+  note.textContent = text;
+  return note;
+}
+
+function parentOf(path) {
+  const idx = path.lastIndexOf('/');
+  return idx <= 0 ? WORKSPACE_ROOT : path.slice(0, idx);
+}
+
+/** Remove the typed `/…` or `%…` token (trigger char through the caret). */
+function swallowTriggerToken(trigger) {
+  const before = input.value.slice(0, input.selectionStart ?? input.value.length);
+  const re = new RegExp(`(^|\\s)\\${trigger}(\\S*)$`);
+  const m = before.match(re);
+  if (m) {
+    const start = before.length - m[0].length + m[1].length;
+    const end = input.selectionStart ?? input.value.length;
+    input.value = input.value.slice(0, start) + input.value.slice(end);
+    input.focus();
+  }
+}
+
+function onComposerInputForPickers() {
+  const before = input.value.slice(0, input.selectionStart ?? input.value.length);
+  const slash = before.match(/(^|\s)\/(\S*)$/);
+  const pct = before.match(/(^|\s)%(\S*)$/);
+  if (slash) {
+    closeFilePopup();
+    ensureSkillsLoaded().then(() => renderSkillPopup(slash[2]));
+    renderSkillPopup(slash[2]); // immediate render from cache (or loading note)
+  } else if (pct) {
+    closeSkillPopup();
+    // First open (or after an error): fetch the current directory's listing.
+    if (!filesDir.entries && !filesDir.loading) loadFilesDir(filesDir.path);
+    renderFilePopup(pct[2]);
+  } else {
+    closeSkillPopup();
+    closeFilePopup();
+  }
+}
+
+function onComposerKeydownForPickers(e) {
+  const skillPopup = document.getElementById('skill-autocomplete');
+  const filePopup = document.getElementById('file-autocomplete');
+  const inSkill = skillPopup && !skillPopup.classList.contains('hidden') && skillAc.items.length;
+  const inFile = filePopup && !filePopup.classList.contains('hidden') && fileAc.items.length;
+  if (!inSkill && !inFile) return;
+  const ac = inSkill ? skillAc : fileAc;
+  const popup = inSkill ? skillPopup : filePopup;
+  const select = inSkill ? selectSkill : selectFileRow;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    ac.index = (ac.index + (e.key === 'ArrowDown' ? 1 : ac.items.length - 1)) % ac.items.length;
+    const buttons = [...popup.querySelectorAll('button.tab-ac-item')];
+    buttons.forEach((el, i) => el.classList.toggle('tab-ac-active', i === ac.index));
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    e.stopPropagation();
+    select(ac.index);
+  } else if (e.key === 'Escape') {
+    closeAllPickerPopups();
+  }
+}
+
+/** Chips armed for the next turn (send-once): ⚡ skill invocations + 📄 file refs. */
+function renderPickerChips() {
+  const wrap = document.getElementById('picker-chips');
+  if (!wrap) return;
+  wrap.replaceChildren();
+  if (!pickedSkills.length && !pickedFiles.length) {
+    wrap.classList.add('hidden');
+    return;
+  }
+  wrap.classList.remove('hidden');
+  const addChip = (label, title, onRemove) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'picker-chip';
+    const text = document.createElement('span');
+    text.textContent = label;
+    const x = document.createElement('span');
+    x.className = 'picker-chip-x';
+    x.textContent = '✕';
+    chip.appendChild(text);
+    chip.appendChild(x);
+    chip.title = title;
+    chip.addEventListener('click', onRemove);
+    wrap.appendChild(chip);
+  };
+  for (const s of pickedSkills) {
+    addChip(`⚡ ${s.name}`, `${s.description || s.name} — runs on the next send`, () => {
+      const idx = pickedSkills.indexOf(s);
+      if (idx !== -1) pickedSkills.splice(idx, 1);
+      renderPickerChips();
+      renderPromptInspector();
+    });
+  }
+  for (const f of pickedFiles) {
+    addChip(`📄 ${f.path.split('/').pop()}`, `${f.path} — attached to the next send`, () => {
+      const idx = pickedFiles.indexOf(f);
+      if (idx !== -1) pickedFiles.splice(idx, 1);
+      renderPickerChips();
+      renderPromptInspector();
+    });
   }
 }
 
@@ -3374,6 +3668,16 @@ sendQuery = async function() {
   // follow the strip's recency order; closed tabs drop with an inline note.
   const { tabContexts, dropped } = await fetchTabContextsForSend();
 
+  // ---- Picker chips (#28) are send-once: armed skills/files ride THIS turn,
+  // then clear. (Skills are an invocation — re-arming them every turn would
+  // re-run the skill uninvited.)
+  closeAllPickerPopups();
+  const turnSkills = pickedSkills.slice();
+  const turnFiles = pickedFiles.slice();
+  pickedSkills.length = 0;
+  pickedFiles.length = 0;
+  renderPickerChips();
+
   const userMsgEl = addMessage('user', query);
   // When a page is captured for this turn, show a Zo-style mention pill
   // (file-mention badge) in the user message so it reads like Zo's
@@ -3398,6 +3702,21 @@ sendQuery = async function() {
   }
   if (dropped.length) {
     addMessage('system', `📎 ${dropped.length} referenced tab${dropped.length === 1 ? '' : 's'} closed — skipped.`);
+  }
+  // Picker pills (send-once chips re-render as mention pills, like tab refs).
+  if (turnSkills.length || turnFiles.length) {
+    const userBody = userMsgEl && userMsgEl.querySelector ? userMsgEl.querySelector('.msg-body') : null;
+    if (userBody) {
+      for (const s of turnSkills) appendMentionPill(userBody, `⚡ ${s.name}`);
+      for (const f of turnFiles) appendMentionPill(userBody, `📄 ${f.path.split('/').pop()}`);
+    }
+    const conv = getActiveConversation();
+    if (conv && conv.messages.length) {
+      const last = conv.messages[conv.messages.length - 1];
+      if (turnSkills.length) last.skillRefs = turnSkills.map((s) => ({ name: s.name }));
+      if (turnFiles.length) last.fileRefs = turnFiles.map((f) => ({ path: f.path }));
+      saveCurrentConversation();
+    }
   }
   addMessage('thinking', 'Zo is thinking. Press Esc to stop.');
   startThinkingTimeout();
@@ -3473,6 +3792,8 @@ sendQuery = async function() {
         effectiveTier,
         modeOverrides,
         ...(sendTabContexts.length ? { tabContexts: sendTabContexts } : {}),
+        ...(turnSkills.length ? { skills: turnSkills } : {}),
+        ...(turnFiles.length ? { workspaceFiles: turnFiles } : {}),
       });
     } catch (e) {
       // Port disconnected between check and postMessage — fall through to non-streaming fallback
@@ -3499,6 +3820,8 @@ sendQuery = async function() {
     effectiveTier,
     modeOverrides,
     ...(sendTabContexts.length ? { tabContexts: sendTabContexts } : {}),
+    ...(turnSkills.length ? { skills: turnSkills } : {}),
+    ...(turnFiles.length ? { workspaceFiles: turnFiles } : {}),
   });
 
   // Persist the echoed thread id for this chat (before any early return).

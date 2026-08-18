@@ -130,6 +130,65 @@ const server = http.createServer(async (req, res) => {
     }));
   }
 
+  // #28: MCP server mock — the composer pickers' source (skills + files).
+  // Mirrors the live server's shapes (verified 2026-08-18): JSON-RPC over
+  // POST, initialize returns the session id header, tools/call `bash`
+  // wraps stdout in a Python-repr CmdResult with __ZO_BEGIN__/__ZO_END__
+  // markers around the payload.
+  if (url.pathname === "/mcp" && req.method === "POST") {
+    const chunks = [];
+    for await (const c of req) chunks.push(c);
+    let body = {};
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+    } catch {}
+    requests.push({ ts: Date.now(), method: "POST", url: "/mcp", body });
+    const json = (payload, headers = {}) => {
+      res.writeHead(200, { "content-type": "application/json", ...cors, ...headers });
+      res.end(JSON.stringify(payload));
+    };
+    if (body.method === "initialize") {
+      return json(
+        { jsonrpc: "2.0", id: body.id, result: {
+          protocolVersion: "2024-11-05",
+          capabilities: { tools: { listChanged: false } },
+          serverInfo: { name: "zo-tools", version: "1.0.0" },
+        } },
+        { "mcp-session-id": "e2e-mcp-session" },
+      );
+    }
+    if (body.method === "notifications/initialized") {
+      res.writeHead(202, cors);
+      return res.end();
+    }
+    if (body.method === "tools/call" && body.params?.name === "bash") {
+      const cmd = String(body.params.arguments?.cmd || "");
+      const bash = (stdout) => `CmdResult(stdout='__ZO_BEGIN__\\n${stdout}\\n__ZO_END__\\n', stderr='', returncode=0)`;
+      if (cmd.includes("SKILL.md")) {
+        const skillsOut = [
+          "##SKILL /home/workspace/Skills/websh",
+          "---",
+          "name: websh",
+          "description: A shell for the web.",
+          "---",
+          "",
+          "##SKILL /home/workspace/Skills/e2e-skill",
+          "---",
+          "name: e2e-skill",
+          "description: Fixture skill for the picker e2e.",
+          "---",
+        ].join("\\n");
+        return json({ jsonrpc: "2.0", id: body.id, result: { isError: false, content: [{ type: "text", text: bash(skillsOut) }] } });
+      }
+      if (cmd.includes("ls -1F")) {
+        const listing = cmd.includes("/home/workspace/Skills") ? "e2e-skill/\\nREADME.md" : "Skills/\\nAGENTS.md";
+        return json({ jsonrpc: "2.0", id: body.id, result: { isError: false, content: [{ type: "text", text: bash(listing) }] } });
+      }
+      return json({ jsonrpc: "2.0", id: body.id, result: { isError: true, content: [{ type: "text", text: "unexpected command" }] } });
+    }
+    return json({ jsonrpc: "2.0", id: body.id, error: { code: -32601, message: "method not found" } });
+  }
+
   // ---- mock Zo API ----
   if (url.pathname === "/models/available" || url.pathname === "/personas/available") {
     const isModels = url.pathname.includes("models");
