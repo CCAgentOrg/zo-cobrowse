@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test";
 import {
   normalizeActions,
   ACTION_TYPE_NAMES,
+  isContextAction,
 } from "../extension/lib/modes.js";
 import { ActionArray } from "./schemas/actions.js";
 
@@ -152,9 +153,51 @@ describe("normalizeActions — robustness / non-conforming input", () => {
 });
 
 describe("ACTION_TYPE_NAMES", () => {
-  it("lists all seven action types", () => {
+  it("lists all seven executor action types", () => {
     expect(ACTION_TYPE_NAMES.sort()).toEqual(
       ["click", "done", "extract", "fill", "navigate", "scroll", "wait"],
     );
+  });
+});
+
+describe("context-only pull actions (#24)", () => {
+  it("survive normalization in canonical type-first form", () => {
+    const out = normalizeActions([
+      { type: "read_tab", ref: "T1" },
+      { type: "read_page" },
+      { type: "get_dom" },
+      { type: "get_form" },
+    ]);
+    expect(out).toEqual([
+      { type: "read_tab", ref: "T1" },
+      { type: "read_page" },
+      { type: "get_dom" },
+      { type: "get_form" },
+    ]);
+  });
+
+  it("survive normalization in key-first form", () => {
+    const out = normalizeActions([
+      { read_tab: { ref: "T2" } },
+      { get_form: {} },
+    ]);
+    expect(out).toEqual([
+      { type: "read_tab", ref: "T2" },
+      { type: "get_form" },
+    ]);
+  });
+
+  it("survive normalization in the singular {action:…} form", () => {
+    const out = normalizeActions([{ action: "read_page" }]);
+    expect(out).toEqual([{ type: "read_page" }]);
+  });
+
+  it("are recognized by isContextAction (executor filter)", () => {
+    for (const type of ["read_tab", "read_page", "get_dom", "get_form"]) {
+      expect(isContextAction({ type })).toBe(true);
+    }
+    expect(isContextAction({ type: "click" })).toBe(false);
+    expect(isContextAction(null)).toBe(false);
+    expect(isContextAction("read_page")).toBe(false);
   });
 });

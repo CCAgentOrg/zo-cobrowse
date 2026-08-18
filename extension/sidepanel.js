@@ -1,7 +1,7 @@
 // Zo Co-browse — Side Panel Logic
 
 import { parseBangCommand, BANG_COMMANDS } from './lib/bang-commands.js';
-import { BUILTIN_MODES, DEFAULT_MODE_ID, resolveMode, presetToMode, normalizeActions } from './lib/modes.js';
+import { BUILTIN_MODES, DEFAULT_MODE_ID, resolveMode, presetToMode, normalizeActions, isContextAction } from './lib/modes.js';
 import { looksLikeActionJson } from './lib/intent.js';
 import {
   createConversationState,
@@ -2970,7 +2970,7 @@ function handleStreamMessage(msg) {
     }
     case 'STREAM_DONE': {
       clearThinkingTimeout();
-      const domActions = (msg.actions || []).filter((a) => a.type !== 'navigate' && a.type !== 'done' && a.type !== 'read_tab');
+      const domActions = (msg.actions || []).filter((a) => a.type !== 'navigate' && a.type !== 'done' && !isContextAction(a));
       // Remove any stale thinking indicator regardless of active state
       const staleThinking = msgsEl.querySelector('.msg-thinking');
       if (staleThinking) staleThinking.remove();
@@ -3032,7 +3032,7 @@ function handleStreamMessage(msg) {
           }
           // Actions from a backgrounded chat are never auto-run against a page
           // the user isn't looking at — store them as pending for that chat.
-          const bgDom = (msg.actions || []).filter((a) => a.type !== 'navigate' && a.type !== 'done' && a.type !== 'read_tab');
+          const bgDom = (msg.actions || []).filter((a) => a.type !== 'navigate' && a.type !== 'done' && !isContextAction(a));
           if (bgDom.length) {
             conv.pendingActions = { reasoning: safeText(msg.reasoning), actions: bgDom };
           }

@@ -255,23 +255,24 @@ describe("tab contexts — background wiring", () => {
     expect(bgCode).toMatch(/getActiveTabContext\(tabId, 2, null, \{ skipDebugger: true \}\)/);
   });
 
-  it("chains read_tab follow-ups INSIDE the stream (before STREAM_DONE)", () => {
-    expect(bgCode).toContain("finishStreamWithTabLoop");
+  it("chains pull follow-ups INSIDE the stream (before STREAM_DONE)", () => {
+    expect(bgCode).toContain("finishStreamWithPullLoop");
     // Every terminal branch routes through the loop wrapper. The only bare
     // `finishStream(port` occurrences are the definition itself and the two
-    // early-exit calls inside the wrapper (no loop / no read_tab requests).
-    const bare = [...bgCode.matchAll(/(?<!WithTabLoop)finishStream\(port/g)].length;
+    // early-exit calls inside the wrapper (no loop / no pull requests).
+    const bare = [...bgCode.matchAll(/(?<!WithPullLoop)finishStream\(port/g)].length;
     expect(bare).toBe(3);
-    expect(bgCode).toContain("MAX_READ_TAB_CYCLES");
+    expect(bgCode).toContain("MAX_PULL_CYCLES");
     expect(bgCode).toContain("_followUpInput");
   });
 
-  it("never forwards read_tab to the DOM executor", () => {
-    expect(bgCode).toMatch(/a\.type !== 'read_tab'/);
+  it("never forwards context-only pull actions to the DOM executor", () => {
+    expect(bgCode).toMatch(/!isContextAction\(a\)/);
+    expect(bgCode).not.toMatch(/a\.type !== 'read_tab'/);
   });
 
-  it("emits a tab-read trace card on the STREAM_TOOL channel", () => {
-    expect(bgCode).toContain("emitTabReadTrace");
+  it("emits a pull trace card on the STREAM_TOOL channel", () => {
+    expect(bgCode).toContain("emitPullTrace");
     expect(bgCode).toMatch(/type: 'STREAM_TOOL'/);
   });
 });
@@ -462,7 +463,8 @@ describe("tab contexts — sidepanel wiring", () => {
     expect(spCode).toMatch(/restoreTabRefs\(\)/);
   });
 
-  it("filters read_tab out of DOM action handling (defensive)", () => {
-    expect(spCode).toMatch(/a\.type !== 'read_tab'/);
+  it("filters context-only pull actions out of DOM action handling (defensive)", () => {
+    expect(spCode).toMatch(/!isContextAction\(a\)/);
+    expect(spCode).not.toMatch(/a\.type !== 'read_tab'/);
   });
 });

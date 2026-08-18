@@ -18,7 +18,10 @@ export const ACTION_SCHEMA_COMPACT =
   'Respond with JSON {"actions":[...]}. ' +
   'Actions: click{selector} | fill{selector,value} | extract{selector,attribute} | ' +
   'navigate{url} | scroll{direction,amount?} | wait{ms} | done{response}' +
-  ' | read_tab{ref} — request full content of a referenced tab (context only).';
+  ' | read_tab{ref} — request full content of a referenced tab (context only)' +
+  ' | read_page — fetch full text of the current page (context only)' +
+  ' | get_dom — fetch all interactive elements of the current page (context only)' +
+  ' | get_form — fetch all form fields of the current page (context only).';
 
 /**
  * Fallback instructions for Modes that don't define their own.
@@ -200,6 +203,22 @@ export function presetToMode(preset) {
 export const ACTION_TYPE_NAMES = ['click', 'fill', 'extract', 'navigate', 'scroll', 'wait', 'done'];
 
 /**
+ * Context-only ("pull") action names (#24) — intercepted by the background's
+ * in-stream pull loop and NEVER executed against the DOM. They are excluded
+ * from ACTION_TYPE_NAMES (the executor list) but known to normalizeActions so
+ * a canonical `{type:'read_tab',ref}` from Zo survives parsing (it used to be
+ * silently stripped before extractPullRequests could see it).
+ */
+export const CONTEXT_ACTION_NAMES = ['read_tab', 'read_page', 'get_dom', 'get_form'];
+
+/** True for context-only pull actions — filtered wherever actions execute. */
+export function isContextAction(a) {
+  return !!(a && typeof a === 'object' && CONTEXT_ACTION_NAMES.includes(a.type));
+}
+
+const KNOWN_ACTION_NAMES = [...ACTION_TYPE_NAMES, ...CONTEXT_ACTION_NAMES];
+
+/**
  * Normalize Zo's action payload to the canonical "type-first" form the
  * extension executes:
  *
@@ -224,7 +243,7 @@ export function normalizeActions(actions) {
   const out = [];
   for (const a of actions) {
     if (!a || typeof a !== 'object' || Array.isArray(a)) continue;
-    if (typeof a.type === 'string' && ACTION_TYPE_NAMES.includes(a.type)) {
+    if (typeof a.type === 'string' && KNOWN_ACTION_NAMES.includes(a.type)) {
       // Already canonical. Keep as-is (the consumers own validation).
       out.push(a);
       continue;
@@ -232,7 +251,7 @@ export function normalizeActions(actions) {
     // Key-first: a single key that is a known action type, mapped to its args.
     let found = false;
     for (const key of Object.keys(a)) {
-      if (ACTION_TYPE_NAMES.includes(key)) {
+      if (KNOWN_ACTION_NAMES.includes(key)) {
         const args = (a[key] && typeof a[key] === 'object' && !Array.isArray(a[key])) ? a[key] : {};
         out.push({ type: key, ...args });
         found = true;
@@ -243,7 +262,7 @@ export function normalizeActions(actions) {
       // Singular `{"action":"click",...}` variant — real multi-action captures
       // emit this non-spec form (qa-notes.md §"Action envelope shape"). Map
       // a top-level `action` naming a known type onto the canonical `type`.
-      if (typeof a.action === 'string' && ACTION_TYPE_NAMES.includes(a.action)) {
+      if (typeof a.action === 'string' && KNOWN_ACTION_NAMES.includes(a.action)) {
         const { action, args, ...rest } = a;
         // args may be an object (common) or absent; merge into the flat action.
         const argsObj = (args && typeof args === 'object' && !Array.isArray(args)) ? args : {};

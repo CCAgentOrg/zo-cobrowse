@@ -6,21 +6,27 @@ import {
   presetToMode,
   DEFAULT_MODE_ID,
   normalizeActions,
+  isContextAction,
 } from './lib/modes.js';
 import { buildPrompt } from './lib/prompt.js';
 import { parseZoOutput, stripCodeFence } from './lib/parse-output.js';
 // safeText stays the local one (line ~156) — do NOT import it here.
 import {
   STRIP_MAX_TABS,
-  MAX_READ_TAB_CYCLES,
   hostOf,
   isBlankPage,
   isCapturableUrl,
-  buildTabFollowUp,
-  extractReadTabRequests,
   isTabSentAt,
   noteTabSent,
 } from './lib/tab-contexts.js';
+import {
+  extractPullRequests,
+  buildPullFollowUp,
+  pullHash,
+  pullTier,
+  pullCaptureOpts,
+  MAX_PULL_CYCLES,
+} from './lib/pull.js';
 import {
   loadConversationState,
   saveConversationState,
@@ -297,10 +303,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
     case 'EXECUTE_ACTIONS': {
-      // read_tab never reaches the DOM — the background consumes it in the
-      // stream loop (finishStreamWithTabLoop); filter here so a degenerate
-      // Zo response that still asks after the budget note no-ops safely.
-      const domActions = (request.actions || []).filter((a) => a && a.type !== 'read_tab');
+      // Context-only pull actions never reach the DOM — the background
+      // consumes them in the stream loop (finishStreamWithPullLoop); filter
+      // here so a degenerate Zo response that still asks after the budget
+      // note no-ops safely.
+      const domActions = (request.actions || []).filter((a) => a && !isContextAction(a));
       executeActions(domActions, request.tabId || senderTabId(sender)).then(sendResponse);
       return true;
     }
@@ -473,7 +480,13 @@ async function getActiveTabContext(tabId, tier, modeId, opts) {
   // Normalize the tier. tier 0 = URL/title/viewport only; 1 = +text;
   // 2 = +clickable+forms (with selectors); 3 = +screenshot. Unknown → 2.
   const t = (typeof tier === 'number' && tier >= 0 && tier <= 3) ? tier : 2;
-  const textBudget = (t >= 1) ? 4000 : 2000; // upper bound at capture; Mode re-slices in buildPrompt
+  // opts.pull — capture-shape hint from the pull loop (#24): 'page' raises the
+  // text budget (read_page), 'dom' raises element caps (get_dom), 'form'
+  // returns all form fields (get_form). Null/unknown = normal prompt capture.
+  const pull = opts && typeof opts.pull === 'string' ? opts.pull : null;
+  const textBudget = pull === 'page' ? 20000 : (t >= 1 ? 4000 : 2000); // upper bound at capture; Mode re-slices in buildPrompt
+  const formCap = pull === 'form' ? 300 : pull === 'dom' ? 150 : 30;
+  const clickCap = pull === 'dom' ? 200 : 50;
   // opts.skipDebugger — skip the CDP fast-path. Used for background-tab
   // captures (tab contexts / read_tab) so the "is being debugged" banner
   // never appears on a tab the user isn't looking at.
@@ -529,7 +542,7 @@ async function getActiveTabContext(tabId, tier, modeId, opts) {
         var m=document.querySelector('main,article,[role=main],#content,.content');var b=document.body;var tx=(m||b)?.innerText||'';
         var ff=[];document.querySelectorAll('input:not([type=hidden]),textarea,select').forEach(function(el){var r=el.getBoundingClientRect();if(r.width===0||r.height===0)return;ff.push({tag:el.tagName.toLowerCase(),type:el.type||'text',name:el.name||el.id||'',selector:sel(el),placeholder:el.placeholder||''});});
         var ck=[];document.querySelectorAll('a,button,[role=button],[onclick],input[type=submit],input[type=button]').forEach(function(el){var r=el.getBoundingClientRect();if(r.width<8||r.height<8)return;var tx=(el.textContent||el.value||'').trim().substring(0,60);if(!tx)return;ck.push({text:tx,tag:el.tagName.toLowerCase(),selector:sel(el)});});
-        return{url:location.href,title:document.title,visibleText:tx.substring(0,${textBudget}),formFields:ff.slice(0,30),clickable:ck.slice(0,50),viewport:{w:window.innerWidth,h:window.innerHeight}};
+        return{url:location.href,title:document.title,visibleText:tx.substring(0,${textBudget}),formFields:ff.slice(0,${formCap}),clickable:ck.slice(0,${clickCap}),viewport:{w:window.innerWidth,h:window.innerHeight}};
       })()`;
     }
     var result = await evalInPage(tab.id, captureExpr, 5000);
@@ -542,7 +555,7 @@ async function getActiveTabContext(tabId, tier, modeId, opts) {
   // Path 2: Content script
   if (!context) {
     try {
-      const resp = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_CONTEXT', tier: t });
+      const resp = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_CONTEXT', tier: t, pull });
       if (resp && !resp.error) context = resp;
     } catch {
       // content script not injected — fall through
@@ -556,13 +569,13 @@ async function getActiveTabContext(tabId, tier, modeId, opts) {
       if (t === 0) {
         captureFn = () => ({ url: location.href, title: document.title, viewport: { w: window.innerWidth, h: window.innerHeight } });
       } else if (t === 1) {
-        captureFn = () => {
+        captureFn = (pull) => {
           const m = document.querySelector('main, article, [role="main"], #content, .content');
           const text = (m || document.body)?.innerText || '';
-          return { url: location.href, title: document.title, visibleText: text.substring(0, 4000), viewport: { w: window.innerWidth, h: window.innerHeight } };
+          return { url: location.href, title: document.title, visibleText: text.substring(0, pull === 'page' ? 20000 : 4000), viewport: { w: window.innerWidth, h: window.innerHeight } };
         };
       } else {
-        captureFn = () => {
+        captureFn = (pull) => {
           // Inlined selector builder (mirror of content.js buildSelector).
           function sel(el) {
             if (el.id) { try { return '#' + CSS.escape(el.id); } catch (e) {} }
@@ -572,6 +585,8 @@ async function getActiveTabContext(tabId, tier, modeId, opts) {
             const p = el.parentElement; if (p) { const sib = Array.from(p.children).filter((x) => x.tagName === el.tagName); if (sib.length > 1) s += ':nth-of-type(' + (sib.indexOf(el) + 1) + ')'; }
             return s;
           }
+          const formCap = pull === 'form' ? 300 : pull === 'dom' ? 150 : 30;
+          const clickCap = pull === 'dom' ? 200 : 50;
           const m = document.querySelector('main, article, [role="main"], #content, .content');
           const text = (m || document.body)?.innerText || '';
           const formFields = [];
@@ -588,10 +603,10 @@ async function getActiveTabContext(tabId, tier, modeId, opts) {
             if (!tx) return;
             clickable.push({ text: tx, tag: el.tagName.toLowerCase(), selector: sel(el) });
           });
-          return { url: location.href, title: document.title, visibleText: text.substring(0, 4000), formFields: formFields.slice(0, 30), clickable: clickable.slice(0, 50), viewport: { w: window.innerWidth, h: window.innerHeight } };
+          return { url: location.href, title: document.title, visibleText: text.substring(0, 4000), formFields: formFields.slice(0, formCap), clickable: clickable.slice(0, clickCap), viewport: { w: window.innerWidth, h: window.innerHeight } };
         };
       }
-      const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: captureFn });
+      const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: captureFn, args: [pull] });
       context = result?.result || { error: 'Could not capture context' };
     } catch (err) {
       context = { error: err.message };
@@ -927,12 +942,13 @@ async function _askZoStreamImpl(port, msg) {
   // the configured default persona id. No lite/full routing.
   const resolvedPersonaId = personaId || config.zoPersonaId || '';
 
-  // Tab-context read_tab loop state. Created fresh for a user turn; the
-  // follow-up cycles below re-enter with _loop + _followUpInput (the
-  // pre-assembled follow-up bypasses buildPrompt — it is a tool-result turn,
-  // not a user turn). `threadId` carries the per-chat Zo thread: initialized
-  // from the payload's stored id, then advanced at each capture point so a
-  // mid-loop rotation can't strand follow-up cycles on a stale thread.
+  // Pull-loop state (#24 — read_tab / read_page / get_dom / get_form).
+  // Created fresh for a user turn; the follow-up cycles below re-enter with
+  // _loop + _followUpInput (the pre-assembled follow-up bypasses buildPrompt —
+  // it is a tool-result turn, not a user turn). `threadId` carries the per-chat
+  // Zo thread: initialized from the payload's stored id, then advanced at each
+  // capture point so a mid-loop rotation can't strand follow-up cycles on a
+  // stale thread.
   const loop = msg._loop || {
     tabContexts: Array.isArray(msg.tabContexts) ? msg.tabContexts.filter((t) => t && typeof t === 'object') : [],
     cyclesUsed: 0,
@@ -982,7 +998,7 @@ async function _askZoStreamImpl(port, msg) {
       try {
         const data = await response.json();
         if (data.conversation_id) { zoConversationId = data.conversation_id; loop.threadId = data.conversation_id; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
-        await finishStreamWithTabLoop(port, sid, data.output || '', {}, loop);
+        await finishStreamWithPullLoop(port, sid, data.output || '', {}, loop);
       } catch (e) {
         safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: `Non-streaming parse error: ${e.message}` });
       }
@@ -1064,7 +1080,7 @@ async function _askZoStreamImpl(port, msg) {
                 }
               } catch {}
             }
-            finishStreamWithTabLoop(port, sid, endPayload, { reasoning: reasoningText }, loop);
+            finishStreamWithPullLoop(port, sid, endPayload, { reasoning: reasoningText }, loop);
             currentEventType = '';
             return;
           }
@@ -1084,7 +1100,7 @@ async function _askZoStreamImpl(port, msg) {
           // Terminal: real Zo streams end with `event: completed` (status
           // succeeded/failed), NOT `End`. Treat as the canonical terminal.
           if (currentEventType === 'completed') {
-            finishStreamWithTabLoop(port, sid, fullText, { reasoning: reasoningText }, loop);
+            finishStreamWithPullLoop(port, sid, fullText, { reasoning: reasoningText }, loop);
             currentEventType = '';
             return;
           }
@@ -1201,13 +1217,13 @@ async function _askZoStreamImpl(port, msg) {
             if (parsed.done || parsed.finish_reason || parsed.type === 'final' || parsed.type === 'complete' || parsed.type === 'End') {
               if (parsed.output && !fullText) fullText = safeText(parsed.output);
               else if (parsed.type === 'End' && parsed.reasoning && !fullText) fullText = safeText(parsed);
-              await finishStreamWithTabLoop(port, sid, fullText, { reasoning: reasoningText }, loop);
+              await finishStreamWithPullLoop(port, sid, fullText, { reasoning: reasoningText }, loop);
               return;
             }
           } catch {
             // Plain text SSE (e.g. [DONE])
             if (data === '[DONE]') {
-              await finishStreamWithTabLoop(port, sid, fullText, { reasoning: reasoningText }, loop);
+              await finishStreamWithPullLoop(port, sid, fullText, { reasoning: reasoningText }, loop);
               return;
             }
             fullText += safeText(data);
@@ -1218,7 +1234,7 @@ async function _askZoStreamImpl(port, msg) {
     }
 
     // Stream ended (no End event received — graceful fallback)
-    await finishStreamWithTabLoop(port, sid, fullText, { reasoning: reasoningText }, loop);
+    await finishStreamWithPullLoop(port, sid, fullText, { reasoning: reasoningText }, loop);
   } catch (err) {
     safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: `Connection failed: ${err.message}` });
     throw err; // let the retry wrapper decide
@@ -1290,58 +1306,87 @@ function finishStream(port, sid, output, extra = {}) {
  * the same live assistant bubble. `loop` is undefined for callers without tab
  * contexts (legacy paths finish immediately).
  */
-async function finishStreamWithTabLoop(port, sid, output, extra, loop) {
+async function finishStreamWithPullLoop(port, sid, output, extra, loop) {
   if (!loop || port._dead) {
     finishStream(port, sid, output, extra);
     return;
   }
   // Every finish from here on belongs to this stream's Zo thread — echo it.
   const withThread = { ...extra, conversationId: loop.threadId ?? undefined };
-  const reqs = extractReadTabRequests(parseZoOutput(output).actions);
+  const reqs = extractPullRequests(parseZoOutput(output).actions);
   if (!reqs.length) {
     finishStream(port, sid, output, withThread);
     return;
   }
 
-  const req = reqs[0]; // one tab per cycle; Zo re-asks for the next in its reply
-  const tabCtx = (loop.tabContexts || []).find((t) => t && t.ref === req.ref);
-  if (loop.cyclesUsed >= MAX_READ_TAB_CYCLES || loop.budgetSent) {
+  const req = reqs[0]; // one pull per cycle; Zo re-asks for the next in its reply
+  if (loop.cyclesUsed >= MAX_PULL_CYCLES || loop.budgetSent) {
     // Budget exhausted (or already told once): send the wrap-up note once,
-    // then finish normally even if Zo asks again (read_tab no-ops downstream).
+    // then finish normally even if Zo asks again (pulls no-op downstream).
     loop.budgetSent = true;
-    const fu = buildTabFollowUp(
-      tabCtx || { ref: req.ref, title: '', url: '', host: '' },
-      null,
-      { reason: 'budget' }
-    );
+    const fu = buildPullFollowUp(req.type, pullTargetFor(req, loop, null), null, { reason: 'budget' });
     loop.cyclesUsed++;
-    emitTabReadTrace(port, sid, req.ref, tabCtx, fu);
+    emitPullTrace(port, sid, req, null, fu);
     await _askZoStreamImpl(port, { ...loop.msg, sessionId: sid, _followUpInput: fu.input, _loop: loop });
     return;
   }
 
   loop.cyclesUsed++;
-  if (!tabCtx) {
-    // Unknown/stale ref — tell Zo conversationally so it can recover.
-    const fu = buildTabFollowUp({ ref: req.ref, title: '', url: '', host: '' }, null);
-    emitTabReadTrace(port, sid, req.ref, null, fu);
+
+  if (req.type === 'read_tab') {
+    const tabCtx = (loop.tabContexts || []).find((t) => t && t.ref === req.ref);
+    if (!tabCtx) {
+      // Unknown/stale ref — tell Zo conversationally so it can recover.
+      const fu = buildPullFollowUp('read_tab', { ref: req.ref, title: '', url: '', host: '' }, null);
+      emitPullTrace(port, sid, req, null, fu);
+      await _askZoStreamImpl(port, { ...loop.msg, sessionId: sid, _followUpInput: fu.input, _loop: loop });
+      return;
+    }
+
+    const tier = Math.min(Number.isInteger(loop.mode?.contextTier) ? loop.mode.contextTier : 2, 2); // screenshots impossible for background tabs
+    const capture = await getActiveTabContext(tabCtx.tabId, tier, null, { skipDebugger: !tabCtx.isActive });
+    // A blank capture (new/blank tab navigated to mid-stream) is unreadable —
+    // same degraded shape as a failed capture, but with its own reason.
+    const good = capture && !capture.error && !capture.blank ? capture : null;
+    const pageHash = good ? computePageHash(good, tier >= 1 ? tier : 1) : `closed-${tabCtx.tabId}`;
+    // Send-once state is per chat (loop.msg.chatId) — tabsSent dedup must not
+    // leak across the sidepanel's chat tabs.
+    const chatId = loop.msg?.chatId;
+    const state = await loadConversationState(chatId);
+    const alreadySent = isTabSentAt(state, tabCtx.tabId, pullHash('read_tab', pageHash));
+    const fu = buildPullFollowUp(
+      'read_tab',
+      tabCtx,
+      good,
+      capture && capture.blank
+        ? { reason: 'blank' }
+        : alreadySent
+          ? { reason: 'duplicate' }
+          : { textBudget: loop.mode?.textBudget }
+    );
+    if (!alreadySent && good) {
+      await saveConversationState(chatId, noteTabSent(state, tabCtx.tabId, pullHash('read_tab', pageHash)));
+    }
+    emitPullTrace(port, sid, req, tabCtx, fu);
     await _askZoStreamImpl(port, { ...loop.msg, sessionId: sid, _followUpInput: fu.input, _loop: loop });
     return;
   }
 
-  const tier = Math.min(Number.isInteger(loop.mode?.contextTier) ? loop.mode.contextTier : 2, 2); // screenshots impossible for background tabs
-  const capture = await getActiveTabContext(tabCtx.tabId, tier, null, { skipDebugger: !tabCtx.isActive });
-  // A blank capture (new/blank tab navigated to mid-stream) is unreadable —
-  // same degraded shape as a failed capture, but with its own reason.
+  // Active-page pull: read_page / get_dom / get_form. The acting tab is the
+  // active web tab (same resolution as send-time capture — ASK_ZO streams
+  // arrive from the sidepanel with no usable sender tab).
+  const tier = pullTier(req.type);
+  const capture = await getActiveTabContext(loop.msg?.tabId || undefined, tier, null, pullCaptureOpts(req.type));
   const good = capture && !capture.error && !capture.blank ? capture : null;
-  const pageHash = good ? computePageHash(good, tier >= 1 ? tier : 1) : `closed-${tabCtx.tabId}`;
-  // Send-once state is per chat (loop.msg.chatId) — tabsSent dedup must not
-  // leak across the sidepanel's chat tabs.
+  const pageHash = good ? computePageHash(good, tier) : 'page-unavailable';
   const chatId = loop.msg?.chatId;
   const state = await loadConversationState(chatId);
-  const alreadySent = isTabSentAt(state, tabCtx.tabId, pageHash);
-  const fu = buildTabFollowUp(
-    tabCtx,
+  const hash = pullHash(req.type, pageHash);
+  const sentKey = good?.tabId ?? 'page';
+  const alreadySent = isTabSentAt(state, sentKey, hash);
+  const fu = buildPullFollowUp(
+    req.type,
+    pullTargetFor(req, loop, good),
     good,
     capture && capture.blank
       ? { reason: 'blank' }
@@ -1350,22 +1395,29 @@ async function finishStreamWithTabLoop(port, sid, output, extra, loop) {
         : { textBudget: loop.mode?.textBudget }
   );
   if (!alreadySent && good) {
-    await saveConversationState(chatId, noteTabSent(state, tabCtx.tabId, pageHash));
+    await saveConversationState(chatId, noteTabSent(state, sentKey, hash));
   }
-  emitTabReadTrace(port, sid, req.ref, tabCtx, fu);
+  emitPullTrace(port, sid, req, pullTargetFor(req, loop, good), fu);
   await _askZoStreamImpl(port, { ...loop.msg, sessionId: sid, _followUpInput: fu.input, _loop: loop });
 }
 
-/** Tool-trace card for one read_tab cycle (the sidepanel's STREAM_TOOL channel). */
-function emitTabReadTrace(port, sid, ref, tabCtx, fu) {
-  const callId = `tabread-${sid}-${ref}`;
+/** {title,url} header target for a pull's follow-up: fresh capture first,
+ *  falling back to the send-time pageContext (tier-0 turns still have it). */
+function pullTargetFor(req, loop, capture) {
+  const pc = (capture && !capture.error && capture) || (loop && loop.msg && loop.msg.pageContext) || {};
+  return { title: pc.title || '', url: pc.url || '' };
+}
+
+/** Tool-trace card for one pull cycle (the sidepanel's STREAM_TOOL channel). */
+function emitPullTrace(port, sid, req, target, fu) {
+  const callId = `pull-${sid}-${req.type}${req.ref ? '-' + req.ref : ''}`;
   safePost(port, {
     sessionId: sid,
     type: 'STREAM_TOOL',
     phase: 'call',
     callId,
-    toolName: `read_tab ${ref}`,
-    args: tabCtx ? safeText(tabCtx.host || tabCtx.title) : '',
+    toolName: req.ref ? `read_tab ${req.ref}` : req.type,
+    args: safeText((target && (target.host || target.title)) || ''),
   });
   safePost(port, {
     sessionId: sid,
