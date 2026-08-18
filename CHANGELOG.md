@@ -5,6 +5,33 @@ All notable changes to Zo Co-browse are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added — #25 Vision-gated screenshots
+
+- **`lib/vision.js`** — the vision gate: tier-3 screenshot capture now checks
+  `/models/catalog`'s `supports_images` for the selected model. A known
+  non-vision model skips the `captureVisibleTab` round-trip and the base64
+  data-URL prompt bloat (pure token waste); unknown support keeps capturing
+  (backward-compatible — tier 3 worked before this gate existed). Pure
+  functions: `findModelEntry`, `modelVisionSupport`, `shouldCaptureScreenshot`,
+  `catalogIsStale` (5-min TTL), `visionModelSuggestion`.
+- **`fetchModelCatalog()` + `GET_VISION_CATALOG`** — the background fetches the
+  no-auth model catalog, caches it for 5 min (in-flight dedup), and serves it
+  to the sidepanel for the suggestion UI.
+- **Visual-mode suggestion** — picking Visual mode with a known non-vision
+  model surfaces a system message suggesting a vision-capable model from the
+  catalog (or a warning when none exists).
+- **Mode hot-reload fix** — the sidepanel now syncs `activeModeId` when
+  `zoActiveMode` changes in storage (another tab's mode change previously
+  didn't reflect until reload).
+
+### Tests
+- `tests/vision.test.ts` (21 unit tests) + 2 integration round-trips
+  (gate suppresses capture for `supports_images:false`; captures for `:true`).
+- Mock Zo server serves `/models/catalog` with `supports_images` per model.
+- **Suite: 790 tests / 0 fail (34 files) + 16 Playwright E2E specs.**
+
 ## [v0.0.2] - 2026-08-10
 
 Stable release: streaming stability + conversation-experience work promoted

@@ -12,6 +12,7 @@ import {
 } from './lib/context-policy.js';
 import { describePrompt } from './lib/prompt.js';
 import { assignRefs, ensureActiveTabRef, isBlankPage } from './lib/tab-contexts.js';
+import { visionModelSuggestion, modelVisionSupport, findModelEntry } from './lib/vision.js';
 import { extractUrls, MAX_LINK_CHIPS } from './lib/links.js';
 import {
   openChatTab,
@@ -248,6 +249,14 @@ async function finishInit() {
       if (changes[STORAGE_ACTIONS_KEY]) {
         const actions = changes[STORAGE_ACTIONS_KEY].newValue;
         renderQuickActions(actions || []);
+      }
+      // Hot-reload the active Mode when it changes in storage (another tab
+      // picked a different mode, or a test flipped it). Re-sync the dropdown
+      // + re-capture so the new tier takes effect on the next send.
+      if (changes.zoActiveMode?.newValue && changes.zoActiveMode.newValue !== activeModeId) {
+        activeModeId = changes.zoActiveMode.newValue;
+        syncModeSelect();
+        refreshPageContext().then(renderPromptInspector);
       }
       // Hot-reload builtin overrides when the Settings editor saves them, and
       // re-capture so a raised contextTier actually takes effect immediately.
@@ -2387,6 +2396,38 @@ function applyMode() {
   const desc = mode.description ? ` ${mode.description}` : '';
   addSystemMessage(`🔄 **${mode.icon} ${mode.name}** mode active.${desc}`);
   renderPromptInspector();
+  // #25: Visual mode (tier 3) needs a vision-capable model. If the
+  // selected model is known to not support images, suggest one that does.
+  if (mode.contextTier >= 3 && config.selectedModel) {
+    checkVisionModelSuggestion();
+  }
+}
+
+/**
+ * #25 — fetch the no-auth model catalog and, if the selected model can't
+ * process images, surface a suggestion (or a warning when no vision model
+ * exists in the catalog). Non-fatal: catalog unavailable = no suggestion.
+ */
+async function checkVisionModelSuggestion() {
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'GET_VISION_CATALOG' });
+    if (!resp?.success || !Array.isArray(resp.models) || resp.models.length === 0) return;
+    const suggestion = visionModelSuggestion(resp.models, config.selectedModel);
+    if (!suggestion) return;
+    if (suggestion.kind === 'suggest') {
+      addSystemMessage(
+        `⚠️ **Visual mode needs a vision model.** ${suggestion.reason} ` +
+        `Switch to **${suggestion.suggestedLabel}** in the model dropdown, or screenshots will be skipped.`
+      );
+    } else {
+      addSystemMessage(
+        `⚠️ **Visual mode needs a vision model.** ${suggestion.reason} ` +
+        `Screenshots will be skipped until a vision-capable model is selected.`
+      );
+    }
+  } catch (e) {
+    console.debug('checkVisionModelSuggestion:', e.message);
+  }
 }
 
 function rebuildModeOptions() {

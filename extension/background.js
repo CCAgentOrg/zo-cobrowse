@@ -26,6 +26,11 @@ import {
   saveConversationState,
   computePageHash,
 } from './lib/context-policy.js';
+import {
+  shouldCaptureScreenshot,
+  findModelEntry,
+  catalogIsStale,
+} from './lib/vision.js';
 
 function safePost(port, msg) {
   if (!port || port._dead) return false;
@@ -179,6 +184,10 @@ const DEFAULTS = {
 };
 
 let config = { ...DEFAULTS };
+// Vision catalog cache (#25): /models/catalog is no-auth + cheap, but we
+// don't want to block every tier-3 turn on a fetch. Cached for CATALOG_TTL_MS.
+let catalogCache = { models: null, fetchedAt: 0, inFlight: null };
+
 // Track Zo API conversation ID for multi-turn context. This global is the
 // AMBIENT thread (context menu / omnibox callers); the sidepanel's chat tabs
 // each carry their own thread id on the ASK_ZO payload and win when present.
@@ -275,6 +284,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     case 'LIST_MODELS': {
       listModels().then(sendResponse);
+      return true;
+    }
+    case 'GET_VISION_CATALOG': {
+      // #25: the sidepanel asks for the no-auth catalog to show a vision-model
+      // suggestion when the user picks Visual mode without a vision model.
+      fetchModelCatalog().then((models) => sendResponse({ success: true, models }));
       return true;
     }
     case 'LIST_PERSONAS': {
@@ -583,12 +598,19 @@ async function getActiveTabContext(tabId, tier, modeId, opts) {
     }
   }
 
-  // Capture screenshot only when the tier asks for it (3) and the global
-  // kill-switch hasn't disabled screenshots. Lower tiers skip the capture cost.
+  // Capture screenshot only when the tier asks for it (3), the global
+  // kill-switch hasn't disabled screenshots, AND the selected model can
+  // plausibly consume an image (#25 vision gate). A non-vision model
+  // would make the capture pure token waste; the catalog lookup is
+  // no-auth + cached, and unknown support falls through to capture
+  // (backward-compatible with pre-#25 behavior).
   if (t >= 3 && context && !context.error && config.enableScreenshots !== false) {
     try {
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg' });
-      context.screenshotDataUrl = dataUrl;
+      const catalog = await fetchModelCatalog();
+      const entry = findModelEntry(catalog, config.zoModel);
+      if (shouldCaptureScreenshot(entry, { tier: t, enableScreenshots: config.enableScreenshots })) {
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg' });        context.screenshotDataUrl = dataUrl;
+      }
     } catch (e) {
       console.warn('Screenshot capture skipped:', e.message);
     }
@@ -1425,6 +1447,38 @@ async function listModels() {
   } catch (err) {
     return { error: err.message };
   }
+}
+
+/**
+ * Fetch the no-auth model catalog (/models/catalog) and cache it for the
+ * vision gate (#25). The catalog carries `supports_images` per model.
+ * Deduplicates concurrent callers via an in-flight promise. Returns the
+ * models array (possibly stale-but-usable) or null on hard failure.
+ */
+async function fetchModelCatalog(force = false) {
+  const now = Date.now();
+  if (!force && !catalogIsStale(catalogCache.fetchedAt, now) && catalogCache.models) {
+    return catalogCache.models;
+  }
+  if (catalogCache.inFlight) return catalogCache.inFlight;
+  catalogCache.inFlight = (async () => {
+    try {
+      const catalogUrl = `${apiOrigin()}/models/catalog`;
+      const r = await fetch(catalogUrl);
+      if (!r.ok) return null;
+      const data = await r.json();
+      const models = Array.isArray(data.models) ? data.models : [];
+      catalogCache.models = models;
+      catalogCache.fetchedAt = Date.now();
+      return models;
+    } catch (err) {
+      console.debug('fetchModelCatalog:', err.message);
+      return null; // gate falls back to 'unknown' → captures anyway
+    } finally {
+      catalogCache.inFlight = null;
+    }
+  })();
+  return catalogCache.inFlight;
 }
 
 async function listPersonas() {

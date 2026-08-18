@@ -128,6 +128,12 @@ beforeAll(async () => {
     if (url.includes("/models/available")) {
       return jsonResponse({ models: [{ model_name: "trio-model", label: "Trio Model" }] });
     }
+    if (url.includes("/models/catalog")) {
+      return jsonResponse({ models: [
+        { model_name: "trio-model", label: "Trio Model", supports_images: false },
+        { model_name: "vision-model", label: "Vision Model", supports_images: true },
+      ] });
+    }
     if (url.includes("/personas/available")) {
       return jsonResponse({ personas: [] });
     }
@@ -404,4 +410,92 @@ describe("sidepanel onboarding gate (separate DOM, same instance)", () => {
     expect(panelWin.document.querySelector("#onboarding-view").classList.contains("hidden")).toBe(true);
     expect(panelWin.document.querySelector("#chat-view").classList.contains("hidden")).toBe(false);
   });
+});
+
+describe("vision-gated screenshots (#25)", () => {
+  // Re-install the default mock handler (with /models/catalog) because earlier
+  // tests in this file override fm.handle() with handlers that return SSE for
+  // all URLs — the catalog fetch would parse-fail and the gate would degrade
+  // to 'unknown' (capture anyway), masking the very behavior we're testing.
+  const reinstallCatalogHandler = () => fm.handle((url) => {
+    if (url.includes("/models/available")) return jsonResponse({ models: [{ model_name: "trio-model", label: "Trio Model" }] });
+    if (url.includes("/models/catalog")) return jsonResponse({ models: [
+      { model_name: "trio-model", label: "Trio Model", supports_images: false },
+      { model_name: "vision-model", label: "Vision Model", supports_images: true },
+    ] });
+    if (url.includes("/personas/available")) return jsonResponse({ personas: [] });
+    return sseResponse(zoSseText({ text: "It is a test page." }));
+  });
+
+  it("skips screenshot capture when the selected model lacks vision support", async () => {
+    reinstallCatalogHandler();
+    // Seed a non-vision model + visual mode (tier 3). The vision gate should
+    // suppress captureVisibleTab even though the tier asks for it.
+    // Use storage.sync.set (not _store=) so the background's onChanged
+    // listener reloads config in the already-running instance.
+    panelWin.document.querySelector("#new-chat-btn").click();
+    await waitUntil(() => panelWin.document.querySelector("#messages .msg-system"));
+    await bus.storage.sync.set({ zoModel: "trio-model", zoActiveMode: "visual" });
+    await waitUntil(() => panelWin.document.querySelector("#mode-select")?.value === "visual", 5000);
+    await new Promise((r) => setTimeout(r, 50));
+
+    let screenshotCalls = 0;
+    const origCapture = bus.tabs.captureVisibleTab;
+    bus.tabs.captureVisibleTab = () => { screenshotCalls++; return Promise.resolve("data:image/jpeg;base64,/9j/ZmFrZQ=="); };
+
+    try {
+      // !context forces full context attach (visual mode is read-only → opt-in)
+      await typeAndSend("!context describe this page");
+      await waitUntil(() => {
+        const convs: any[] = Object.values(bus.storage.local._store.cobrowse_convos || {});
+        return convs.some((c: any) => (c.messages || []).some((m: any) => m.role === "assistant"));
+      }, 15000);
+      // The vision gate suppressed the screenshot capture.
+      expect(screenshotCalls).toBe(0);
+    } finally {
+      bus.tabs.captureVisibleTab = origCapture;
+      await bus.storage.sync.set({ zoModel: "trio-model", zoActiveMode: "cobrowse" });
+    }
+  }, 30000);
+
+  it("captures the screenshot when the selected model supports vision", async () => {
+    reinstallCatalogHandler();
+    // New chat → fresh page-hash send-once state so tier 3 context re-attaches.
+    panelWin.document.querySelector("#new-chat-btn").click();
+    await waitUntil(() => panelWin.document.querySelector("#messages .msg-system"));
+
+    // Spy BEFORE changing storage — the sidepanel's onChanged listener calls
+    // refreshPageContext() on mode change, which would capture at tier 3 with
+    // the un-spied original mock and consume the page-hash send-once slot.
+    let screenshotCalls = 0;
+    const origCapture = bus.tabs.captureVisibleTab;
+    bus.tabs.captureVisibleTab = () => { screenshotCalls++; return Promise.resolve("data:image/jpeg;base64,/9j/ZmFrZQ=="); };
+
+    // Set model + mode together; the sidepanel + background both listen on
+    // storage.onChanged. Await + a microtask boundary so both listeners fire
+    // before refreshPageContext runs inside sendQuery.
+    await bus.storage.sync.set({ zoModel: "vision-model", zoActiveMode: "visual" });
+    // Wait for the sidepanel's onChanged listener to sync the mode dropdown
+    // (it also fires refreshPageContext); otherwise sendQuery's capture runs
+    // at the OLD mode's tier.
+    await waitUntil(() => panelWin.document.querySelector("#mode-select")?.value === "visual", 5000);
+    await new Promise((r) => setTimeout(r, 50));
+
+    try {
+      // !context forces full context attach (visual mode is read-only → opt-in)
+      await typeAndSend("!context describe this page visually");
+      await waitUntil(() => {
+        const convs: any[] = Object.values(bus.storage.local._store.cobrowse_convos || {});
+        return convs.some((c: any) => (c.messages || []).some((m: any) => m.role === "assistant"));
+      }, 15000);
+      expect(screenshotCalls).toBeGreaterThanOrEqual(1);
+      // The screenshot data URL is embedded in the captured context; the
+      // prompt builder only includes it when effectiveTier >= 3. Assert on
+      // the capture count (the gate's direct effect) rather than the prompt
+      // body, which is thinned independently by the context-policy layer.
+    } finally {
+      bus.tabs.captureVisibleTab = origCapture;
+      await bus.storage.sync.set({ zoModel: "trio-model", zoActiveMode: "cobrowse" });
+    }
+  }, 30000);
 });
