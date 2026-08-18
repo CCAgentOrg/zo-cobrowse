@@ -7,6 +7,40 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — #28 Composer reference pickers: `/` skills + `%` Zo files
+
+- **`/` skills picker** — typing `/` at a token start opens a filterable popup
+  of your Zo skills, enumerated from `/home/workspace/Skills` over Zo's MCP
+  server (`api.zo.computer/mcp`, the same saved token). Each skill folder's
+  `SKILL.md` head supplies the label + description. Selecting arms a ⚡ chip;
+  on send, a `## Skills to Run` prompt section tells Zo to read each skill's
+  SKILL.md server-side and run it as part of the turn.
+- **`%` files picker** — typing `%` opens a workspace browser (dirs navigate,
+  `⬆ ..` climbs, files attach) backed by validated `ls -1F` MCP calls.
+  Picked files ride as a paths-only `## Referenced Files` manifest; Zo
+  resolves content with its own file tools.
+- **Send-once chips** — picked skills/files render as chips above the
+  composer and as mention pills on the sent message; they attach to exactly
+  one turn, then clear (a skill is an invocation, not a sticky setting).
+  Both sections preview live in the prompt inspector.
+- **`lib/mcp.js` + `lib/pickers.js`** — pure MCP JSON-RPC envelope/response
+  parsing and picker logic (path confinement to `/home/workspace` with
+  traversal rejection before any request, single-quote shell hardening,
+  Python-repr `CmdResult` parsing between `__ZO_BEGIN__`/`__ZO_END__`
+  markers, SKILL.md frontmatter parsing). Two new message types:
+  `LIST_SKILLS` (5-min cache) and `LIST_WORKSPACE_DIR` (60-s per-path cache).
+- **MCP facts** (live-verified): server `zo-tools v1.0.0`, 96 tools,
+  initialize → `mcp-session-id` header → tools/call; `list_directory`
+  recurses + truncates at 1000 entries, so the pickers use `bash` with
+  deterministic commands instead.
+
+### Tests (#28)
+- `tests/pickers.test.ts` (34) + `tests/schemas/pickers.ts`; integration
+  `tests/integration/mcp-flow.test.ts` (session handshake, caching, traversal
+  rejection, prompt threading); e2e `e2e/08-pickers.spec.ts` + a mock `/mcp`
+  route in `e2e/mock-zo/server.mjs`.
+- **Suite: 853 tests / 0 fail (37 files, 2228 expect calls) + 17 Playwright E2E specs.**
+
 ### Added — #24 Context-on-demand (pull protocol)
 
 - **Three new context-only actions** — `read_page`, `get_dom`, `get_form`. When

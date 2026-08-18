@@ -14,11 +14,16 @@ panel (and options page) send:
 | Type | Purpose |
 |------|---------|
 | `GET_PAGE_CONTEXT` | Forward to `getActiveTabContext()` — request the current tab's context at the mode's tier |
-| `ASK_ZO` | Send a query to Zo with page context + current mode (`modeId`, `customModes`) |
+| `ASK_ZO` | Send a query to Zo with page context + current mode (`modeId`, `customModes`); picked skills/files ride as `skills` / `workspaceFiles` |
 | `TEST_CONNECTION` | Probe the Zo API + Zo.space endpoint |
 | `GET_CONFIG` | Return sanitized config (token presence, URL, model) |
 | `LIST_MODELS` | List available models |
+| `GET_VISION_CATALOG` | No-auth model catalog for the vision gate (#25) |
+| `GET_OPEN_TABS` | Open tabs in this window (tab-context chip strip source) |
+| `GET_TAB_CONTEXTS` | Banner-free captures of referenced tabs (manifest + excerpt) |
 | `LIST_PERSONAS` | List configured personas |
+| `LIST_SKILLS` | Enumerate the user's Zo skills from `/home/workspace/Skills` over MCP (the `/` picker) |
+| `LIST_WORKSPACE_DIR` | One validated `ls -1F` of a workspace path for the `%` picker (traversal rejected) |
 | `EXECUTE_ACTIONS` | Run a batch of actions on the active tab |
 | `NAVIGATE` | Navigate a tab to a URL |
 | `GENERATE_MODE` | Ask Zo to design a custom mode (`✦` generator) |

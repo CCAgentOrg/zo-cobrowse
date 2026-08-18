@@ -2393,9 +2393,9 @@ body.options-page {
 .tab-autocomplete {
   position: absolute;
   bottom: calc(var(--input-h, 44px) + 56px);
-  left: 12px;
-  right: 12px;
-  max-height: 200px;
+  left: 8px;
+  right: 8px;
+  max-height: 320px;
   overflow: auto;
   z-index: 40;
   background: var(--bg-secondary, #15182e);
@@ -2424,6 +2424,99 @@ body.options-page {
 .tab-ac-item:hover, .tab-ac-item.tab-ac-active {
   background: var(--amber-glow, rgba(240,168,50,0.15));
 }
+/* Non-selectable note rows inside picker popups (loading / errors / header). */
+.tab-ac-item.tab-ac-note {
+  cursor: default;
+  color: var(--zo-muted-foreground, #9aa);
+  font-size: 11px;
+}
+.tab-ac-item.tab-ac-note:hover, .tab-ac-item.tab-ac-note.tab-ac-active {
+  background: none;
+}
+
+/* ── Composer reference picker items (#28) — scannable two-line cards.
+   Name + muted description/path on separate lines so the full list is
+   readable even before filtering shrinks it. */
+.picker-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text, #fff);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  overflow: hidden;
+}
+.picker-item:hover, .picker-item.picker-item-active {
+  background: var(--amber-glow, rgba(240,168,50,0.15));
+}
+.picker-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.picker-item-desc {
+  font-size: 11px;
+  color: var(--zo-muted-foreground, #9aa);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* Non-selectable note rows (loading / errors / directory header). */
+.picker-item.picker-item-note {
+  cursor: default;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--zo-muted-foreground, #9aa);
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border, #333);
+  border-radius: 0;
+  margin-bottom: 2px;
+}
+.picker-item.picker-item-note:hover,
+.picker-item.picker-item-note.picker-item-active {
+  background: none;
+}
+
+/* ── Composer reference pickers (#28): armed skill/file chips ──
+   `/` skills + `%` workspace files; each chip rides the NEXT send only
+   (send-once) and clears afterwards. */
+.picker-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 12px;
+}
+.picker-chips.hidden { display: none; }
+.picker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--zo-muted, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border, #333);
+  border-radius: 999px;
+  color: var(--text, #fff);
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.picker-chip:hover { border-color: var(--border-focus, var(--amber, #f0a832)); }
+.picker-chip .picker-chip-x {
+  color: var(--zo-muted-foreground, #9aa);
+  font-size: 10px;
+}
+.picker-chip:hover .picker-chip-x { color: var(--text, #fff); }
 
 /* ── Link chips + "Open all (N)" (research answers → tabs, #27) ──
    Attached inside an assistant bubble when the answer carries ≥2 unique

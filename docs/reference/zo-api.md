@@ -89,6 +89,33 @@ List configured personas. Requires auth.
 }
 ```
 
+## MCP server — `POST /mcp`
+
+Zo also exposes its **full toolchain as an MCP server** over streamable HTTP
+(live-verified 2026-08-18: server `zo-tools v1.0.0`, protocol `2024-11-05`,
+**96 tools**). The tools are *not* part of the REST OpenAPI — the MCP endpoint
+itself is their HTTP interface.
+
+- Same base URL + Bearer token as the REST API: `POST https://api.zo.computer/mcp`
+- Handshake: `initialize` (the response carries an `mcp-session-id` header) →
+  `notifications/initialized` → `tools/list` / `tools/call`
+- Responses arrive as plain JSON **or** a single SSE `data:` frame — both carry
+  the same JSON-RPC message
+- Tool groups: files (`read_file`, `list_directory`, `grep_search`, …), shell
+  (`bash`), web (`web_search`, `read_webpage`, …), media, integrations
+  (Gmail/Drive/Notion/…), automations/personas/rules, space routes, Stripe.
+  There is **no skills-listing tool** — skills are folders under
+  `/home/workspace/Skills` on the user's server, each with a `SKILL.md`
+  (YAML frontmatter `name:` + `description:`).
+
+The extension uses the MCP server for the composer reference pickers
+([guide](../guide/using-cobrowse#reference-pickers-skills-files-tabs)): one
+`bash` round-trip enumerates the skills folder, `ls -1F` listings back the `%`
+file browser. Note the `bash` tool wraps stdout in a Python-repr
+`CmdResult(...)` with escaped newlines — `extension/lib/pickers.js` parses it
+between `__ZO_BEGIN__`/`__ZO_END__` markers emitted by the extension's own
+commands.
+
 ## The `{reasoning, actions}` envelope
 
 Only the **Co-browse** mode requests structured actions. It asks Zo for a JSON

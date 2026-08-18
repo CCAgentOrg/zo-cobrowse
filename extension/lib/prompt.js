@@ -17,6 +17,7 @@
 import { ACTION_SCHEMA_COMPACT, PLAIN_RESPONSE_HINT } from './modes.js';
 import { shouldDowngradeToJsonDisabled, detectIntent } from './intent.js';
 import { buildTabManifest, isBlankPage } from './tab-contexts.js';
+import { buildSkillLines, buildFileLines } from './pickers.js';
 
 /**
  * Section ids used to tag each assembled part. Stable ids so the inspector
@@ -26,6 +27,8 @@ export const SECTION_IDS = Object.freeze([
   'system',
   'page',
   'tabs',
+  'skills',
+  'files',
   'content',
   'elements',
   'forms',
@@ -39,6 +42,8 @@ export const SECTION_LABELS = Object.freeze({
   system: 'System Prompt',
   page: 'Page',
   tabs: 'Referenced Tabs',
+  skills: 'Skills to Run',
+  files: 'Referenced Files',
   content: 'Page Content',
   elements: 'Elements',
   forms: 'Forms',
@@ -133,6 +138,26 @@ function _compose(mode, pageContext, userQuery, opts) {
     push('sep', '');
     push('tabs', '## Referenced Tabs');
     for (const line of rendered.split('\n')) push('tabs', line);
+  }
+
+  // Picked skills (`/` picker): a per-turn invocation. Each line names the
+  // skill + its workspace folder so Zo reads its own SKILL.md server-side.
+  const skills = Array.isArray(opts && opts.skills) ? opts.skills.filter((s) => s && typeof s === 'object' && s.name) : [];
+  if (skills.length) {
+    push('sep', '');
+    push('skills', '## Skills to Run');
+    for (const line of buildSkillLines(skills)) push('skills', line);
+    push('skills', 'Run each skill above as part of this turn: read its SKILL.md and follow its instructions.');
+  }
+
+  // Picked workspace files (`%` picker): paths only — Zo resolves content
+  // server-side with its own file tools (read_file/grep_search).
+  const wfFiles = Array.isArray(opts && opts.workspaceFiles) ? opts.workspaceFiles.filter((f) => f && typeof f === 'object' && f.path) : [];
+  if (wfFiles.length) {
+    push('sep', '');
+    push('files', '## Referenced Files');
+    for (const line of buildFileLines(wfFiles)) push('files', line);
+    push('files', 'Resolve these files with your file tools when the request needs their content.');
   }
 
   if (tier >= 1) {
@@ -244,11 +269,15 @@ export function describePrompt(mode, pageContext, userQuery, opts) {
 
   // Richer per-section meta where it's cheap to compute.
   const tabsCount = Array.isArray(opts && opts.tabContexts) ? opts.tabContexts.filter((t) => t && typeof t === 'object').length : 0;
+  const skillsMeta = Array.isArray(opts && opts.skills) ? opts.skills.filter((s) => s && typeof s === 'object' && s.name).length : 0;
+  const filesMeta = Array.isArray(opts && opts.workspaceFiles) ? opts.workspaceFiles.filter((f) => f && typeof f === 'object' && f.path).length : 0;
   for (const s of sections) {
     if (s.id === 'elements') s.meta = `${(pageContext?.clickable || []).length} elements`;
     else if (s.id === 'forms') s.meta = `${(pageContext?.formFields || []).length} fields`;
     else if (s.id === 'content') s.meta = `${s.text.length} chars`;
     else if (s.id === 'tabs') s.meta = `${tabsCount} tab${tabsCount === 1 ? '' : 's'}`;
+    else if (s.id === 'skills') s.meta = `${skillsMeta} skill${skillsMeta === 1 ? '' : 's'}`;
+    else if (s.id === 'files') s.meta = `${filesMeta} file${filesMeta === 1 ? '' : 's'}`;
   }
 
   // The tail section's label depends on the response-format decision.

@@ -109,6 +109,12 @@
       </div>
       <div id="tab-autocomplete" class="tab-autocomplete hidden"></div>
 
+      <!-- Composer reference pickers (#28): `/` skills + `%` workspace files.
+           Selected entries arm chips (below) that ride the NEXT turn only. -->
+      <div id="skill-autocomplete" class="tab-autocomplete hidden" role="listbox" aria-label="Zo skills — run on next send"></div>
+      <div id="file-autocomplete" class="tab-autocomplete hidden" role="listbox" aria-label="Zo workspace files — attach to next send"></div>
+      <div id="picker-chips" class="picker-chips hidden"></div>
+
       <!-- Input area -->
       <div class="input-area">
         <button id="mic-btn" class="btn btn-ghost btn-icon mic-btn" title="Voice input">🎤</button>

@@ -37,6 +37,24 @@ import {
   findModelEntry,
   catalogIsStale,
 } from './lib/vision.js';
+import {
+  mcpRequest,
+  mcpNotification,
+  initializeParams,
+  toolCallParams,
+  parseMcpMessage,
+  toolText,
+  isToolError,
+} from './lib/mcp.js';
+import {
+  WORKSPACE_ROOT,
+  skillsListCommand,
+  dirListCommand,
+  safeWorkspacePath,
+  extractMarkedStdout,
+  parseSkillsBundle,
+  parseLsEntries,
+} from './lib/pickers.js';
 
 function safePost(port, msg) {
   if (!port || port._dead) return false;
@@ -267,7 +285,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
     case 'ASK_ZO': {
-      askZo(request.pageContext, request.userQuery, request.modelName, request.personaId, request.modeId, request.customModes, request.effectiveTier, request.modeOverrides, request.conversationId).then(sendResponse);
+      askZo(request.pageContext, request.userQuery, request.modelName, request.personaId, request.modeId, request.customModes, request.effectiveTier, request.modeOverrides, request.conversationId, request.skills, request.workspaceFiles).then(sendResponse);
       return true;
     }
     case 'RECREATE_CONTEXT_MENUS':
@@ -300,6 +318,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     case 'LIST_PERSONAS': {
       listPersonas().then(sendResponse);
+      return true;
+    }
+    case 'LIST_SKILLS': {
+      // #28 `/` picker: enumerate the user's Zo skills (workspace Skills
+      // folder) over the MCP server's bash tool. Cached ~5 min per worker.
+      listSkills(!!request.force).then((skills) => sendResponse({ ok: true, skills }))
+        .catch((err) => sendResponse({ ok: false, error: err?.message || String(err) }));
+      return true;
+    }
+    case 'LIST_WORKSPACE_DIR': {
+      // #28 `%` picker: one `ls -1F` of a workspace path (validated + confined
+      // to /home/workspace by safeWorkspacePath in listWorkspaceDir).
+      listWorkspaceDir(request.path).then(sendResponse);
       return true;
     }
     case 'EXECUTE_ACTIONS': {
@@ -961,7 +992,7 @@ async function _askZoStreamImpl(port, msg) {
   // effectiveTier is resolved by the side-panel context policy (opt-in DOM +
   // send-once) and passed on the ASK_ZO payload. When absent (legacy callers),
   // buildPrompt falls back to the Mode's configured tier.
-  const prompt = msg._followUpInput || buildPrompt(mode, pageContext, userQuery, { effectiveTier, tabContexts: loop.tabContexts });
+  const prompt = msg._followUpInput || buildPrompt(mode, pageContext, userQuery, { effectiveTier, tabContexts: loop.tabContexts, skills: msg.skills, workspaceFiles: msg.workspaceFiles });
 
   try {
     const response = await fetch(config.zoApiUrl, {
@@ -1429,7 +1460,7 @@ function emitPullTrace(port, sid, req, target, fu) {
   });
 }
 
-async function askZo(pageContext, userQuery, modelName, personaId, modeId, customModes, effectiveTier, modeOverrides, conversationId) {
+async function askZo(pageContext, userQuery, modelName, personaId, modeId, customModes, effectiveTier, modeOverrides, conversationId, skills, workspaceFiles) {
   if (!config.zoAccessToken) {
     return { error: '❌ Zo access token not configured. Open extension settings to set it up.' };
   }
@@ -1438,7 +1469,7 @@ async function askZo(pageContext, userQuery, modelName, personaId, modeId, custo
   const mode = resolveMode(modeId || config.zoActiveMode || DEFAULT_MODE_ID, customModes || {}, modeOverrides || {});
   const resolvedPersonaId = personaId || config.zoPersonaId || '';
 
-  const prompt = buildPrompt(mode, pageContext, userQuery, { effectiveTier });
+  const prompt = buildPrompt(mode, pageContext, userQuery, { effectiveTier, skills, workspaceFiles });
   // Per-chat threading: the sidepanel sends the chat's stored thread id; the
   // global stays as the fallback for ambient callers (context menu, omnibox).
   const threadId = msgThreadId(conversationId);
@@ -1533,11 +1564,124 @@ async function fetchModelCatalog(force = false) {
   return catalogCache.inFlight;
 }
 
+// ---- MCP client (#28 pickers) ----
+// Minimal streamable-HTTP MCP client for the pickers' read-only bash calls
+// against api.zo.computer/mcp (verified live 2026-08-18: the server accepts a
+// stateless tools/list, but tools/call wants an initialized session — so the
+// session id is captured once per worker lifetime and lazily re-established).
+
+let mcpSessionId = null;
+
+async function mcpPost(body, expectSession) {
+  const r = await fetch(`${apiOrigin()}/mcp`, {
+    method: 'POST',
+    headers: {
+      ...(config.zoAccessToken ? { Authorization: `Bearer ${config.zoAccessToken}` } : {}),
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      ...(mcpSessionId ? { 'mcp-session-id': mcpSessionId } : {}),
+    },
+    body,
+  });
+  if (expectSession) {
+    const sid = r.headers.get('mcp-session-id');
+    if (sid) mcpSessionId = sid;
+  }
+  if (!r.ok) throw new Error(`MCP HTTP ${r.status}`);
+  return parseMcpMessage(await r.text());
+}
+
+async function mcpEnsureSession() {
+  if (mcpSessionId) return;
+  const init = mcpRequest('initialize', initializeParams());
+  const msg = await mcpPost(init.body, true);
+  if (!msg || msg.error) throw new Error(msg?.error?.message || 'MCP initialize failed');
+  await mcpPost(mcpNotification('notifications/initialized'), false); // fire-and-forget handshake step
+}
+
+/**
+ * One tools/call over MCP. Re-initializes once when the session was rejected
+ * (stale id after a worker suspend) before giving up.
+ */
+async function mcpToolCall(name, args) {
+  await mcpEnsureSession();
+  const call = mcpRequest('tools/call', toolCallParams(name, args));
+  let msg = await mcpPost(call.body, false);
+  if (!msg || (msg.error && /session|initial/i.test(msg.error.message || ''))) {
+    mcpSessionId = null;
+    await mcpEnsureSession();
+    const retry = mcpRequest('tools/call', toolCallParams(name, args));
+    msg = await mcpPost(retry.body, false);
+  }
+  if (!msg) throw new Error('MCP returned an unparseable response');
+  if (msg.error) throw new Error(msg.error.message || 'MCP call failed');
+  if (isToolError(msg.result)) throw new Error(toolText(msg.result) || 'MCP tool error');
+  return msg.result;
+}
+
+/**
+ * #28 `/` picker source: the user's Zo skills, one bash round-trip that dumps
+ * every SKILL.md head (name + description frontmatter). 5-min cache with
+ * in-flight dedup — the skills list rarely changes mid-session.
+ */
+const skillsListCache = { list: null, fetchedAt: 0, inFlight: null };
+const SKILLS_TTL_MS = 5 * 60 * 1000;
+
+async function listSkills(force = false) {
+  const now = Date.now();
+  if (!force && skillsListCache.list && now - skillsListCache.fetchedAt < SKILLS_TTL_MS) {
+    return skillsListCache.list;
+  }
+  if (skillsListCache.inFlight) return skillsListCache.inFlight;
+  skillsListCache.inFlight = (async () => {
+    if (!config.zoAccessToken) throw new Error('Zo access token not configured.');
+    const result = await mcpToolCall('bash', { cmd: skillsListCommand() });
+    const skills = parseSkillsBundle(toolText(result));
+    skillsListCache.list = skills;
+    skillsListCache.fetchedAt = Date.now();
+    return skills;
+  })();
+  try {
+    return await skillsListCache.inFlight;
+  } finally {
+    skillsListCache.inFlight = null;
+  }
+}
+
+/**
+ * #28 `%` picker source: one `ls -1F` of a workspace directory. Paths are
+ * validated + confined to /home/workspace (traversal is rejected, never
+ * reaches the shell). Brief per-path cache so popup navigation feels instant.
+ */
+const dirCache = new Map(); // path → { entries, fetchedAt }
+const DIR_TTL_MS = 60 * 1000;
+
+async function listWorkspaceDir(pathInput) {
+  if (!config.zoAccessToken) return { ok: false, error: 'Zo access token not configured.' };
+  const path = safeWorkspacePath(typeof pathInput === 'string' ? pathInput : '', WORKSPACE_ROOT);
+  if (!path) {
+    return { ok: false, error: `Path must be an absolute path inside ${WORKSPACE_ROOT}.` };
+  }
+  const cached = dirCache.get(path);
+  if (cached && Date.now() - cached.fetchedAt < DIR_TTL_MS) {
+    return { ok: true, path, entries: cached.entries };
+  }
+  try {
+    const result = await mcpToolCall('bash', { cmd: dirListCommand(path) });
+    const stdout = extractMarkedStdout(toolText(result));
+    if (stdout == null) return { ok: false, error: 'Unparseable directory listing.' };
+    const entries = parseLsEntries(stdout, path);
+    dirCache.set(path, { entries, fetchedAt: Date.now() });
+    return { ok: true, path, entries };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
 async function listPersonas() {
   if (!config.zoAccessToken) return { error: 'No token' };
   try {
-    const r = await fetch(`${apiOrigin()}/personas/available`, {
-      headers: { Authorization: `Bearer ${config.zoAccessToken}` }
+    const r = await fetch(`${apiOrigin()}/personas/available`, {      headers: { Authorization: `Bearer ${config.zoAccessToken}` }
     });
     if (!r.ok) return { error: `HTTP ${r.status}` };
     const data = await r.json();
