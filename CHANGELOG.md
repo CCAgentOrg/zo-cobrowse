@@ -48,7 +48,7 @@ and this project uses [Semantic Versioning](https://semver.org/).
   sidepanel↔background↔content round-trip asserts the loop fires inside the
   stream and `get_form` never reaches the DOM executor. E2E: `e2e/07-pull.spec.ts`
   runs the round-trip in a real Chromium against the mock Zo server.
-- **Suite: 791 tests / 0 fail (34 files, 2070 expect calls) + 16 Playwright E2E specs.**
+- **Suite: 814 tests / 0 fail (35 files, 2105 expect calls) + 16 Playwright E2E specs.**
 
 ### Added — #25 Vision-gated screenshots
 
@@ -73,7 +73,7 @@ and this project uses [Semantic Versioning](https://semver.org/).
 - `tests/vision.test.ts` (21 unit tests) + 2 integration round-trips
   (gate suppresses capture for `supports_images:false`; captures for `:true`).
 - Mock Zo server serves `/models/catalog` with `supports_images` per model.
-- **Suite: 790 tests / 0 fail (34 files) + 15 Playwright E2E specs.**
+- **Suite: 814 tests / 0 fail (35 files, 2105 expect calls) + 16 Playwright E2E specs.**
 
 ## [v0.0.2] - 2026-08-10
 
