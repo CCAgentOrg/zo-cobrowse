@@ -55,7 +55,15 @@ jobs:
           done
 
   e2e:
+    # Real-Chromium suite — the expensive job (~2min just to fetch the
+    # browser), so it is NOT run on plain feature-branch pushes: those
+    # branches gate through their PR into dev (same suite, merge ref), and
+    # the duplicate push-event run only queues behind the PR run. Runs on
+    # PRs into main/dev, pushes to the protected branches, and adhoc via
+    # workflow_dispatch.
+    if: github.event_name != 'push' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -71,6 +79,16 @@ jobs:
 
       - name: Install dependencies
         run: bun install
+
+      # Browser binaries are ~170MB per download — cache them keyed on the
+      # lockfile (a Playwright version bump misses and re-downloads; apt deps
+      # still install via --with-deps, which no-ops the download on a hit).
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('bun.lock') }}
+          restore-keys: playwright-chromium-
 
       - name: Install Playwright Chromium
         run: bunx playwright install --with-deps chromium
