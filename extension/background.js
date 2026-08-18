@@ -1129,9 +1129,38 @@ async function _askZoStreamImpl(port, msg) {
           }
 
           // Terminal: real Zo streams end with `event: completed` (status
-          // succeeded/failed), NOT `End`. Treat as the canonical terminal.
+          // succeeded/failed), NOT `End`. Treat as the canonical terminal —
+          // but a `completed` payload that reports status:"failed" carries a
+          // server-side error (HTTP is still 200); surface it instead of
+          // finishing "empty".
           if (currentEventType === 'completed') {
-            finishStreamWithPullLoop(port, sid, fullText, { reasoning: reasoningText }, loop);
+            let failedMsg = '';
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed && parsed.status === 'failed') failedMsg = safeText(parsed.error || parsed.message) || 'Stream failed';
+            } catch { /* empty/non-JSON payload = plain success terminal */ }
+            if (failedMsg) {
+              safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: failedMsg });
+            } else {
+              await finishStreamWithPullLoop(port, sid, fullText, { reasoning: reasoningText }, loop);
+            }
+            currentEventType = '';
+            return;
+          }
+
+          // Terminal: a failed run is reported as `event: failed` with
+          // {status:"failed", error, error_type, failure_kind, ...} — over
+          // HTTP 200 (live-verified 2026-08-19, e.g. "Unknown model: …").
+          // Without this branch the error payload is dropped and the turn
+          // surfaces as an empty response.
+          if (currentEventType === 'failed') {
+            let errMsg = 'Stream failed';
+            try {
+              const parsed = JSON.parse(data);
+              errMsg = safeText(parsed.error || parsed.message) || errMsg;
+              if (parsed.error_type) errMsg += ` (${parsed.error_type})`;
+            } catch { /* keep the generic message */ }
+            safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: errMsg });
             currentEventType = '';
             return;
           }

@@ -17,6 +17,7 @@ import {
   ZoFetchMock,
   MOCK_ZO_TOKEN,
   sseResponse,
+  sseEvent,
   zoSseText,
   jsonResponse,
   textResponse,
@@ -153,6 +154,44 @@ describe("background streaming pipeline", () => {
     expect(fm.requests.length).toBe(before); // never hit the API
     await bus.storage.local.set({ zoAccessToken: MOCK_ZO_TOKEN }); // restore for later tests
     await flush();
+  });
+
+  it("a `failed` terminal event (HTTP 200) surfaces the server error — no empty DONE", async () => {
+    // Live-verified shape (2026-08-19): server-side failures (e.g. unknown
+    // model) stream `event: failed` with the error payload — over HTTP 200,
+    // so the !response.ok branch never fires. Without the failed-terminal
+    // handler this landed as an "empty response" message with the real
+    // error dropped.
+    fm.handle(() =>
+      sseResponse([
+        sseEvent("AgentRuntimeStreamChunk", { type: "status", status: "dispatching", error: null }),
+        sseEvent("failed", { status: "failed", error: "Unknown model: nonexistent-model-xyz", runner_id: "r-1", error_type: "UserError", failure_owner: "ours", failure_kind: "unknown_model" }),
+      ].join("\n")),
+    );
+    const rec = connectRecorder();
+    rec.post({ sessionId: 5, type: "ASK_ZO", userQuery: "q", modeId: "ask", chatId: "chat-5" });
+    await waitUntil(() => rec.seen.some((m) => m.type === "STREAM_ERROR"));
+
+    const err = rec.seen.find((m) => m.type === "STREAM_ERROR");
+    expect(err.error).toContain("Unknown model: nonexistent-model-xyz");
+    expect(err.error).toContain("UserError");
+    expect(rec.seen.some((m) => m.type === "STREAM_DONE")).toBe(false); // never finishes "empty"
+    expect(rec.seen.some((m) => m.type === "STREAM_RECONNECT")).toBe(false); // terminal, not retried
+  });
+
+  it("`completed` reporting status:failed surfaces the error too", async () => {
+    fm.handle(() =>
+      sseResponse([
+        sseEvent("PartStartEvent", { index: 1, part: { part_kind: "text", content: "partial text" } }),
+        sseEvent("completed", { status: "failed", error: "runner exploded", error_type: "InternalError" }),
+      ].join("\n")),
+    );
+    const rec = connectRecorder();
+    rec.post({ sessionId: 6, type: "ASK_ZO", userQuery: "q", modeId: "ask", chatId: "chat-6" });
+    await waitUntil(() => rec.seen.some((m) => m.type === "STREAM_ERROR"));
+
+    expect(rec.seen.find((m) => m.type === "STREAM_ERROR").error).toContain("runner exploded");
+    expect(rec.seen.some((m) => m.type === "STREAM_DONE")).toBe(false);
   });
 
   it("non-streaming ASK_ZO fallback returns output + echoed thread id", async () => {
