@@ -4,6 +4,15 @@
 **Source:** live `POST https://api.zo.computer/zo/ask` with `stream:true`, `Authorization: Bearer ${ZO_API_KEY}`
 **Captures:** 8 use cases (all 6 builtin modes + both cobrowse intents)
 
+**Addendum 2026-08-19 — `failed` terminal event (live-verified):** server-side run
+failures do NOT use HTTP errors. The API returns **200 + text/event-stream** and
+terminates with `event: failed`, `data: {"status":"failed","error":"Unknown
+model: nonexistent-model-xyz","runner_id":"…","error_type":"UserError","failure_owner":"ours","failure_kind":"unknown_model"}` (reproduced by sending a bogus
+`model_name`). Until background.js gained a `failed`-terminal handler, these
+surfaced as the "Zo returned an empty response" hint with the real error dropped.
+Plain asks re-verified same day: protocol unchanged (PartStart/PartDelta/completed).
+See also the `status:"failed"`-inside-`completed` defensive branch.
+
 ## ⚠️ CRITICAL FINDING — the documented SSE protocol is wrong
 
 `extension/AGENTS.md:35-37` documents these SSE event types:

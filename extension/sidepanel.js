@@ -3401,10 +3401,16 @@ function handleStreamMessage(msg) {
           fallbackEl = addMessage('assistant', safeText(msg.fullText) || safeText(msg.reasoning));
           addReasoningBubble(fallbackEl, msg.reasoning);
         } else {
-          // Truly empty response. Don't claim success ("Done.") — surface a
-          // hint so the user knows to check the service-worker console, where
-          // background.js logs the first SSE chunk's fields for diagnosis.
-          addMessage('assistant', '_Zo returned an empty response. Check the service worker console (chrome://extensions → Inspect views: service worker) for `[zo-cobrowse] first SSE chunk` to see the actual stream format._');
+          // Truly empty response. Don't claim success ("Done.") — surface what
+          // the stream actually contained (the STREAM_DIAGNOSTIC event→fields
+          // map, when the background collected one) plus where the full shape
+          // log lives. Server-side failures normally arrive as a `failed`
+          // terminal (STREAM_ERROR error card), so this branch means the stream
+          // completed with no recognizable content at all.
+          const evts = (streamShape && Object.keys(streamShape).length)
+            ? Object.keys(streamShape).map(safeText).join(', ')
+            : '';
+          addMessage('assistant', '_Zo returned an empty response' + (evts ? ` — received events: ${evts}` : '') + '. If this persists, check the service worker console (chrome://extensions → Inspect views: service worker) for `[zo-cobrowse] stream shape:` to see the actual stream format._');
         }
         if (!hasActions && fallbackEl && responseText) {
           addLinkChipsCard(fallbackEl, extractUrls(responseText));
