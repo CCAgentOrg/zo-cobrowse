@@ -2186,12 +2186,21 @@ function renderSkillPopup(filterText) {
   skillAc.items = items;
   skillAc.index = 0;
   popup.replaceChildren();
-  items.slice(0, 12).forEach((s, i) => {
+  items.slice(0, 8).forEach((s, i) => {
     const item = document.createElement('button');
     item.type = 'button';
-    item.className = 'tab-ac-item' + (i === 0 ? ' tab-ac-active' : '');
-    const desc = String(s.description || '').slice(0, 70);
-    item.textContent = `⚡ ${s.name}${desc ? ` — ${desc}` : ''}`;
+    item.className = 'picker-item' + (i === 0 ? ' picker-item-active' : '');
+    const name = document.createElement('span');
+    name.className = 'picker-item-name';
+    name.textContent = `⚡ ${s.name}`;
+    item.appendChild(name);
+    const desc = String(s.description || '').slice(0, 120);
+    if (desc) {
+      const d = document.createElement('span');
+      d.className = 'picker-item-desc';
+      d.textContent = desc;
+      item.appendChild(d);
+    }
     item.title = `${s.name}\n${s.description || ''}`;
     item.addEventListener('mousedown', (e) => { e.preventDefault(); selectSkill(i); });
     popup.appendChild(item);
@@ -2231,7 +2240,7 @@ function renderFilePopup(filterText, keepFilter) {
   if (!popup) return;
   popup.replaceChildren();
   const header = document.createElement('div');
-  header.className = 'tab-ac-item tab-ac-note';
+  header.className = 'picker-item picker-item-note';
   header.textContent = `📄 ${filesDir.path}`;
   popup.appendChild(header);
   if (filesDir.loading) {
@@ -2254,12 +2263,18 @@ function renderFilePopup(filterText, keepFilter) {
   if (!items.length) { popup.appendChild(pickerNoteItem('No matches.')); popup.classList.remove('hidden'); fileAc.items = []; return; }
   fileAc.items = items;
   fileAc.index = 0;
-  items.slice(0, 12).forEach((e, i) => {
+  items.slice(0, 8).forEach((e, i) => {
     const item = document.createElement('button');
     item.type = 'button';
-    item.className = 'tab-ac-item' + (i === 0 ? ' tab-ac-active' : '');
-    item.textContent = e.kind === 'dir' ? `📂 ${e.name}/` : e.kind === 'up' ? '⬆ ..' : `📄 ${e.name}`;
-    item.title = e.path || e.name;
+    item.className = 'picker-item' + (i === 0 ? ' picker-item-active' : '');
+    const name = document.createElement('span');
+    name.className = 'picker-item-name';
+    name.textContent = e.kind === 'dir' ? `📂 ${e.name}/` : e.kind === 'up' ? '⬆ ..' : `📄 ${e.name}`;
+    item.appendChild(name);
+    const sub = document.createElement('span');
+    sub.className = 'picker-item-desc';
+    sub.textContent = e.path || e.name;
+    item.appendChild(sub);
     item.addEventListener('mousedown', (ev) => { ev.preventDefault(); selectFileRow(i); });
     popup.appendChild(item);
   });
@@ -2284,7 +2299,7 @@ function selectFileRow(i) {
 
 function pickerNoteItem(text) {
   const note = document.createElement('div');
-  note.className = 'tab-ac-item tab-ac-note';
+  note.className = 'picker-item picker-item-note';
   note.textContent = text;
   return note;
 }
@@ -2338,8 +2353,8 @@ function onComposerKeydownForPickers(e) {
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
     e.preventDefault();
     ac.index = (ac.index + (e.key === 'ArrowDown' ? 1 : ac.items.length - 1)) % ac.items.length;
-    const buttons = [...popup.querySelectorAll('button.tab-ac-item')];
-    buttons.forEach((el, i) => el.classList.toggle('tab-ac-active', i === ac.index));
+    const buttons = [...popup.querySelectorAll('button.picker-item')];
+    buttons.forEach((el, i) => el.classList.toggle('picker-item-active', i === ac.index));
   } else if (e.key === 'Enter' || e.key === 'Tab') {
     e.preventDefault();
     e.stopPropagation();

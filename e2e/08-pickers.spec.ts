@@ -33,7 +33,7 @@ test.describe("composer reference pickers (#28)", () => {
       // ---- `/` skills popup ----
       await typeIntoComposer(h.panel, "/web");
       await expect(h.panel.locator("#skill-autocomplete")).toBeVisible();
-      await expect(h.panel.locator("#skill-autocomplete button.tab-ac-item").first())
+      await expect(h.panel.locator("#skill-autocomplete button.picker-item").first())
         .toContainText("websh", { timeout: 10_000 });
       // Two mock skills; the filter matched websh. Select it (Enter on wrapper).
       await pressComposerKey(h.panel, "Enter");
@@ -47,11 +47,11 @@ test.describe("composer reference pickers (#28)", () => {
       // ---- `%` files popup: browse root → into Skills → pick a file ----
       await typeIntoComposer(h.panel, "%");
       await expect(h.panel.locator("#file-autocomplete")).toBeVisible();
-      await expect(h.panel.locator("#file-autocomplete button.tab-ac-item").filter({ hasText: "Skills/" }))
+      await expect(h.panel.locator("#file-autocomplete button.picker-item").filter({ hasText: "Skills/" }))
         .toBeVisible({ timeout: 10_000 });
       // First selectable row is the Skills dir — Enter navigates into it.
       await pressComposerKey(h.panel, "Enter");
-      await expect(h.panel.locator("#file-autocomplete button.tab-ac-item").filter({ hasText: "README.md" }))
+      await expect(h.panel.locator("#file-autocomplete button.picker-item").filter({ hasText: "README.md" }))
         .toBeVisible({ timeout: 10_000 });
       // Rows are [⬆ .., 📂 e2e-skill/, 📄 README.md] — down twice to the file.
       await pressComposerKey(h.panel, "ArrowDown");
