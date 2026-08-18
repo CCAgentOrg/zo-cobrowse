@@ -82,6 +82,7 @@ function pickScenario(input) {
   if (q.includes("click")) return "click";
   if (q.includes("scroll")) return "scroll";
   if (q.includes("extract")) return "extract";
+  if (q.includes("links")) return "links";
   if (q.includes("error") || q.includes("fail")) return "error";
   if (q.includes("navigate")) return "navigate";
   return "prose";
@@ -284,6 +285,21 @@ const server = http.createServer(async (req, res) => {
         ],
       });
       return streamSse(res, [textStart(envelope), completed()], { delayMs: 40 });
+    }
+    if (scenario === "links") {
+      // #27: a research-style prose answer full of links — triggers the
+      // link-chips card + "Open all" in the sidepanel. "slow" stretches the
+      // delays so the demo recording shows visibly progressive streaming.
+      const text =
+        "Here are the best sources on the fixture site:\n\n" +
+        `- [Fixture home](http://127.0.0.1:${PORT}/)\n` +
+        `- [The demo form](http://127.0.0.1:${PORT}/form.html)\n` +
+        `- [A long article](http://127.0.0.1:${PORT}/long.html)\n`;
+      return streamSse(
+        res,
+        [thinkingStart("Searching the fixture site… "), ...proseChunks(text).map(textDelta), completed()],
+        { delayMs: q_slow(body.input) ? 350 : 60 },
+      );
     }
     if (scenario === "error") {
       res.writeHead(200, { "content-type": "text/event-stream", ...cors });

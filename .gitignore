@@ -28,3 +28,6 @@ database/
 e2e/report/
 e2e/results/
 playwright-report/
+# Demo recording output (ZO_DEMO=1 run of e2e/demo-open-all.spec.ts)
+e2e/demo-video/
+demo/

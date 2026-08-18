@@ -40,8 +40,15 @@ async function resolveExtension(context: BrowserContext): Promise<{ worker: Work
   return { worker, id: new URL(url).host };
 }
 
-/** Launch Chromium with the real extension loaded (MV3 new-headless). */
-export async function launchExtension(opts: { freshProfile?: boolean } = {}): Promise<{ context: BrowserContext; extensionId: string; serviceWorker: Worker }> {
+/** Launch Chromium with the real extension loaded (MV3 new-headless).
+ * `viewport`/`recordVideo` pass straight through to the persistent context
+ * (config-level `use` options don't reach launchPersistentContext) — used by
+ * the demo-recording spec; the video finalizes on context.close(). */
+export async function launchExtension(opts: {
+  freshProfile?: boolean;
+  viewport?: { width: number; height: number };
+  recordVideo?: { dir: string; size?: { width: number; height: number } };
+} = {}): Promise<{ context: BrowserContext; extensionId: string; serviceWorker: Worker }> {
   const profileDir = opts.freshProfile
     ? `/tmp/zo-e2e-profile-${Date.now()}-${Math.random().toString(36).slice(2)}`
     : "/tmp/zo-e2e-profile-default";
@@ -50,6 +57,8 @@ export async function launchExtension(opts: { freshProfile?: boolean } = {}): Pr
     // Full Chromium's "new headless" — the only headless that runs MV3
     // extensions (the default headless shell has no extension support).
     channel: "chromium",
+    ...(opts.viewport ? { viewport: opts.viewport } : {}),
+    ...(opts.recordVideo ? { recordVideo: opts.recordVideo } : {}),
     args: [
       `--disable-extensions-except=${EXTENSION_DIR}`,
       `--load-extension=${EXTENSION_DIR}`,
@@ -115,7 +124,12 @@ async function activateSiteTab(panel: Page): Promise<void> {
  * `chrome.tabs.query({active:true})` resolves to the website — exactly like
  * real usage where the side panel is a docked panel, not a tab.
  */
-export async function openHarness(opts: { freshProfile?: boolean; sitePath?: string } = {}): Promise<ExtensionHarness> {
+export async function openHarness(opts: {
+  freshProfile?: boolean;
+  sitePath?: string;
+  viewport?: { width: number; height: number };
+  recordVideo?: { dir: string; size?: { width: number; height: number } };
+} = {}): Promise<ExtensionHarness> {
   const { context, extensionId, serviceWorker } = await launchExtension(opts);
   await seedExtensionConfig(serviceWorker);
 
