@@ -7,6 +7,37 @@ and this project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [v0.1.0] - 2026-08-19
+
+First minor bump: everything since v0.0.2 — chat tabs, cold-start research
+with "Open all", the context-on-demand pull protocol, vision-gated
+screenshots, composer reference pickers, and a hardened streaming failure path.
+
+### Fixed — server-side stream failures now surface the real error
+- **`failed` terminal event** (live-verified 2026-08-19): when a Zo run fails
+  server-side (e.g. "Unknown model: …"), the API returns **HTTP 200 + SSE**
+  and terminates with `event: failed` `{status, error, error_type,
+  failure_kind}` — an event the stream loop didn't handle. The error payload
+  was dropped and the turn finished empty ("Zo returned an empty response…").
+  Both `failed` and a `completed` payload reporting `status:"failed"` now
+  surface as a proper error card with the real server message + Retry.
+- The empty-response hint previously pointed at a console log that didn't
+  exist; it now lists the SSE events actually received (from the
+  stream-shape diagnostic) and the real log tag.
+
+### Tests / QA
+- `e2e/09-open-all.spec.ts` — the #27 link-chips + "Open all" flow verified
+  end-to-end in real Chromium (card contract, first-tab-foreground open,
+  opened tabs auto-referenced `(3/4)` in the strip, single-chip foreground
+  open), plus a `ZO_DEMO=1`-gated demo-recording spec producing
+  `demo/open-all-demo.mp4`.
+- CI: Playwright browser binaries cached (`actions/cache` keyed on
+  `bun.lock`) — cold install 2m10s → ~15s on hit; the e2e job no longer runs
+  duplicate push+PR events (PRs into `main`/`dev`, protected-branch pushes,
+  and manual dispatch only); 15-min job timeout guard.
+- **Suite: 855 tests / 0 fail (37 files, 2234 expect calls) + 19 Playwright
+  E2E tests across 10 spec files (1 demo-gated).**
+
 ### Added — #28 Composer reference pickers: `/` skills + `%` Zo files
 
 - **`/` skills picker** — typing `/` at a token start opens a filterable popup
@@ -108,6 +139,32 @@ and this project uses [Semantic Versioning](https://semver.org/).
   (gate suppresses capture for `supports_images:false`; captures for `:true`).
 - Mock Zo server serves `/models/catalog` with `supports_images` per model.
 - **Suite: 814 tests / 0 fail (35 files, 2105 expect calls) + 16 Playwright E2E specs.**
+
+### Added — #27 Cold-start + research → "Open all" tabs
+- **Blank/new-tab pages skip page context entirely** — asking Zo from
+  `chrome://newtab` no longer attaches the CDP debugger (no debug banner),
+  no longer renders a `## Page — URL: chrome://newtab/` prompt section, and
+  no longer hard-blocks the send when capture fails. Every turn on a blank
+  tab is a clean cold start (`isBlankPage`/`pageBlank`).
+- **Link-chips card + `Open all (N)`** — a prose answer containing ≥2 unique
+  http(s) links renders a `🔗 N links` card under the assistant bubble (one
+  host-labelled chip per URL, cap 10). `Open all` opens the first link in
+  the foreground and the rest in background tabs, then auto-adds every
+  opened tab to the active chat's referenced-tabs strip — so `read_tab`
+  follow-ups on Zo's own sources work in one click.
+
+### Added — Chat tabs + chat management
+- **Chat tab bar** — several conversations open at once in the sidepanel
+  (≤8, LRU eviction), ✕/middle-click close with a last-tab guard, and a
+  pulsing dot marks a backgrounded chat that is still streaming.
+- **Per-chat Zo threads** — each conversation carries its own
+  `zoThreadId`; the ambient thread stays for context-menu/omnibox callers.
+- **Streams survive tab switches** — chunks for a backgrounded chat
+  accumulate into its own conversation; its actions park as
+  `pendingActions` (never auto-run against a page you aren't watching) and
+  restore when you switch back.
+- **History view** — list/switch/delete conversations with live search and
+  inline rename (✎).
 
 ## [v0.0.2] - 2026-08-10
 
