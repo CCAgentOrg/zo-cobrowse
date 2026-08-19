@@ -40,7 +40,8 @@ Send a message to Zo. Zo has full access to files, tools, integrations.
   - `FunctionToolCallEvent` — a tool was invoked. `data: {event_kind:"function_tool_call", part:{tool_name, tool_call_id, args}}`. Surfaced as the "Explored" channel.
   - `FunctionToolResultEvent` — a tool returned. `data: {event_kind:"function_tool_result", result:{content:{stdout,stderr,returncode}|string, outcome:"success"|"error", tool_call_id, tool_name}}`.
   - `AgentRuntimeStreamChunk` — lifecycle metadata. `data: {type:"status"|"persisted", status, data:{message_id}}`. Not rendered (live reasoning + tool cards cover it).
-  - `completed` — **terminal** signal. `data: {status:"succeeded"|"failed", error}`. (Not `End`, not `[DONE]`.)
+  - `completed` — **terminal** signal. `data: {status:"succeeded"|"failed", error}`. (Not `End`, not `[DONE]`.) A `completed` payload reporting `status:"failed"` still carries the error and is surfaced as `STREAM_ERROR` (HTTP stays 200).
+  - `failed` — **terminal** signal for server-side run failures (live-verified 2026-08-19). The API returns **HTTP 200** and terminates with `event: failed`, `data: {status:"failed", error:"Unknown model: …", error_type:"UserError", runner_id, failure_owner, failure_kind}`. Surfaced as `STREAM_ERROR` with the real error string — without a handler this lands as an empty response.
 - Cobrowse mode wraps the `{reasoning,actions}` JSON envelope in a ```` ```json ```` code fence; `background.js` strips exactly one whole-fence block before parsing. The action object may arrive as key-first (`{"click":{...}}`), type-first (`{"type":"click",...}`), or the non-spec `{"action":"click",...}` variant — `normalizeActions` maps all three.
 
 #### `GET /models/available`

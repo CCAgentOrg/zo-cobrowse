@@ -36,7 +36,7 @@ feature/*  fix/*  chore/*   ← one branch per unit of work, branched from dev
 1. Clone the repo
 2. Run `bun install` (installs zod + bun-types)
 3. Run `bun run setup-hooks` (installs the pre-commit verification gate)
-4. Run `bun test` — all 494 tests should pass
+4. Run `bun test tests/` — all 767 tests should pass
 5. Load `extension/` as an unpacked extension in Chrome (`chrome://extensions` → Developer mode → Load unpacked)
 
 **Start every change from `dev`:**
@@ -75,7 +75,8 @@ zo-cobrowse/
 │   ├── content.js      # Content script (DOM capture, action dispatch)
 │   ├── options.html    # Options page (API URL, model, persona)
 │   └── manifest.json   # Chrome extension manifest (V3)
-├── tests/              # Bun test suite (494 tests across 23 files)
+├── tests/              # Bun test suite: unit + integration (767 tests)
+├── e2e/                # Playwright E2E in real Chromium (15 specs, mock Zo API)
 │   ├── schemas/        # Zod schemas for data contracts
 │   └── helpers/        # Test helpers (chrome mock)
 ├── backend/            # WebSocket relay for shared sessions
@@ -91,7 +92,14 @@ zo-cobrowse/
 ```bash
 bun run verify        # Full gate: tests + release checks + transpile check
 bun run test:watch    # Watch mode (auto-rerun on changes)
+bun run test:e2e      # Real-Chromium E2E via Playwright (mock Zo API, no key)
 ```
+
+The unit/integration suite runs in the verify gate; the browser E2E suite is
+a separate Playwright run (`e2e/`) — install its browser once with
+`bunx playwright install chromium`. See the
+[testing docs](https://ccagentorg.github.io/zo-cobrowse/development/testing)
+for the full picture.
 
 ## Code Style
 
@@ -103,7 +111,8 @@ bun run test:watch    # Watch mode (auto-rerun on changes)
 
 ## Pull Request Process
 
-1. Run `bun run verify` — all 494 tests plus release/transpile checks pass
+1. Run `bun run verify` — all 767 tests plus release/transpile checks pass
+1. Run `bun run test:e2e` — the 15 browser E2E specs pass (CI runs these too)
 2. Update `CHANGELOG.md` (and `CHECKLIST.md`) if the change is user-visible
 3. Update the ticket completion table in `AGENTS.md` if implementing a tracked feature
 4. Open a PR against `dev` (not `main`) — CI runs the same `verify` gate.

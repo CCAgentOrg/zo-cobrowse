@@ -4,12 +4,57 @@
 import {
   resolveMode,
   presetToMode,
-  ACTION_SCHEMA_COMPACT,
-  PLAIN_RESPONSE_HINT,
   DEFAULT_MODE_ID,
   normalizeActions,
+  isContextAction,
 } from './lib/modes.js';
-import { shouldDowngradeToJsonDisabled } from './lib/intent.js';
+import { buildPrompt } from './lib/prompt.js';
+import { parseZoOutput, stripCodeFence } from './lib/parse-output.js';
+// safeText stays the local one (line ~156) — do NOT import it here.
+import {
+  STRIP_MAX_TABS,
+  hostOf,
+  isBlankPage,
+  isCapturableUrl,
+  isTabSentAt,
+  noteTabSent,
+} from './lib/tab-contexts.js';
+import {
+  extractPullRequests,
+  buildPullFollowUp,
+  pullHash,
+  pullTier,
+  pullCaptureOpts,
+  MAX_PULL_CYCLES,
+} from './lib/pull.js';
+import {
+  loadConversationState,
+  saveConversationState,
+  computePageHash,
+} from './lib/context-policy.js';
+import {
+  shouldCaptureScreenshot,
+  findModelEntry,
+  catalogIsStale,
+} from './lib/vision.js';
+import {
+  mcpRequest,
+  mcpNotification,
+  initializeParams,
+  toolCallParams,
+  parseMcpMessage,
+  toolText,
+  isToolError,
+} from './lib/mcp.js';
+import {
+  WORKSPACE_ROOT,
+  skillsListCommand,
+  dirListCommand,
+  safeWorkspacePath,
+  extractMarkedStdout,
+  parseSkillsBundle,
+  parseLsEntries,
+} from './lib/pickers.js';
 
 function safePost(port, msg) {
   if (!port || port._dead) return false;
@@ -83,12 +128,7 @@ async function askZoStream(port, msg) {
 // and the actions are silently dropped. Read-only modes emit markdown prose
 // that may contain inline code blocks — those must NOT be stripped, so the
 // guard is strict (one fence, nothing after the closing fence except ws).
-function stripCodeFence(str) {
-  if (typeof str !== 'string') return str;
-  const trimmed = str.trim();
-  const match = trimmed.match(/^```[a-zA-Z0-9]*\s*\n([\s\S]*?)\n```\s*$/);
-  return match ? match[1] : str;
-}
+// stripCodeFence lives in lib/parse-output.js (imported above).
 
 // Summarize a FunctionToolResult payload for the "Explored" trace. Tool
 // results (esp. research/bash) can be huge; truncate to keep the side panel
@@ -137,6 +177,10 @@ function extractStreamContent(parsed) {
 }
 
 // ---- Safe text helper ----
+// Also defined in ./lib/prompt.js (pure copy, so the inspector + Settings
+// editor can use it without chrome.* deps). Kept here because the SSE test
+// harnesses VM-extract it from background.js source by name as a boundary
+// marker. buildPrompt itself is imported from ./lib/prompt.js.
 function safeText(v) {
   if (typeof v === 'string') return v;
   if (v === null || v === undefined) return '';
@@ -164,12 +208,35 @@ const DEFAULTS = {
 };
 
 let config = { ...DEFAULTS };
-// Track Zo API conversation ID for multi-turn context
+// Vision catalog cache (#25): /models/catalog is no-auth + cheap, but we
+// don't want to block every tier-3 turn on a fetch. Cached for CATALOG_TTL_MS.
+let catalogCache = { models: null, fetchedAt: 0, inFlight: null };
+
+// Track Zo API conversation ID for multi-turn context. This global is the
+// AMBIENT thread (context menu / omnibox callers); the sidepanel's chat tabs
+// each carry their own thread id on the ASK_ZO payload and win when present.
 let zoConversationId = null;
 // Recover conversation ID from session storage (survives MV3 SW restart but not browser close)
 chrome.storage.session.get('zoConversationId').then(s => {
   if (s.zoConversationId) zoConversationId = s.zoConversationId;
 }).catch(e => console.debug('session.get(zoConversationId):', e));
+
+/** Coerce a payload thread id to a trimmed string ('' when absent). */
+function msgThreadId(conversationId) {
+  return typeof conversationId === 'string' ? conversationId.trim() : '';
+}
+
+/**
+ * Tab id for routing page work (capture / actions / navigation). The
+ * extension's OWN pages opened as tabs — most commonly the side panel URL,
+ * which users (and the e2e harness) legitimately open as a normal tab — must
+ * never be captured or acted on: treating them as "no tab" makes the caller
+ * fall through to the active web tab, which is always the user's intent.
+ */
+function senderTabId(sender) {
+  const url = (sender && sender.tab && sender.tab.url) || '';
+  return /^(chrome-extension|chrome|about|edge|devtools):/i.test(url) ? undefined : sender?.tab?.id;
+}
 
 
 // ---- Init ----
@@ -214,11 +281,11 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   switch (request.type) {
     case 'GET_PAGE_CONTEXT': {
-      getActiveTabContext(sender.tab?.id, request.tier, request.modeId).then(sendResponse);
+      getActiveTabContext(senderTabId(sender), request.tier, request.modeId).then(sendResponse);
       return true;
     }
     case 'ASK_ZO': {
-      askZo(request.pageContext, request.userQuery, request.modelName, request.personaId, request.modeId, request.customModes).then(sendResponse);
+      askZo(request.pageContext, request.userQuery, request.modelName, request.personaId, request.modeId, request.customModes, request.effectiveTier, request.modeOverrides, request.conversationId, request.skills, request.workspaceFiles).then(sendResponse);
       return true;
     }
     case 'RECREATE_CONTEXT_MENUS':
@@ -243,16 +310,57 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       listModels().then(sendResponse);
       return true;
     }
+    case 'GET_VISION_CATALOG': {
+      // #25: the sidepanel asks for the no-auth catalog to show a vision-model
+      // suggestion when the user picks Visual mode without a vision model.
+      fetchModelCatalog().then((models) => sendResponse({ success: true, models }));
+      return true;
+    }
     case 'LIST_PERSONAS': {
       listPersonas().then(sendResponse);
       return true;
     }
+    case 'LIST_SKILLS': {
+      // #28 `/` picker: enumerate the user's Zo skills (workspace Skills
+      // folder) over the MCP server's bash tool. Cached ~5 min per worker.
+      listSkills(!!request.force).then((skills) => sendResponse({ ok: true, skills }))
+        .catch((err) => sendResponse({ ok: false, error: err?.message || String(err) }));
+      return true;
+    }
+    case 'LIST_WORKSPACE_DIR': {
+      // #28 `%` picker: one `ls -1F` of a workspace path (validated + confined
+      // to /home/workspace by safeWorkspacePath in listWorkspaceDir).
+      listWorkspaceDir(request.path).then(sendResponse);
+      return true;
+    }
     case 'EXECUTE_ACTIONS': {
-      executeActions(request.actions, request.tabId || sender.tab?.id).then(sendResponse);
+      // Context-only pull actions never reach the DOM — the background
+      // consumes them in the stream loop (finishStreamWithPullLoop); filter
+      // here so a degenerate Zo response that still asks after the budget
+      // note no-ops safely.
+      const domActions = (request.actions || []).filter((a) => a && !isContextAction(a));
+      executeActions(domActions, request.tabId || senderTabId(sender)).then(sendResponse);
+      return true;
+    }
+    case 'GET_OPEN_TABS': {
+      // Tab-context chip strip source: capturable tabs in the current window,
+      // most recently used first, capped.
+      chrome.tabs.query({ currentWindow: true }).then((allTabs) => {
+        const list = (allTabs || [])
+          .filter((t) => isCapturableUrl(t.url))
+          .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))
+          .slice(0, STRIP_MAX_TABS)
+          .map((t) => ({ tabId: t.id, title: t.title || '', url: t.url, host: hostOf(t.url), active: !!t.active }));
+        sendResponse({ tabs: list });
+      }).catch(() => sendResponse({ tabs: [] }));
+      return true;
+    }
+    case 'GET_TAB_CONTEXTS': {
+      getTabContexts(request.tabIds || [], request.activeTabId || null).then(sendResponse);
       return true;
     }
     case 'NAVIGATE': {
-      const navTabId = request.tabId || sender.tab?.id;
+      const navTabId = request.tabId || senderTabId(sender);
       if (!navTabId || !request.url) {
         sendResponse({ ok: false, error: 'NAVIGATE requires tabId and url' });
         return false;
@@ -399,11 +507,21 @@ function makeActionEval(action) {
 
 
 
-async function getActiveTabContext(tabId, tier, modeId) {
+async function getActiveTabContext(tabId, tier, modeId, opts) {
   // Normalize the tier. tier 0 = URL/title/viewport only; 1 = +text;
   // 2 = +clickable+forms (with selectors); 3 = +screenshot. Unknown → 2.
   const t = (typeof tier === 'number' && tier >= 0 && tier <= 3) ? tier : 2;
-  const textBudget = (t >= 1) ? 4000 : 2000; // upper bound at capture; Mode re-slices in buildPrompt
+  // opts.pull — capture-shape hint from the pull loop (#24): 'page' raises the
+  // text budget (read_page), 'dom' raises element caps (get_dom), 'form'
+  // returns all form fields (get_form). Null/unknown = normal prompt capture.
+  const pull = opts && typeof opts.pull === 'string' ? opts.pull : null;
+  const textBudget = pull === 'page' ? 20000 : (t >= 1 ? 4000 : 2000); // upper bound at capture; Mode re-slices in buildPrompt
+  const formCap = pull === 'form' ? 300 : pull === 'dom' ? 150 : 30;
+  const clickCap = pull === 'dom' ? 200 : 50;
+  // opts.skipDebugger — skip the CDP fast-path. Used for background-tab
+  // captures (tab contexts / read_tab) so the "is being debugged" banner
+  // never appears on a tab the user isn't looking at.
+  const skipDebugger = !!(opts && opts.skipDebugger);
 
   let tab;
   if (tabId) {
@@ -420,6 +538,14 @@ async function getActiveTabContext(tabId, tier, modeId) {
   }
   if (!tab?.id) return { error: 'No active tab' };
 
+  // Cold start: a blank/new-tab page has no content to capture — return
+  // metadata only, before any capture path (no debugger attach/banner, no
+  // doomed script injections). The `blank` stamp lets the read_tab loop and
+  // the sidepanel treat it as "no page" rather than a capture failure.
+  if (isBlankPage(tab.url)) {
+    return { url: tab.url || '', title: tab.title || '', tabId: tab.id, blank: true };
+  }
+
   let context;
 
   // Inlined selector builder — kept in sync with content.js buildSelector.
@@ -435,7 +561,8 @@ async function getActiveTabContext(tabId, tier, modeId) {
   }`;
 
   // Path 1: Debugger-based eval (fastest, works on any page)
-  try {
+  if (!skipDebugger) {
+    try {
     var captureExpr;
     if (t === 0) {
       captureExpr = `(function(){return{url:location.href,title:document.title,viewport:{w:window.innerWidth,h:window.innerHeight}};})()`;
@@ -446,19 +573,20 @@ async function getActiveTabContext(tabId, tier, modeId) {
         var m=document.querySelector('main,article,[role=main],#content,.content');var b=document.body;var tx=(m||b)?.innerText||'';
         var ff=[];document.querySelectorAll('input:not([type=hidden]),textarea,select').forEach(function(el){var r=el.getBoundingClientRect();if(r.width===0||r.height===0)return;ff.push({tag:el.tagName.toLowerCase(),type:el.type||'text',name:el.name||el.id||'',selector:sel(el),placeholder:el.placeholder||''});});
         var ck=[];document.querySelectorAll('a,button,[role=button],[onclick],input[type=submit],input[type=button]').forEach(function(el){var r=el.getBoundingClientRect();if(r.width<8||r.height<8)return;var tx=(el.textContent||el.value||'').trim().substring(0,60);if(!tx)return;ck.push({text:tx,tag:el.tagName.toLowerCase(),selector:sel(el)});});
-        return{url:location.href,title:document.title,visibleText:tx.substring(0,${textBudget}),formFields:ff.slice(0,30),clickable:ck.slice(0,50),viewport:{w:window.innerWidth,h:window.innerHeight}};
+        return{url:location.href,title:document.title,visibleText:tx.substring(0,${textBudget}),formFields:ff.slice(0,${formCap}),clickable:ck.slice(0,${clickCap}),viewport:{w:window.innerWidth,h:window.innerHeight}};
       })()`;
     }
     var result = await evalInPage(tab.id, captureExpr, 5000);
     if (result.ok && result.value && result.value.url) context = result.value;
-  } catch(e) {
-    // debugger not available — fall through
+    } catch(e) {
+      // debugger not available — fall through
+    }
   }
 
   // Path 2: Content script
   if (!context) {
     try {
-      const resp = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_CONTEXT', tier: t });
+      const resp = await chrome.tabs.sendMessage(tab.id, { type: 'CAPTURE_CONTEXT', tier: t, pull });
       if (resp && !resp.error) context = resp;
     } catch {
       // content script not injected — fall through
@@ -472,13 +600,13 @@ async function getActiveTabContext(tabId, tier, modeId) {
       if (t === 0) {
         captureFn = () => ({ url: location.href, title: document.title, viewport: { w: window.innerWidth, h: window.innerHeight } });
       } else if (t === 1) {
-        captureFn = () => {
+        captureFn = (pull) => {
           const m = document.querySelector('main, article, [role="main"], #content, .content');
           const text = (m || document.body)?.innerText || '';
-          return { url: location.href, title: document.title, visibleText: text.substring(0, 4000), viewport: { w: window.innerWidth, h: window.innerHeight } };
+          return { url: location.href, title: document.title, visibleText: text.substring(0, pull === 'page' ? 20000 : 4000), viewport: { w: window.innerWidth, h: window.innerHeight } };
         };
       } else {
-        captureFn = () => {
+        captureFn = (pull) => {
           // Inlined selector builder (mirror of content.js buildSelector).
           function sel(el) {
             if (el.id) { try { return '#' + CSS.escape(el.id); } catch (e) {} }
@@ -488,6 +616,8 @@ async function getActiveTabContext(tabId, tier, modeId) {
             const p = el.parentElement; if (p) { const sib = Array.from(p.children).filter((x) => x.tagName === el.tagName); if (sib.length > 1) s += ':nth-of-type(' + (sib.indexOf(el) + 1) + ')'; }
             return s;
           }
+          const formCap = pull === 'form' ? 300 : pull === 'dom' ? 150 : 30;
+          const clickCap = pull === 'dom' ? 200 : 50;
           const m = document.querySelector('main, article, [role="main"], #content, .content');
           const text = (m || document.body)?.innerText || '';
           const formFields = [];
@@ -504,99 +634,80 @@ async function getActiveTabContext(tabId, tier, modeId) {
             if (!tx) return;
             clickable.push({ text: tx, tag: el.tagName.toLowerCase(), selector: sel(el) });
           });
-          return { url: location.href, title: document.title, visibleText: text.substring(0, 4000), formFields: formFields.slice(0, 30), clickable: clickable.slice(0, 50), viewport: { w: window.innerWidth, h: window.innerHeight } };
+          return { url: location.href, title: document.title, visibleText: text.substring(0, 4000), formFields: formFields.slice(0, formCap), clickable: clickable.slice(0, clickCap), viewport: { w: window.innerWidth, h: window.innerHeight } };
         };
       }
-      const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: captureFn });
+      const [result] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: captureFn, args: [pull] });
       context = result?.result || { error: 'Could not capture context' };
     } catch (err) {
       context = { error: err.message };
     }
   }
 
-  // Capture screenshot only when the tier asks for it (3) and the global
-  // kill-switch hasn't disabled screenshots. Lower tiers skip the capture cost.
+  // Capture screenshot only when the tier asks for it (3), the global
+  // kill-switch hasn't disabled screenshots, AND the selected model can
+  // plausibly consume an image (#25 vision gate). A non-vision model
+  // would make the capture pure token waste; the catalog lookup is
+  // no-auth + cached, and unknown support falls through to capture
+  // (backward-compatible with pre-#25 behavior).
   if (t >= 3 && context && !context.error && config.enableScreenshots !== false) {
     try {
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg' });
-      context.screenshotDataUrl = dataUrl;
+      const catalog = await fetchModelCatalog();
+      const entry = findModelEntry(catalog, config.zoModel);
+      if (shouldCaptureScreenshot(entry, { tier: t, enableScreenshots: config.enableScreenshots })) {
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg' });        context.screenshotDataUrl = dataUrl;
+      }
     } catch (e) {
       console.warn('Screenshot capture skipped:', e.message);
     }
+  }
+
+  // Stamp the source tab so callers (sidepanel currentContext) can key
+  // active-tab logic off it — GET_TAB_CONTEXTS' isActive dedup and the
+  // auto-referenced active tab both depend on this id.
+  if (context && !context.error && !('tabId' in context)) {
+    context.tabId = tab.id;
   }
 
   return context;
 }
 
 // ---- Prompt assembly (shared by streaming + non-streaming paths) ----
-
-/** Compact one-line serializer for a clickable element. */
-function compactEl(e) {
-  const text = (e.text || '').replace(/\s+/g, ' ').trim().slice(0, 40);
-  const t = text ? ` "${text}"` : '';
-  const sel = e.selector || '';
-  return `[${e.tag || 'a'}${t}${sel ? ' ' + sel : ''}]`;
-}
-
-/** Compact one-line serializer for a form field. */
-function compactForm(f) {
-  const ph = (f.placeholder || '').replace(/\s+/g, ' ').trim().slice(0, 30);
-  const sel = f.selector || '';
-  const ty = f.type ? ` type=${f.type}` : '';
-  const p = ph ? ` "${ph}"` : '';
-  return `[${f.tag || 'input'}${sel}${ty}${p}]`;
-}
+// buildPrompt() + compactEl/compactForm/safeText live in ./lib/prompt.js now
+// (pure, shared with the side-panel inspector + Settings editor). The two
+// call sites below pass { effectiveTier } when the context policy has thinned
+// the turn to a lower tier than the Mode's default.
+// ---- Tab contexts (referenced tabs as manifest + excerpt) ----
 
 /**
- * Build the single `input` string sent to /zo/ask. The Mode decides system
- * prompt, instructions, how much page context (tier), the text budget, and
- * whether to append the action protocol.
+ * Capture tier-2 context for each referenced tab (skipDebugger — background
+ * tabs must not get the debugger banner) and reduce it to the TabContext
+ * shape the prompt manifest + chip pills consume. Never throws: a dead tab or
+ * failed capture degrades to available:false (manifest line: "unavailable,
+ * URL only").
  */
-function buildPrompt(mode, pageContext, userQuery) {
-  const parts = [
-    mode.systemPrompt,
-    '',
-    '## Page',
-    `- URL: ${safeText(pageContext.url)}`,
-    `- Title: ${safeText(pageContext.title)}`,
-    `- Viewport: ${pageContext.viewport?.w || '?'}x${pageContext.viewport?.h || '?'}`,
-  ];
-
-  if (mode.contextTier >= 1) {
-    const text = safeText(pageContext.visibleText || '—empty—').substring(0, mode.textBudget);
-    parts.push('', '## Page Content', '```', text, '```');
-  }
-  if (mode.contextTier >= 2) {
-    const els = pageContext.clickable;
-    if (Array.isArray(els) && els.length) {
-      parts.push('', '## Elements', els.slice(0, 50).map(compactEl).join(''));
-    }
-    const forms = pageContext.formFields;
-    if (Array.isArray(forms) && forms.length) {
-      parts.push('## Forms', forms.slice(0, 30).map(compactForm).join(''));
-    }
-  }
-  if (mode.contextTier >= 3 && pageContext.screenshotDataUrl) {
-    parts.push('', `## Screenshot`, `![page](${pageContext.screenshotDataUrl})`);
-  }
-
-  parts.push('', `## User Request`, safeText(userQuery), '');
-
-  // Intent-aware downgrade: if this is an action (JSON) mode but the query is
-  // a read-only intent ("Summarize", "What is this page?", "Explain the
-  // pricing"), answer in plain markdown instead of forcing the action
-  // envelope. The action schema + the action-oriented instruction are swapped
-  // for read-only equivalents so Zo replies as prose, not {actions:[...]}.
-  const jsonDisabled = shouldDowngradeToJsonDisabled(mode, userQuery);
-  const wantJson = mode.expectJson && !jsonDisabled;
-  if (jsonDisabled) {
-    parts.push('Answer the request directly using the page content provided.');
-    parts.push(PLAIN_RESPONSE_HINT);
-  } else {
-    parts.push(mode.instructions);
-    parts.push(wantJson ? ACTION_SCHEMA_COMPACT : PLAIN_RESPONSE_HINT);
-  }
-  return parts.join('\n');
+async function getTabContexts(tabIds, activeTabId) {
+  const out = await Promise.all((tabIds || []).map(async (tabId) => {
+    const base = { tabId, title: '', url: '', host: '', textLength: 0, elementCount: 0, excerpt: '', isActive: tabId === activeTabId, available: false };
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      base.title = tab.title || '';
+      base.url = tab.url || '';
+      base.host = hostOf(base.url);
+      // Blank/new-tab pages have nothing to capture — keep the degraded base
+      // (they never appear in the chip strip; this covers direct GET_TAB_CONTEXTS callers).
+      if (isBlankPage(base.url)) return base;
+      const c = await getActiveTabContext(tabId, 2, null, { skipDebugger: true });
+      if (c && !c.error) {
+        base.available = true;
+        base.textLength = (c.visibleText || '').length;
+        base.elementCount = Array.isArray(c.clickable) ? c.clickable.length : 0;
+        base.excerpt = (c.visibleText || '').slice(0, 500);
+      }
+    } catch { /* tab closed or capture failed — keep the degraded base */ }
+    return base;
+  }));
+  return { tabs: out };
 }
 
 // ---- Streaming port handler ----
@@ -848,7 +959,7 @@ chrome.omnibox.onInputEntered.addListener(async (text, disposition) => {
   }
 });
 async function _askZoStreamImpl(port, msg) {
-  const { pageContext, userQuery, modelName, personaId, modeId, customModes } = msg;
+  const { pageContext, userQuery, modelName, personaId, modeId, customModes, effectiveTier, modeOverrides } = msg;
   const sid = msg.sessionId;
 
   if (!config.zoAccessToken) {
@@ -857,12 +968,31 @@ async function _askZoStreamImpl(port, msg) {
   }
 
   // Resolve the Mode — single source of truth for prompt + context tier.
-  const mode = resolveMode(modeId || config.zoActiveMode || DEFAULT_MODE_ID, customModes || {});
-  // Persona is now orthogonal: the dropdown chooses it, else fall back to the
-  // configured default persona id. No lite/full routing.
+  const mode = resolveMode(modeId || config.zoActiveMode || DEFAULT_MODE_ID, customModes || {}, modeOverrides || {});
+  // Persona is now orthogonal: the dropdown chooses it, else it falls back to
+  // the configured default persona id. No lite/full routing.
   const resolvedPersonaId = personaId || config.zoPersonaId || '';
 
-  const prompt = buildPrompt(mode, pageContext, userQuery);
+  // Pull-loop state (#24 — read_tab / read_page / get_dom / get_form).
+  // Created fresh for a user turn; the follow-up cycles below re-enter with
+  // _loop + _followUpInput (the pre-assembled follow-up bypasses buildPrompt —
+  // it is a tool-result turn, not a user turn). `threadId` carries the per-chat
+  // Zo thread: initialized from the payload's stored id, then advanced at each
+  // capture point so a mid-loop rotation can't strand follow-up cycles on a
+  // stale thread.
+  const loop = msg._loop || {
+    tabContexts: Array.isArray(msg.tabContexts) ? msg.tabContexts.filter((t) => t && typeof t === 'object') : [],
+    cyclesUsed: 0,
+    budgetSent: false,
+    threadId: msgThreadId(msg.conversationId) || null,
+    msg,
+    mode,
+  };
+
+  // effectiveTier is resolved by the side-panel context policy (opt-in DOM +
+  // send-once) and passed on the ASK_ZO payload. When absent (legacy callers),
+  // buildPrompt falls back to the Mode's configured tier.
+  const prompt = msg._followUpInput || buildPrompt(mode, pageContext, userQuery, { effectiveTier, tabContexts: loop.tabContexts, skills: msg.skills, workspaceFiles: msg.workspaceFiles });
 
   try {
     const response = await fetch(config.zoApiUrl, {
@@ -875,7 +1005,8 @@ async function _askZoStreamImpl(port, msg) {
       body: JSON.stringify({
         input: prompt,
         model_name: (modelName || config.zoModel) || undefined,
-        conversation_id: zoConversationId || undefined,
+        // Per-chat thread id first (chat tabs); the global covers ambient callers.
+        conversation_id: (loop.threadId ?? zoConversationId) || undefined,
         stream: true,
         ...(resolvedPersonaId ? { persona_id: resolvedPersonaId } : {}),
       }),
@@ -897,8 +1028,8 @@ async function _askZoStreamImpl(port, msg) {
     if (contentType.includes('application/json')) {
       try {
         const data = await response.json();
-        if (data.conversation_id) { zoConversationId = data.conversation_id; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
-        finishStream(port, sid, data.output || '');
+        if (data.conversation_id) { zoConversationId = data.conversation_id; loop.threadId = data.conversation_id; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
+        await finishStreamWithPullLoop(port, sid, data.output || '', {}, loop);
       } catch (e) {
         safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: `Non-streaming parse error: ${e.message}` });
       }
@@ -907,7 +1038,7 @@ async function _askZoStreamImpl(port, msg) {
 
     // Capture conversation_id from response headers
     const convHeaderId = response.headers.get('x-conversation-id');
-    if (convHeaderId) { zoConversationId = convHeaderId; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
+    if (convHeaderId) { zoConversationId = convHeaderId; loop.threadId = convHeaderId; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -980,7 +1111,7 @@ async function _askZoStreamImpl(port, msg) {
                 }
               } catch {}
             }
-            finishStream(port, sid, endPayload, { reasoning: reasoningText });
+            finishStreamWithPullLoop(port, sid, endPayload, { reasoning: reasoningText }, loop);
             currentEventType = '';
             return;
           }
@@ -998,9 +1129,38 @@ async function _askZoStreamImpl(port, msg) {
           }
 
           // Terminal: real Zo streams end with `event: completed` (status
-          // succeeded/failed), NOT `End`. Treat as the canonical terminal.
+          // succeeded/failed), NOT `End`. Treat as the canonical terminal —
+          // but a `completed` payload that reports status:"failed" carries a
+          // server-side error (HTTP is still 200); surface it instead of
+          // finishing "empty".
           if (currentEventType === 'completed') {
-            finishStream(port, sid, fullText, { reasoning: reasoningText });
+            let failedMsg = '';
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed && parsed.status === 'failed') failedMsg = safeText(parsed.error || parsed.message) || 'Stream failed';
+            } catch { /* empty/non-JSON payload = plain success terminal */ }
+            if (failedMsg) {
+              safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: failedMsg });
+            } else {
+              await finishStreamWithPullLoop(port, sid, fullText, { reasoning: reasoningText }, loop);
+            }
+            currentEventType = '';
+            return;
+          }
+
+          // Terminal: a failed run is reported as `event: failed` with
+          // {status:"failed", error, error_type, failure_kind, ...} — over
+          // HTTP 200 (live-verified 2026-08-19, e.g. "Unknown model: …").
+          // Without this branch the error payload is dropped and the turn
+          // surfaces as an empty response.
+          if (currentEventType === 'failed') {
+            let errMsg = 'Stream failed';
+            try {
+              const parsed = JSON.parse(data);
+              errMsg = safeText(parsed.error || parsed.message) || errMsg;
+              if (parsed.error_type) errMsg += ` (${parsed.error_type})`;
+            } catch { /* keep the generic message */ }
+            safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: errMsg });
             currentEventType = '';
             return;
           }
@@ -1117,13 +1277,13 @@ async function _askZoStreamImpl(port, msg) {
             if (parsed.done || parsed.finish_reason || parsed.type === 'final' || parsed.type === 'complete' || parsed.type === 'End') {
               if (parsed.output && !fullText) fullText = safeText(parsed.output);
               else if (parsed.type === 'End' && parsed.reasoning && !fullText) fullText = safeText(parsed);
-              finishStream(port, sid, fullText, { reasoning: reasoningText });
+              await finishStreamWithPullLoop(port, sid, fullText, { reasoning: reasoningText }, loop);
               return;
             }
           } catch {
             // Plain text SSE (e.g. [DONE])
             if (data === '[DONE]') {
-              finishStream(port, sid, fullText, { reasoning: reasoningText });
+              await finishStreamWithPullLoop(port, sid, fullText, { reasoning: reasoningText }, loop);
               return;
             }
             fullText += safeText(data);
@@ -1134,7 +1294,7 @@ async function _askZoStreamImpl(port, msg) {
     }
 
     // Stream ended (no End event received — graceful fallback)
-    finishStream(port, sid, fullText, { reasoning: reasoningText });
+    await finishStreamWithPullLoop(port, sid, fullText, { reasoning: reasoningText }, loop);
   } catch (err) {
     safePost(port, { sessionId: sid, type: 'STREAM_ERROR', error: `Connection failed: ${err.message}` });
     throw err; // let the retry wrapper decide
@@ -1164,48 +1324,16 @@ function emitStreamDiagnostic(port, sid) {
   sessionEventShapes = null;
 }
 
+// parseZoOutput lives in lib/parse-output.js (imported above); finishStream
+// is its render half.
 function finishStream(port, sid, output, extra = {}) {
-  let reasoning = '';
-  let actions = [];
-  let rawOutput = '';
-  let plainText = '';  // non-JSON answer text, surfaced directly to the user
-
-  // Normalize to string for consistent parsing
-  const normalizedOutput = (typeof output === 'object' && output !== null)
-    ? output
-    : String(output ?? '');
-
-  if (typeof normalizedOutput === 'object' && normalizedOutput !== null) {
-    reasoning = normalizedOutput.reasoning || '';
-    actions = normalizeActions(normalizedOutput.actions);
-    rawOutput = safeText(JSON.stringify(normalizedOutput));
-  } else if (typeof normalizedOutput === 'string') {
-    // Cobrowse wraps the {reasoning,actions} envelope in a ```json fence
-    // (see qa-notes.md). Strip exactly one whole-fence block before parsing;
-    // a non-fenced or prose answer is left untouched.
-    const fencedStripped = stripCodeFence(normalizedOutput);
-    try {
-      const parsed = JSON.parse(fencedStripped);
-      if (parsed && typeof parsed === 'object') {
-        reasoning = parsed.reasoning || '';
-        actions = normalizeActions(parsed.actions);
-        rawOutput = safeText(JSON.stringify(parsed));
-      } else {
-        // JSON but not an object (number/bool) — treat as plain text.
-        plainText = safeText(normalizedOutput);
-      }
-    } catch {
-      // Not JSON — this is a plain-text (markdown) answer. Show it directly
-      // rather than routing through `reasoning` (ticket #29: plain-text
-      // answers were only surfaced via reasoning and otherwise became "Done.").
-      plainText = normalizedOutput;
-    }
-  }
+  const { reasoning: parsedReasoning, actions, rawOutput, plainText, normalizedOutput } = parseZoOutput(output);
 
   // Live-streamed reasoning (from PartDeltaEvent thinking deltas) wins over
   // any envelope reasoning — it is the real per-token thinking channel and
   // arrives incrementally. Envelope reasoning is a fallback for the legacy
   // {reasoning,actions} object path.
+  let reasoning = parsedReasoning;
   if (extra && extra.reasoning) {
     reasoning = safeText(extra.reasoning) || reasoning;
   }
@@ -1221,21 +1349,159 @@ function finishStream(port, sid, output, extra = {}) {
     reasoning,
     actions,
     fullText,
+    // The effective Zo thread id for this stream (per-chat when the sidepanel
+    // sent one) — echoed back so the sidepanel persists it on the chat.
+    conversationId: extra.conversationId,
   });
   // Stream-shape discovery: surface which events/fields Zo actually emitted.
   emitStreamDiagnostic(port, sid);
 }
 
-async function askZo(pageContext, userQuery, modelName, personaId, modeId, customModes) {
+/**
+ * finishStream, extended with the read_tab loop (tab contexts). When Zo's
+ * response asks to read a referenced tab and the per-turn cycle budget allows,
+ * the background: emits a tab-read tool-trace card (STREAM_TOOL), captures the
+ * tab (send-once per page hash), and re-enters the stream with the follow-up
+ * input — all BEFORE the final STREAM_DONE, so the continuation renders into
+ * the same live assistant bubble. `loop` is undefined for callers without tab
+ * contexts (legacy paths finish immediately).
+ */
+async function finishStreamWithPullLoop(port, sid, output, extra, loop) {
+  if (!loop || port._dead) {
+    finishStream(port, sid, output, extra);
+    return;
+  }
+  // Every finish from here on belongs to this stream's Zo thread — echo it.
+  const withThread = { ...extra, conversationId: loop.threadId ?? undefined };
+  const reqs = extractPullRequests(parseZoOutput(output).actions);
+  if (!reqs.length) {
+    finishStream(port, sid, output, withThread);
+    return;
+  }
+
+  const req = reqs[0]; // one pull per cycle; Zo re-asks for the next in its reply
+  if (loop.cyclesUsed >= MAX_PULL_CYCLES || loop.budgetSent) {
+    // Budget exhausted (or already told once): send the wrap-up note once,
+    // then finish normally even if Zo asks again (pulls no-op downstream).
+    loop.budgetSent = true;
+    const fu = buildPullFollowUp(req.type, pullTargetFor(req, loop, null), null, { reason: 'budget' });
+    loop.cyclesUsed++;
+    emitPullTrace(port, sid, req, null, fu);
+    await _askZoStreamImpl(port, { ...loop.msg, sessionId: sid, _followUpInput: fu.input, _loop: loop });
+    return;
+  }
+
+  loop.cyclesUsed++;
+
+  if (req.type === 'read_tab') {
+    const tabCtx = (loop.tabContexts || []).find((t) => t && t.ref === req.ref);
+    if (!tabCtx) {
+      // Unknown/stale ref — tell Zo conversationally so it can recover.
+      const fu = buildPullFollowUp('read_tab', { ref: req.ref, title: '', url: '', host: '' }, null);
+      emitPullTrace(port, sid, req, null, fu);
+      await _askZoStreamImpl(port, { ...loop.msg, sessionId: sid, _followUpInput: fu.input, _loop: loop });
+      return;
+    }
+
+    const tier = Math.min(Number.isInteger(loop.mode?.contextTier) ? loop.mode.contextTier : 2, 2); // screenshots impossible for background tabs
+    const capture = await getActiveTabContext(tabCtx.tabId, tier, null, { skipDebugger: !tabCtx.isActive });
+    // A blank capture (new/blank tab navigated to mid-stream) is unreadable —
+    // same degraded shape as a failed capture, but with its own reason.
+    const good = capture && !capture.error && !capture.blank ? capture : null;
+    const pageHash = good ? computePageHash(good, tier >= 1 ? tier : 1) : `closed-${tabCtx.tabId}`;
+    // Send-once state is per chat (loop.msg.chatId) — tabsSent dedup must not
+    // leak across the sidepanel's chat tabs.
+    const chatId = loop.msg?.chatId;
+    const state = await loadConversationState(chatId);
+    const alreadySent = isTabSentAt(state, tabCtx.tabId, pullHash('read_tab', pageHash));
+    const fu = buildPullFollowUp(
+      'read_tab',
+      tabCtx,
+      good,
+      capture && capture.blank
+        ? { reason: 'blank' }
+        : alreadySent
+          ? { reason: 'duplicate' }
+          : { textBudget: loop.mode?.textBudget }
+    );
+    if (!alreadySent && good) {
+      await saveConversationState(chatId, noteTabSent(state, tabCtx.tabId, pullHash('read_tab', pageHash)));
+    }
+    emitPullTrace(port, sid, req, tabCtx, fu);
+    await _askZoStreamImpl(port, { ...loop.msg, sessionId: sid, _followUpInput: fu.input, _loop: loop });
+    return;
+  }
+
+  // Active-page pull: read_page / get_dom / get_form. The acting tab is the
+  // active web tab (same resolution as send-time capture — ASK_ZO streams
+  // arrive from the sidepanel with no usable sender tab).
+  const tier = pullTier(req.type);
+  const capture = await getActiveTabContext(loop.msg?.tabId || undefined, tier, null, pullCaptureOpts(req.type));
+  const good = capture && !capture.error && !capture.blank ? capture : null;
+  const pageHash = good ? computePageHash(good, tier) : 'page-unavailable';
+  const chatId = loop.msg?.chatId;
+  const state = await loadConversationState(chatId);
+  const hash = pullHash(req.type, pageHash);
+  const sentKey = good?.tabId ?? 'page';
+  const alreadySent = isTabSentAt(state, sentKey, hash);
+  const fu = buildPullFollowUp(
+    req.type,
+    pullTargetFor(req, loop, good),
+    good,
+    capture && capture.blank
+      ? { reason: 'blank' }
+      : alreadySent
+        ? { reason: 'duplicate' }
+        : { textBudget: loop.mode?.textBudget }
+  );
+  if (!alreadySent && good) {
+    await saveConversationState(chatId, noteTabSent(state, sentKey, hash));
+  }
+  emitPullTrace(port, sid, req, pullTargetFor(req, loop, good), fu);
+  await _askZoStreamImpl(port, { ...loop.msg, sessionId: sid, _followUpInput: fu.input, _loop: loop });
+}
+
+/** {title,url} header target for a pull's follow-up: fresh capture first,
+ *  falling back to the send-time pageContext (tier-0 turns still have it). */
+function pullTargetFor(req, loop, capture) {
+  const pc = (capture && !capture.error && capture) || (loop && loop.msg && loop.msg.pageContext) || {};
+  return { title: pc.title || '', url: pc.url || '' };
+}
+
+/** Tool-trace card for one pull cycle (the sidepanel's STREAM_TOOL channel). */
+function emitPullTrace(port, sid, req, target, fu) {
+  const callId = `pull-${sid}-${req.type}${req.ref ? '-' + req.ref : ''}`;
+  safePost(port, {
+    sessionId: sid,
+    type: 'STREAM_TOOL',
+    phase: 'call',
+    callId,
+    toolName: req.ref ? `read_tab ${req.ref}` : req.type,
+    args: safeText((target && (target.host || target.title)) || ''),
+  });
+  safePost(port, {
+    sessionId: sid,
+    type: 'STREAM_TOOL',
+    phase: 'result',
+    callId,
+    outcome: fu.kind === 'unavailable' ? 'error' : 'ok',
+    result: `${fu.kind}`,
+  });
+}
+
+async function askZo(pageContext, userQuery, modelName, personaId, modeId, customModes, effectiveTier, modeOverrides, conversationId, skills, workspaceFiles) {
   if (!config.zoAccessToken) {
     return { error: '❌ Zo access token not configured. Open extension settings to set it up.' };
   }
 
   // Resolve the Mode — single source of truth for prompt + context tier.
-  const mode = resolveMode(modeId || config.zoActiveMode || DEFAULT_MODE_ID, customModes || {});
+  const mode = resolveMode(modeId || config.zoActiveMode || DEFAULT_MODE_ID, customModes || {}, modeOverrides || {});
   const resolvedPersonaId = personaId || config.zoPersonaId || '';
 
-  const prompt = buildPrompt(mode, pageContext, userQuery);
+  const prompt = buildPrompt(mode, pageContext, userQuery, { effectiveTier, skills, workspaceFiles });
+  // Per-chat threading: the sidepanel sends the chat's stored thread id; the
+  // global stays as the fallback for ambient callers (context menu, omnibox).
+  const threadId = msgThreadId(conversationId);
 
   try {
     const response = await fetch(config.zoApiUrl, {
@@ -1248,7 +1514,7 @@ async function askZo(pageContext, userQuery, modelName, personaId, modeId, custo
       body: JSON.stringify({
         input: prompt,
         model_name: (modelName || config.zoModel) || undefined,
-        conversation_id: zoConversationId || undefined,
+        conversation_id: threadId || undefined,
         ...(resolvedPersonaId ? { persona_id: resolvedPersonaId } : {}),
       }),
     });
@@ -1261,8 +1527,10 @@ async function askZo(pageContext, userQuery, modelName, personaId, modeId, custo
     }
 
     const data = await response.json();
-    if (data.conversation_id) { zoConversationId = data.conversation_id; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
-    return { success: true, output: data.output };
+    // Echo the effective thread id back so the sidepanel can persist it per chat.
+    let effectiveId = threadId;
+    if (data.conversation_id) { zoConversationId = data.conversation_id; effectiveId = data.conversation_id; chrome.storage.session.set({ zoConversationId }).catch(e => console.debug('session.set:', e)); }
+    return { success: true, output: data.output, conversationId: effectiveId };
   } catch (err) {
     return { error: `Connection failed: ${err.message}` };
   }
@@ -1293,11 +1561,156 @@ async function listModels() {
   }
 }
 
+/**
+ * Fetch the no-auth model catalog (/models/catalog) and cache it for the
+ * vision gate (#25). The catalog carries `supports_images` per model.
+ * Deduplicates concurrent callers via an in-flight promise. Returns the
+ * models array (possibly stale-but-usable) or null on hard failure.
+ */
+async function fetchModelCatalog(force = false) {
+  const now = Date.now();
+  if (!force && !catalogIsStale(catalogCache.fetchedAt, now) && catalogCache.models) {
+    return catalogCache.models;
+  }
+  if (catalogCache.inFlight) return catalogCache.inFlight;
+  catalogCache.inFlight = (async () => {
+    try {
+      const catalogUrl = `${apiOrigin()}/models/catalog`;
+      const r = await fetch(catalogUrl);
+      if (!r.ok) return null;
+      const data = await r.json();
+      const models = Array.isArray(data.models) ? data.models : [];
+      catalogCache.models = models;
+      catalogCache.fetchedAt = Date.now();
+      return models;
+    } catch (err) {
+      console.debug('fetchModelCatalog:', err.message);
+      return null; // gate falls back to 'unknown' → captures anyway
+    } finally {
+      catalogCache.inFlight = null;
+    }
+  })();
+  return catalogCache.inFlight;
+}
+
+// ---- MCP client (#28 pickers) ----
+// Minimal streamable-HTTP MCP client for the pickers' read-only bash calls
+// against api.zo.computer/mcp (verified live 2026-08-18: the server accepts a
+// stateless tools/list, but tools/call wants an initialized session — so the
+// session id is captured once per worker lifetime and lazily re-established).
+
+let mcpSessionId = null;
+
+async function mcpPost(body, expectSession) {
+  const r = await fetch(`${apiOrigin()}/mcp`, {
+    method: 'POST',
+    headers: {
+      ...(config.zoAccessToken ? { Authorization: `Bearer ${config.zoAccessToken}` } : {}),
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      ...(mcpSessionId ? { 'mcp-session-id': mcpSessionId } : {}),
+    },
+    body,
+  });
+  if (expectSession) {
+    const sid = r.headers.get('mcp-session-id');
+    if (sid) mcpSessionId = sid;
+  }
+  if (!r.ok) throw new Error(`MCP HTTP ${r.status}`);
+  return parseMcpMessage(await r.text());
+}
+
+async function mcpEnsureSession() {
+  if (mcpSessionId) return;
+  const init = mcpRequest('initialize', initializeParams());
+  const msg = await mcpPost(init.body, true);
+  if (!msg || msg.error) throw new Error(msg?.error?.message || 'MCP initialize failed');
+  await mcpPost(mcpNotification('notifications/initialized'), false); // fire-and-forget handshake step
+}
+
+/**
+ * One tools/call over MCP. Re-initializes once when the session was rejected
+ * (stale id after a worker suspend) before giving up.
+ */
+async function mcpToolCall(name, args) {
+  await mcpEnsureSession();
+  const call = mcpRequest('tools/call', toolCallParams(name, args));
+  let msg = await mcpPost(call.body, false);
+  if (!msg || (msg.error && /session|initial/i.test(msg.error.message || ''))) {
+    mcpSessionId = null;
+    await mcpEnsureSession();
+    const retry = mcpRequest('tools/call', toolCallParams(name, args));
+    msg = await mcpPost(retry.body, false);
+  }
+  if (!msg) throw new Error('MCP returned an unparseable response');
+  if (msg.error) throw new Error(msg.error.message || 'MCP call failed');
+  if (isToolError(msg.result)) throw new Error(toolText(msg.result) || 'MCP tool error');
+  return msg.result;
+}
+
+/**
+ * #28 `/` picker source: the user's Zo skills, one bash round-trip that dumps
+ * every SKILL.md head (name + description frontmatter). 5-min cache with
+ * in-flight dedup — the skills list rarely changes mid-session.
+ */
+const skillsListCache = { list: null, fetchedAt: 0, inFlight: null };
+const SKILLS_TTL_MS = 5 * 60 * 1000;
+
+async function listSkills(force = false) {
+  const now = Date.now();
+  if (!force && skillsListCache.list && now - skillsListCache.fetchedAt < SKILLS_TTL_MS) {
+    return skillsListCache.list;
+  }
+  if (skillsListCache.inFlight) return skillsListCache.inFlight;
+  skillsListCache.inFlight = (async () => {
+    if (!config.zoAccessToken) throw new Error('Zo access token not configured.');
+    const result = await mcpToolCall('bash', { cmd: skillsListCommand() });
+    const skills = parseSkillsBundle(toolText(result));
+    skillsListCache.list = skills;
+    skillsListCache.fetchedAt = Date.now();
+    return skills;
+  })();
+  try {
+    return await skillsListCache.inFlight;
+  } finally {
+    skillsListCache.inFlight = null;
+  }
+}
+
+/**
+ * #28 `%` picker source: one `ls -1F` of a workspace directory. Paths are
+ * validated + confined to /home/workspace (traversal is rejected, never
+ * reaches the shell). Brief per-path cache so popup navigation feels instant.
+ */
+const dirCache = new Map(); // path → { entries, fetchedAt }
+const DIR_TTL_MS = 60 * 1000;
+
+async function listWorkspaceDir(pathInput) {
+  if (!config.zoAccessToken) return { ok: false, error: 'Zo access token not configured.' };
+  const path = safeWorkspacePath(typeof pathInput === 'string' ? pathInput : '', WORKSPACE_ROOT);
+  if (!path) {
+    return { ok: false, error: `Path must be an absolute path inside ${WORKSPACE_ROOT}.` };
+  }
+  const cached = dirCache.get(path);
+  if (cached && Date.now() - cached.fetchedAt < DIR_TTL_MS) {
+    return { ok: true, path, entries: cached.entries };
+  }
+  try {
+    const result = await mcpToolCall('bash', { cmd: dirListCommand(path) });
+    const stdout = extractMarkedStdout(toolText(result));
+    if (stdout == null) return { ok: false, error: 'Unparseable directory listing.' };
+    const entries = parseLsEntries(stdout, path);
+    dirCache.set(path, { entries, fetchedAt: Date.now() });
+    return { ok: true, path, entries };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
 async function listPersonas() {
   if (!config.zoAccessToken) return { error: 'No token' };
   try {
-    const r = await fetch(`${apiOrigin()}/personas/available`, {
-      headers: { Authorization: `Bearer ${config.zoAccessToken}` }
+    const r = await fetch(`${apiOrigin()}/personas/available`, {      headers: { Authorization: `Bearer ${config.zoAccessToken}` }
     });
     if (!r.ok) return { error: `HTTP ${r.status}` };
     const data = await r.json();

@@ -29,6 +29,72 @@
 > **2026-08-10 — v0.0.2 released:** manifest bumped to `0.0.2` (the initial
 > v0.0.2 release shipped a `0.0.1` manifest; corrected by re-running the tag
 > workflow). Suite: **534 tests / 0 fail** (24 files, 1381 expects).
+>
+> **2026-08-14 — Prompts feature round (`feature/prompts`):**
+> Prompts to Zo are now **reviewable, customizable, and token-efficient**.
+> (1) `buildPrompt` extracted from background.js into the pure
+> `extension/lib/prompt.js` (byte-identical; parity tests lock the output; the
+> duplicated copy in `tests/test-prompts/capture.ts` is deleted) +
+> `describePrompt()` structured view. (2) **Opt-in DOM + send-once** via the
+> new `extension/lib/context-policy.js#decideTurn`: read turns send URL/title
+> only (tier 0) by default; `!context`/`!dom` attaches full context for one
+> turn; action turns attach on first turn / page-hash change and dedupe after
+> (relying on `conversation_id` threading). `effectiveTier` rides the existing
+> `ASK_ZO` payload (no new message types — the bidirectional contract test
+> stays green by construction). (3) **Side-panel prompt inspector** — live,
+> collapsible preview of the exact prompt + policy reason + approx tokens.
+> (4) **Settings ✎ Prompts card** — edit each Mode's 5 knobs with a live
+> preview; built-ins persist sparse overrides to `cobrowse_mode_overrides`
+> (`mergeOverride` in modes.js; originals never mutated). (5) content.js
+> `captureContext(tier)` now honors the requested tier (was always tier-2
+> sized). Post-review fixes: `refreshPageContext` now resolves the Mode WITH
+> overrides (Settings tier-raises actually capture) and the inspector honors
+> mode-switching bangs. Behavior change (intended): read modes no longer ship
+> page text by default — the inspector surfaces the decision. Suite: **594
+> tests / 0 fail** (27 files, 1531 expects) + `bun run verify` fully green.
+>
+> **2026-08-15 — Chat tabs round (`feature/tab-interface`):**
+> Multiple chats open at once as sidepanel tabs + chat management. (1) New
+> pure `extension/lib/chat-tabs.js` (ordered open-set ops: open/close/
+> activate/prune, LRU-evict at 8, last-tab guard; `renameConversation`,
+> `searchConversations`) + `tests/schemas/chat-tabs.ts`. (2) **Per-chat Zo
+> threads**: each conversation persists `zoThreadId`; `ASK_ZO` carries
+> `chatId` + `conversationId` (payload id wins over background's ambient
+> `zoConversationId` global), and the effective id is echoed back
+> (`STREAM_DONE.conversationId`, non-streaming response) so the sidepanel can
+> persist it — fixing cross-chat context bleed where switching chats silently
+> continued the previous chat's server thread. (3) **Streams survive tab
+> switches**: `streamSession.chatId` routes chunks (live DOM for the active
+> chat, silent accumulation + persistence for backgrounded ones; their actions
+> park as `conv.pendingActions` and re-arm the Run All/Skip bar on return —
+> never auto-run against a page the user isn't watching). (4) Context-policy
+> + `tabsSent` dedup state now keyed per chat (`cobrowse_ctx_state:<chatId>`,
+> legacy global key as fallback); tab-context chip toggles per chat
+> (`chatTabRefs` map). (5) History view: `#history-search` live filter +
+> ✎ inline rename; delete prunes the open-tab set. (6) Fixed the dead
+> Ctrl+Shift+N shortcut (background broadcast now consumed by the sidepanel).
+> No new message types — the bidirectional contract test stays green by
+> construction. Suite: **694 tests / 0 fail** (29 files, 1734 expects) +
+> `bun run verify` fully green.
+>
+> **2026-08-15 (follow-up) — Auto-referenced active tab + tab-switch display:**
+> User report: switching browser tabs and creating a new chat left the panel
+> describing the old tab, and read questions in a fresh chat carried nothing
+> about the page. Root causes: (a) NOTHING listened to browser-tab activation
+> — the page bar / inspector / 📎 strip refreshed only at send; (b) read turns
+> are tier-0 by design (URL/title only); (c) latent bug —
+> `getActiveTabContext` never returned `tabId`, so `currentContext.tabId` was
+> always undefined and `GET_TAB_CONTEXTS`' `isActive` dedup ("this tab,
+> attached above") could never fire. Fixes: (1) captured contexts now carry
+> the source `tabId`; (2) **tier-0 turns auto-reference the active tab as T1**
+> (manifest line + 500-char excerpt, banner-free content-script capture via
+> `ensureActiveTabRef` in lib/tab-contexts.js; refs renumber; full DOM stays
+> opt-in — spec 2026-08-15-auto-active-tab-design.md); (3) the inspector
+> preview mirrors the auto-reference (`previewTabContexts({includeActive})`);
+> (4) `chrome.tabs.onActivated` (scoped to the panel's window) +
+> `startNewConversation` adopt the current tab for DISPLAY via the tabs API —
+> no capture, no debugger banner. Suite: **701 tests / 0 fail** (29 files,
+> 1753 expects) + `bun run verify` fully green.
 
 ## Test suite
 
@@ -125,3 +191,32 @@ The streaming path (`background.js` `askZoStream` / `_askZoStreamImpl` ↔ `side
 ## Recommendation
 
 The extension is green-tested with a hardened streaming path. Remaining work is new feature development (Tier 1: #16 Scheduled AI Commands, #17 Web Monitoring, #18 Shared Sessions) — these will reuse the now-stable streaming and persona-selector surfaces.
+
+---
+
+## 2026-08-16 — Automation testing infrastructure round
+
+**Scope:** two-layer automation infra on top of the existing unit/contract suite, closing the ticket-25 audit gap ("No E2E tests for the sidepanel↔background message flow").
+
+### Delivered
+
+- **Layer 1 — in-process integration (`tests/integration/`, runs in `bun test tests/`)**: the real `background.js` + `content.js` + `sidepanel.js` wired on a fake-chrome message bus (`tests/helpers/chrome-mock.ts` — live port pairs, storage with `onChanged`, tabs routing to mounted content targets, programmable debugger/scripting paths) + a recording fetch mock (`tests/helpers/zo-fetch-mock.ts`) that streams SSE through the real reader loop, with gated `deferredSse` streams for deterministic mid-stream assertions. 30 tests: message router, retry/4xx/token gating, 3-path capture fallback ordering, content tier gating + every action type, panel send/render contract (stale-session filtering, Esc-cancel, error card + Retry, reconnect), and a full trio turn (user bubble → capture → prompt with DOM → envelope → real DOM mutation → timeline → persistence).
+- **Layer 2 — real-Chromium E2E (`e2e/`, `bun run test:e2e`)**: Playwright persistent-context + `--load-extension` (new headless, MV3-capable). `e2e/mock-zo/server.mjs` = local mock Zo API (real SSE over HTTP, scenario routing on the prompt's `## User Request` section, request recorder) + static fixture site. 15 specs: onboarding, streaming (progressive deltas, thinking trace, error card + retry), action loop (fill/click/scroll mutate the real fixture DOM), capture + context policy (tier-0 pointer vs tier-2 attach vs `!context`), options page (Test Connection via route interception — see finding B, prompts editor override save/reset), persistence across panel reload + history search.
+- **CI**: new `e2e` job in `ci.yml` (Playwright Chromium + `bun run test:e2e`, report artifact on failure). `bun test` scoped to `tests/` everywhere (bun's discovery would otherwise execute the Playwright specs).
+- **Docs**: testing.md (integration + E2E sections), CONTRIBUTING.md, AGENTS.md updated.
+
+### Production fix shipped with the round
+
+- **`senderTabId()` guard (background.js)** + **web-tab filter in `runPendingActions` (sidepanel.js)**: the extension's own pages opened as tabs (most commonly `sidepanel.html` — a legitimate user/debug state) were previously routed page work via `sender.tab.id`, capturing/acting on the extension page itself. Both now fall through to the active **web** tab. Found by the e2e harness; real-world reachable.
+
+### Findings (documented contracts, candidate follow-ups)
+
+- **A (P3)** — Streamed action turns keep the `_Preparing actions…_` placeholder; `done.response` is persisted to the conversation but never rendered into the chat. Asserted as observed contract in both layers.
+- **B (P3)** — options.js Test Connection posts to a hardcoded `https://api.zo.computer/zo/ask`, ignoring the configured `zoApiUrl` (self-hosted endpoints untestable from Settings; the e2e covers it via route interception).
+- **C (P4)** — A single-text-event SSE stream (one chunk, no subsequent deltas) renders an empty bubble: `STREAM_DONE`'s markdown replace requires ≥1 `.msg-streaming-text` span. Real streams always carry multiple deltas.
+- **D (P4)** — On retriable network errors the background surfaces a transient `STREAM_ERROR` before retrying, which the panel treats as terminal — so the `Reconnecting…` banner (`STREAM_RECONNECT`) is dead code on this path; recovery renders via the inactive-DONE fallback.
+
+### Verification
+
+- `bun run verify` green (767 tests / 33 files after merging dev's #24 cold-start work in; lint, transpile).
+- `bun run test:e2e` green (15 specs, ~45s).

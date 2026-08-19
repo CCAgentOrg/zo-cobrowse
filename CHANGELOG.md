@@ -5,6 +5,167 @@ All notable changes to Zo Co-browse are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [v0.1.0] - 2026-08-19
+
+First minor bump: everything since v0.0.2 — chat tabs, cold-start research
+with "Open all", the context-on-demand pull protocol, vision-gated
+screenshots, composer reference pickers, and a hardened streaming failure path.
+
+### Fixed — server-side stream failures now surface the real error
+- **`failed` terminal event** (live-verified 2026-08-19): when a Zo run fails
+  server-side (e.g. "Unknown model: …"), the API returns **HTTP 200 + SSE**
+  and terminates with `event: failed` `{status, error, error_type,
+  failure_kind}` — an event the stream loop didn't handle. The error payload
+  was dropped and the turn finished empty ("Zo returned an empty response…").
+  Both `failed` and a `completed` payload reporting `status:"failed"` now
+  surface as a proper error card with the real server message + Retry.
+- The empty-response hint previously pointed at a console log that didn't
+  exist; it now lists the SSE events actually received (from the
+  stream-shape diagnostic) and the real log tag.
+
+### Tests / QA
+- `e2e/09-open-all.spec.ts` — the #27 link-chips + "Open all" flow verified
+  end-to-end in real Chromium (card contract, first-tab-foreground open,
+  opened tabs auto-referenced `(3/4)` in the strip, single-chip foreground
+  open), plus a `ZO_DEMO=1`-gated demo-recording spec producing
+  `demo/open-all-demo.mp4`.
+- CI: Playwright browser binaries cached (`actions/cache` keyed on
+  `bun.lock`) — cold install 2m10s → ~15s on hit; the e2e job no longer runs
+  duplicate push+PR events (PRs into `main`/`dev`, protected-branch pushes,
+  and manual dispatch only); 15-min job timeout guard.
+- **Suite: 855 tests / 0 fail (37 files, 2234 expect calls) + 19 Playwright
+  E2E tests across 10 spec files (1 demo-gated).**
+
+### Added — #28 Composer reference pickers: `/` skills + `%` Zo files
+
+- **`/` skills picker** — typing `/` at a token start opens a filterable popup
+  of your Zo skills, enumerated from `/home/workspace/Skills` over Zo's MCP
+  server (`api.zo.computer/mcp`, the same saved token). Each skill folder's
+  `SKILL.md` head supplies the label + description. Selecting arms a ⚡ chip;
+  on send, a `## Skills to Run` prompt section tells Zo to read each skill's
+  SKILL.md server-side and run it as part of the turn.
+- **`%` files picker** — typing `%` opens a workspace browser (dirs navigate,
+  `⬆ ..` climbs, files attach) backed by validated `ls -1F` MCP calls.
+  Picked files ride as a paths-only `## Referenced Files` manifest; Zo
+  resolves content with its own file tools.
+- **Send-once chips** — picked skills/files render as chips above the
+  composer and as mention pills on the sent message; they attach to exactly
+  one turn, then clear (a skill is an invocation, not a sticky setting).
+  Both sections preview live in the prompt inspector.
+- **`lib/mcp.js` + `lib/pickers.js`** — pure MCP JSON-RPC envelope/response
+  parsing and picker logic (path confinement to `/home/workspace` with
+  traversal rejection before any request, single-quote shell hardening,
+  Python-repr `CmdResult` parsing between `__ZO_BEGIN__`/`__ZO_END__`
+  markers, SKILL.md frontmatter parsing). Two new message types:
+  `LIST_SKILLS` (5-min cache) and `LIST_WORKSPACE_DIR` (60-s per-path cache).
+- **MCP facts** (live-verified): server `zo-tools v1.0.0`, 96 tools,
+  initialize → `mcp-session-id` header → tools/call; `list_directory`
+  recurses + truncates at 1000 entries, so the pickers use `bash` with
+  deterministic commands instead.
+
+### Tests (#28)
+- `tests/pickers.test.ts` (34) + `tests/schemas/pickers.ts`; integration
+  `tests/integration/mcp-flow.test.ts` (session handshake, caching, traversal
+  rejection, prompt threading); e2e `e2e/08-pickers.spec.ts` + a mock `/mcp`
+  route in `e2e/mock-zo/server.mjs`.
+- **Suite: 853 tests / 0 fail (37 files, 2228 expect calls) + 17 Playwright E2E specs.**
+
+### Added — #24 Context-on-demand (pull protocol)
+
+- **Three new context-only actions** — `read_page`, `get_dom`, `get_form`. When
+  Zo needs the complete version of the current page's context (full page text
+  ~12k chars, the complete interactive-element map, or every form field), it
+  emits a pull action instead of guessing from the budget-sliced prompt
+  excerpt. The extension captures the requested context and auto-sends it back
+  into the conversation as a `## Auto-fetched:` follow-up turn, then Zo continues
+  with it. All inside the same stream, before STREAM_DONE.
+- **`lib/pull.js`** — the generalized pull mechanism: `extractPullRequests()`,
+  `buildPullFollowUp()` (with compact `read_page` / `get_dom` / `get_form`
+  serializers + render caps), `pullHash()` (send-once per `kind:page-hash` —
+  re-asking an unchanged page returns "already provided above"), and
+  `pullTier()`/`pullCaptureOpts()` (capture-shape hints threaded through
+  `getActiveTabContext` → `CAPTURE_CONTEXT`).
+- **`finishStreamWithPullLoop`** — generalizes the `read_tab` follow-up loop to
+  all four pull kinds. Shares the same 3-cycle budget (`MAX_PULL_CYCLES` =
+  `MAX_READ_TAB_CYCLES`) so a single user turn can mix reads and pulls without
+  runaway round-trips. A tool-trace card (`emitPullTrace` on `STREAM_TOOL`)
+  renders the pull in the live bubble.
+- **`CONTEXT_ACTION_NAMES` + `isContextAction`** — single source of truth for
+  "context-only, never reaches `executeDomAction`". Applied at every executor
+  gate (background `EXECUTE_ACTIONS`, sidepanel `STREAM_DONE` + pending-actions
+  filter). This also closes a latent bug where a canonical `{type:'read_tab',
+  ref:'T1'}` from Zo was silently dropped by `normalizeActions` (it survived
+  only in key-first form).
+
+### Changed
+- **Capture caps respond to pull hints** — `captureContext(tier, {pull})` and
+  `getActiveTabContext(tabId, tier, modeId, {pull})` raise the text budget
+  (`read_page`) and element caps (`get_dom`, `get_form`) only on demand;
+  normal prompt capture keeps its 30-field / 50-clickable / 8k-char budget.
+
+### Tests
+- `tests/pull.test.ts` (16 tests) + `tests/schemas/pull.ts` (protocol schemas
+  for `PullRequest`, `FollowUp`, `PullCapture`). Updated
+  `tests/schemas/actions.ts` with `ReadPageAction` / `GetDomAction` /
+  `GetFormAction` (now 11 action types). Integration: a full
+  sidepanel↔background↔content round-trip asserts the loop fires inside the
+  stream and `get_form` never reaches the DOM executor. E2E: `e2e/07-pull.spec.ts`
+  runs the round-trip in a real Chromium against the mock Zo server.
+- **Suite: 814 tests / 0 fail (35 files, 2105 expect calls) + 16 Playwright E2E specs.**
+
+### Added — #25 Vision-gated screenshots
+
+- **`lib/vision.js`** — the vision gate: tier-3 screenshot capture now checks
+  `/models/catalog`'s `supports_images` for the selected model. A known
+  non-vision model skips the `captureVisibleTab` round-trip and the base64
+  data-URL prompt bloat (pure token waste); unknown support keeps capturing
+  (backward-compatible — tier 3 worked before this gate existed). Pure
+  functions: `findModelEntry`, `modelVisionSupport`, `shouldCaptureScreenshot`,
+  `catalogIsStale` (5-min TTL), `visionModelSuggestion`.
+- **`fetchModelCatalog()` + `GET_VISION_CATALOG`** — the background fetches the
+  no-auth model catalog, caches it for 5 min (in-flight dedup), and serves it
+  to the sidepanel for the suggestion UI.
+- **Visual-mode suggestion** — picking Visual mode with a known non-vision
+  model surfaces a system message suggesting a vision-capable model from the
+  catalog (or a warning when none exists).
+- **Mode hot-reload fix** — the sidepanel now syncs `activeModeId` when
+  `zoActiveMode` changes in storage (another tab's mode change previously
+  didn't reflect until reload).
+
+### Tests (#25)
+- `tests/vision.test.ts` (21 unit tests) + 2 integration round-trips
+  (gate suppresses capture for `supports_images:false`; captures for `:true`).
+- Mock Zo server serves `/models/catalog` with `supports_images` per model.
+- **Suite: 814 tests / 0 fail (35 files, 2105 expect calls) + 16 Playwright E2E specs.**
+
+### Added — #27 Cold-start + research → "Open all" tabs
+- **Blank/new-tab pages skip page context entirely** — asking Zo from
+  `chrome://newtab` no longer attaches the CDP debugger (no debug banner),
+  no longer renders a `## Page — URL: chrome://newtab/` prompt section, and
+  no longer hard-blocks the send when capture fails. Every turn on a blank
+  tab is a clean cold start (`isBlankPage`/`pageBlank`).
+- **Link-chips card + `Open all (N)`** — a prose answer containing ≥2 unique
+  http(s) links renders a `🔗 N links` card under the assistant bubble (one
+  host-labelled chip per URL, cap 10). `Open all` opens the first link in
+  the foreground and the rest in background tabs, then auto-adds every
+  opened tab to the active chat's referenced-tabs strip — so `read_tab`
+  follow-ups on Zo's own sources work in one click.
+
+### Added — Chat tabs + chat management
+- **Chat tab bar** — several conversations open at once in the sidepanel
+  (≤8, LRU eviction), ✕/middle-click close with a last-tab guard, and a
+  pulsing dot marks a backgrounded chat that is still streaming.
+- **Per-chat Zo threads** — each conversation carries its own
+  `zoThreadId`; the ambient thread stays for context-menu/omnibox callers.
+- **Streams survive tab switches** — chunks for a backgrounded chat
+  accumulate into its own conversation; its actions park as
+  `pendingActions` (never auto-run against a page you aren't watching) and
+  restore when you switch back.
+- **History view** — list/switch/delete conversations with live search and
+  inline rename (✎).
+
 ## [v0.0.2] - 2026-08-10
 
 Stable release: streaming stability + conversation-experience work promoted

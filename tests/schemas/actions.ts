@@ -43,6 +43,29 @@ export const DoneAction = z.object({
   response: z.string(),
 });
 
+// Context-only action: Zo requests the full content of a referenced tab
+// (manifest refs T1…Tn). Intercepted by the background for the follow-up
+// loop — never reaches executeDomAction.
+export const ReadTabAction = z.object({
+  type: z.literal("read_tab"),
+  ref: z.string().min(1),
+});
+
+// Context-only pull actions (#24): Zo fetches heavy context of the CURRENT
+// page on demand, inside the same stream. Like read_tab, they are consumed
+// by the background's pull loop and never reach executeDomAction.
+export const ReadPageAction = z.object({
+  type: z.literal("read_page"),
+});
+
+export const GetDomAction = z.object({
+  type: z.literal("get_dom"),
+});
+
+export const GetFormAction = z.object({
+  type: z.literal("get_form"),
+});
+
 export const Action = z.discriminatedUnion("type", [
   NavigateAction,
   ClickAction,
@@ -51,6 +74,10 @@ export const Action = z.discriminatedUnion("type", [
   ScrollAction,
   WaitAction,
   DoneAction,
+  ReadTabAction,
+  ReadPageAction,
+  GetDomAction,
+  GetFormAction,
 ]);
 
 export const ActionArray = z.array(Action);
@@ -66,4 +93,8 @@ export const ACTION_TYPES = [
   "scroll",
   "wait",
   "done",
+  "read_tab",
+  "read_page",
+  "get_dom",
+  "get_form",
 ] as const;

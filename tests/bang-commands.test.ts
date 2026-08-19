@@ -83,6 +83,30 @@ describe("parseBangCommand — schema conformance", () => {
     }
   });
 
+  it("!context / !dom / !ctx attach page context for one turn (no mode switch)", () => {
+    expect(parse("!context summarize the pricing")).toEqual({
+      handled: true, kind: "context", isContext: true, query: "summarize the pricing",
+    });
+    expect(parse("!dom compare the plans")).toEqual({
+      handled: true, kind: "context", isContext: true, query: "compare the plans",
+    });
+    expect(parse("!ctx extract all emails")).toEqual({
+      handled: true, kind: "context", isContext: true, query: "extract all emails",
+    });
+  });
+
+  it("!context with no args → inline usage hint", () => {
+    const r = parse("!context");
+    expect(r.handled).toBe(true);
+    expect(r.kind).toBe("inline");
+    if ("inlineReply" in r) expect(r.inlineReply).toContain("Usage:");
+  });
+
+  it("!help lists the !context command", () => {
+    const r = parse("!help");
+    if ("inlineReply" in r) expect(r.inlineReply).toContain("!context");
+  });
+
   it("every registered bang command resolves to a query + mode", () => {
     for (const name of Object.keys(BANG_COMMANDS)) {
       const r = parse(`!${name}`);

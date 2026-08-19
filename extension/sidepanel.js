@@ -1,8 +1,29 @@
 // Zo Co-browse — Side Panel Logic
 
 import { parseBangCommand, BANG_COMMANDS } from './lib/bang-commands.js';
-import { BUILTIN_MODES, DEFAULT_MODE_ID, resolveMode, presetToMode, normalizeActions } from './lib/modes.js';
+import { BUILTIN_MODES, DEFAULT_MODE_ID, resolveMode, presetToMode, normalizeActions, isContextAction } from './lib/modes.js';
 import { looksLikeActionJson } from './lib/intent.js';
+import {
+  createConversationState,
+  decideTurn,
+  computePageHash,
+  loadConversationState,
+  saveConversationState,
+} from './lib/context-policy.js';
+import { describePrompt } from './lib/prompt.js';
+import { assignRefs, ensureActiveTabRef, isBlankPage } from './lib/tab-contexts.js';
+import { visionModelSuggestion, modelVisionSupport, findModelEntry } from './lib/vision.js';
+import { extractUrls, MAX_LINK_CHIPS } from './lib/links.js';
+import { WORKSPACE_ROOT, filterPickerEntries } from './lib/pickers.js';
+import {
+  openChatTab,
+  closeChatTab,
+  activateChatTab,
+  pruneChatTabs,
+  tabTitleFor,
+  renameConversation,
+  searchConversations,
+} from './lib/chat-tabs.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
@@ -46,7 +67,9 @@ function safeText(v) {
 
 const STORAGE_CONVERSATIONS_KEY = 'cobrowse_convos';
 const STORAGE_ACTIVE_KEY = 'cobrowse_active_id';
+const STORAGE_TABS_KEY = 'cobrowse_open_tabs'; // open chat-tab ids (ordered)
 const STORAGE_MODES_KEY = 'cobrowse_modes';
+const STORAGE_OVERRIDES_KEY = 'cobrowse_mode_overrides'; // per-built-in sparse overrides
 const STORAGE_LEGACY_PRESETS_KEY = 'cobrowse_presets'; // migrated once, then ignored
 const STORAGE_ACTIONS_KEY = 'zoQuickActions';
 
@@ -131,6 +154,8 @@ const DEFAULT_QUICK_ACTIONS = [
 let config = { hasToken: false };
 let conversations = {};     // all conversations keyed by id
 let activeId = null;        // current conversation id
+let tabsState = { openIds: [], activeId: null }; // chat tab bar (lib/chat-tabs.js ops)
+const chatTabRefs = new Map(); // chatId → Set<tabId> — per-chat tab-context toggles
 let pendingActions = null;
 let pendingActionsReasoning = '';   // reasoning to attach to the done-answer bubble
 let currentContext = null;
@@ -168,9 +193,11 @@ const skipBtn = $('#skip-btn');
 const newChatBtn = $('#new-chat-btn');
 const historyBtn = $('#history-btn');
 const helpBtn = $('#help-btn');
+const chatTabsEl = $('#chat-tabs');
 const chatView = $('#chat-view');
 const historyViewEl = $('#history-view');
 const historyList = $('#history-list');
+const historySearch = $('#history-search');
 const backToChatBtn = $('#back-to-chat-btn');
 const modeSelect = $('#mode-select');
 const createModeBtn = $('#create-mode-btn');
@@ -181,7 +208,13 @@ const createModeBtn = $('#create-mode-btn');
 // STORAGE_MODES_KEY. The active Mode id is persisted under 'zoActiveMode'.
 
 let customModes = {};
+// Per-built-in-id sparse overrides (Settings editor). Merged into resolved
+// Modes via resolveMode(id, customModes, modeOverrides).
+let modeOverrides = {};
 let activeModeId = DEFAULT_MODE_ID;
+// Per-conversation context policy state (opt-in DOM + send-once). Hydrated
+// from chrome.storage.session in finishInit(); reset on new conversation.
+let contextState = createConversationState();
 
 
 // ---- Init ----
@@ -201,19 +234,36 @@ async function init() {
 /** Remaining init — called on normal start and from completeOnboarding() */
 async function finishInit() {
   try {
+    // Load Modes (customModes + modeOverrides + activeModeId) BEFORE the first
+    // capture so refreshPageContext resolves the tier with overrides applied.
+    await loadModes();
     await refreshPageContext();
     await checkPendingQuery();
     await migrateOldFormat();
     await loadConversations();
     await fetchModelsAndPersonas();
-    await loadModes();
     await loadQuickActions();
     await loadTtsConfig();
+    initTabStrip();
     connectStreamingPort();
     chrome.storage.onChanged.addListener((changes) => {
       if (changes[STORAGE_ACTIONS_KEY]) {
         const actions = changes[STORAGE_ACTIONS_KEY].newValue;
         renderQuickActions(actions || []);
+      }
+      // Hot-reload the active Mode when it changes in storage (another tab
+      // picked a different mode, or a test flipped it). Re-sync the dropdown
+      // + re-capture so the new tier takes effect on the next send.
+      if (changes.zoActiveMode?.newValue && changes.zoActiveMode.newValue !== activeModeId) {
+        activeModeId = changes.zoActiveMode.newValue;
+        syncModeSelect();
+        refreshPageContext().then(renderPromptInspector);
+      }
+      // Hot-reload builtin overrides when the Settings editor saves them, and
+      // re-capture so a raised contextTier actually takes effect immediately.
+      if (changes[STORAGE_OVERRIDES_KEY]) {
+        modeOverrides = changes[STORAGE_OVERRIDES_KEY].newValue || {};
+        refreshPageContext().then(renderPromptInspector);
       }
     });
     chrome.runtime.onMessage.addListener((msg) => {
@@ -221,7 +271,14 @@ async function finishInit() {
         input.value = msg.text;
         sendQuery();
       }
+      // Ctrl+Shift+N shortcut: the background broadcasts NEW_CONVERSATION; the
+      // panel starts a fresh chat locally (its startNewConversation also tells
+      // the background to reset the ambient Zo thread).
+      if (msg.type === 'NEW_CONVERSATION' && msg.source === 'shortcut') {
+        startNewConversation();
+      }
     });
+    renderPromptInspector(); // first paint once modes + context are loaded
   } catch (e) {
     console.error('finishInit error:', e);
   } finally {
@@ -371,11 +428,21 @@ function bindEvents() {
   // Send (disabled while the input is empty, like Zo's Send button)
   const syncSendBtn = () => { sendBtn.disabled = !input.value.trim() || actionRunning; };
   input.addEventListener('input', syncSendBtn);
+  input.addEventListener('input', schedulePromptInspector);
+  input.addEventListener('input', onComposerInputForTabs);
+  input.addEventListener('input', onComposerInputForPickers);
   input.addEventListener('keyup', syncSendBtn);
   syncSendBtn();
   sendBtn.addEventListener('click', () => { sendQuery(); });
+  // Tab-context `@` autocomplete keys. Captured on the WRAPPER so Enter-to-
+  // select fires before the send-on-Enter listener registered on the input.
+  const inputWrap = $('.input-wrap');
+  if (inputWrap) {
+    inputWrap.addEventListener('keydown', onComposerKeydownForTabs, true);
+    inputWrap.addEventListener('keydown', onComposerKeydownForPickers, true);
+  }
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); closeTabAutocomplete(); sendQuery(); }
     // Esc cancels an in-flight stream (Zo: "Press Esc to stop").
     if (e.key === 'Escape' && streamSession.active) { cancelStream(); e.preventDefault(); }
   });
@@ -407,7 +474,10 @@ function bindEvents() {
 
   // Pending actions
   runAllBtn.addEventListener('click', runPendingActions);
-  skipBtn.addEventListener('click', () => { pendingActions = null; actionsBar.classList.add('hidden'); });
+  skipBtn.addEventListener('click', () => {
+    hidePendingActionsBar();
+    clearStoredPendingActions(activeId);
+  });
 
   // New conversation
   newChatBtn.addEventListener('click', startNewConversation);
@@ -415,6 +485,7 @@ function bindEvents() {
   // History toggle
   historyBtn.addEventListener('click', toggleHistoryView);
   backToChatBtn.addEventListener('click', toggleHistoryView);
+  if (historySearch) historySearch.addEventListener('input', () => renderHistoryView());
   helpBtn.addEventListener('click', () => chrome.tabs.create({ url: 'https://cashlessconsumer.zo.space/co-browse' }));
 
   // Open settings on status dot click (not double-click)
@@ -451,6 +522,7 @@ function toggleHistoryView() {
   // If switching to history, save current conversation first
   if (!isHistoryView) {
     saveCurrentConversation();
+    if (historySearch) historySearch.value = ''; // fresh list each visit
   }
   isHistoryView = !isHistoryView;
   renderView();
@@ -474,6 +546,7 @@ async function migrateOldFormat() {
     messages: oldMessages,
   };
   activeId = id;
+  tabsState = openChatTab(tabsState, id); // the migrated chat opens as its tab
 
   await saveConversations();
   await chrome.storage.local.remove(OLD_STORAGE_KEY);
@@ -484,17 +557,30 @@ function generateId() {
 }
 
 async function loadConversations() {
-  const result = await chrome.storage.local.get([STORAGE_CONVERSATIONS_KEY, STORAGE_ACTIVE_KEY]);
+  const result = await chrome.storage.local.get([STORAGE_CONVERSATIONS_KEY, STORAGE_ACTIVE_KEY, STORAGE_TABS_KEY]);
   conversations = result[STORAGE_CONVERSATIONS_KEY] || {};
   activeId = result[STORAGE_ACTIVE_KEY] || null;
+
+  // Restore the open-tab set; pre-tab-bar installs have no stored set, so the
+  // active chat opens as the single tab (upgrade default).
+  const storedOpen = Array.isArray(result[STORAGE_TABS_KEY]) ? result[STORAGE_TABS_KEY] : [];
+  tabsState = pruneChatTabs({ openIds: storedOpen, activeId }, Object.keys(conversations));
 
   // If no active conversation, create one
   if (!activeId || !conversations[activeId]) {
     createNewConversation();
   } else {
+    if (!tabsState.openIds.length) tabsState = openChatTab(tabsState, activeId);
     renderCurrentConversation();
   }
 
+  // Per-chat context-policy state (dedup must not leak across chats).
+  contextState = await loadConversationState(activeId);
+
+  renderChatTabs();
+  // Stored pending actions (chat was backgrounded when its stream finished)
+  // re-arm the Run All / Skip bar on load, not just on switch.
+  restorePendingActionsFor(activeId);
   // Update history button badge
   updateHistoryBadge();
 }
@@ -503,6 +589,7 @@ async function saveConversations() {
   await chrome.storage.local.set({
     [STORAGE_CONVERSATIONS_KEY]: conversations,
     [STORAGE_ACTIVE_KEY]: activeId,
+    [STORAGE_TABS_KEY]: tabsState.openIds,
   });
 }
 
@@ -547,20 +634,31 @@ function createNewConversation() {
     messages: [],
   };
   activeId = id;
+  tabsState = openChatTab(tabsState, id); // every chat opens as a tab
   saveConversations();
 }
 
-async function saveCurrentConversation() {
-  const conv = getActiveConversation();
-  if (conv) {
-    conv.updatedAt = Date.now();
-    // Auto-title from first user message
-    const firstUserMsg = conv.messages.find(m => m.role === 'user');
-    if (firstUserMsg && conv.title === 'New Chat') {
-      conv.title = String(firstUserMsg.text || '').substring(0, 60);
-    }
-    saveConversations();
+/**
+ * Stamp + persist one conversation (auto-title from the first user message).
+ * Targets the ACTIVE chat by default; background-stream persistence passes
+ * the streaming chat's id explicitly. Also refreshes the tab bar (title may
+ * have auto-titled).
+ */
+async function saveConversationById(id = activeId) {
+  const conv = conversations[id];
+  if (!conv) return;
+  conv.updatedAt = Date.now();
+  // Auto-title from first user message
+  const firstUserMsg = conv.messages.find(m => m.role === 'user');
+  if (firstUserMsg && conv.title === 'New Chat') {
+    conv.title = String(firstUserMsg.text || '').substring(0, 60);
   }
+  await saveConversations();
+  renderChatTabs();
+}
+
+async function saveCurrentConversation() {
+  await saveConversationById(activeId);
 }
 
 async function ensureActiveConversation() {
@@ -583,23 +681,48 @@ function renderCurrentConversation() {
     const el = addMessageDOM(m.role, m.text, opts);
     if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning);
     if (m.role === 'assistant' && m.tools) addExploredRegion(el, m.tools);
+    // Link chips re-derive deterministically from the persisted text —
+    // nothing extra is stored (auto-referencing fires only on Open all).
+    if (m.role === 'assistant') addLinkChipsCard(el, extractUrls(m.text));
+    if (m.role === 'user' && Array.isArray(m.tabRefs)) renderTabRefPills(el, m.tabRefs);
+    if (m.role === 'user') {
+      const userBody = el && el.querySelector ? el.querySelector('.msg-body') : null;
+      if (userBody) {
+        for (const s of (m.skillRefs || [])) appendMentionPill(userBody, `⚡ ${safeText(s && s.name)}`);
+        for (const f of (m.fileRefs || [])) appendMentionPill(userBody, `📄 ${safeText(f && f.path).split('/').pop()}`);
+      }
+    }
   }
 }
 
 async function startNewConversation() {
-  // Cancel any active stream
+  // The in-flight stream belongs to the OLD chat — cancel it (a new chat with
+  // a stale live bubble would be confusing).
   cancelStream();
   // Save current if it has messages
   const current = getActiveConversation();
   if (current && current.messages.length > 0) {
-    saveCurrentConversation();
+    await saveCurrentConversation();
   }
+  stashTabRefs(); // remember this chat's tab-context toggles
 
   // Reset Zo conversation on the backend
   chrome.runtime.sendMessage({ type: 'NEW_CONVERSATION' });
 
-  // Create new conversation
+  // Create new conversation (opens its tab)
   createNewConversation();
+
+  // Reset the per-conversation context policy state — a new chat is eligible
+  // for a fresh full-context attach (opt-in DOM / send-once), keyed per chat.
+  contextState = createConversationState();
+  await saveConversationState(activeId, contextState);
+  restoreTabRefs(); // loads the new chat's (empty) toggle set
+
+  // A new chat describes the browser tab the user is on NOW (display-only
+  // adopt — no capture/banner); the full capture happens at the first send.
+  adoptActiveTabDisplay();
+
+  renderPromptInspector();
 
   // Clear UI
   msgsEl.innerHTML = '';
@@ -611,35 +734,74 @@ async function startNewConversation() {
     renderView();
   }
 
+  renderChatTabs();
   updateHistoryBadge();
 }
 
+/**
+ * Switch the active chat. The in-flight stream is NOT cancelled — it keeps
+ * accumulating into its own conversation (routed by streamSession.chatId) and
+ * its tab shows a pulse; switching back re-creates the live bubble.
+ */
 async function switchToConversation(id) {
-  // Cancel any active stream
-  cancelStream();
-  if (id === activeId) return;
+  if (id === activeId) {
+    if (isHistoryView) { isHistoryView = false; renderView(); }
+    return;
+  }
 
-  // Save current conversation first
-  saveCurrentConversation();
+  // Save current conversation + its UI state first
+  await saveCurrentConversation();
+  stashTabRefs();
 
-  // Switch
+  // Switch (opening the tab covers history-view switches to unopened chats)
   activeId = id;
+  tabsState = openChatTab(tabsState, id);
   await saveConversations();
 
-  // Render
-  msgsEl.innerHTML = '';
-  const conv = getActiveConversation();
-  if (conv && conv.messages.length > 0) {
-    for (const msg of conv.messages) {
-      const m = msg.role === 'assistant' ? healAssistantMessage(msg) : msg;
-      const opts = m.role === 'assistant' ? { timestamp: m.timestamp, durationMs: m.durationMs } : {};
-      const el = addMessageDOM(m.role, m.text, opts);
-      if (m.role === 'assistant' && m.reasoning) addReasoningBubble(el, m.reasoning);
-      if (m.role === 'assistant' && m.tools) addExploredRegion(el, m.tools);
+  // Per-chat context-policy state + tab-ref toggles
+  contextState = await loadConversationState(activeId);
+  restoreTabRefs();
+  hidePendingActionsBar();
+  renderCurrentConversation();
+  restorePendingActionsFor(id);
+
+  // If this chat is the one generating, re-create the live bubble from the
+  // accumulated session state and restart the elapsed timer.
+  if (streamSession.active && streamSession.chatId === id) {
+    streamSession.msgEl = addMessageDOM('assistant', '', { streaming: true });
+    const body = streamSession.msgEl.querySelector('.msg-body');
+    if (body && streamSession.reasoningText) {
+      const details = document.createElement('details');
+      details.className = 'msg-stream-reasoning';
+      const summary = document.createElement('summary');
+      summary.className = 'msg-stream-reasoning-summary';
+      summary.textContent = '💭 Thought';
+      const content = document.createElement('div');
+      content.className = 'msg-stream-reasoning-content';
+      const span = document.createElement('span');
+      span.className = 'msg-thought';
+      span.textContent = streamSession.reasoningText;
+      content.appendChild(span);
+      details.appendChild(summary);
+      details.appendChild(content);
+      body.appendChild(details);
     }
-  } else {
-    addMessageDOM('system', 'Connected to Zo. Ask me about this page, or tell me what to do.');
+    if (body && streamSession.fullText && !looksLikeActionJson(streamSession.fullText)) {
+      const span = document.createElement('span');
+      span.className = 'msg-streaming-text';
+      span.textContent = streamSession.fullText;
+      body.appendChild(span);
+    }
+    startStreamTimer(streamSession.msgEl);
+  } else if (streamSession.active) {
+    // Another chat is generating — the composer stays disabled until it ends
+    // (one stream at a time); the pulsing tab dot says where.
+    input.disabled = true;
+    sendBtn.disabled = true;
   }
+
+  renderChatTabs();
+  renderPromptInspector();
 
   // If in history view, switch back to chat
   if (isHistoryView) {
@@ -649,34 +811,102 @@ async function switchToConversation(id) {
 }
 
 async function deleteConversation(id) {
+  // A generating chat can't outlive its stream — cancel first.
+  if (streamSession.active && streamSession.chatId === id) cancelStream();
   delete conversations[id];
+  chatTabRefs.delete(id);
+  tabsState = pruneChatTabs(tabsState, Object.keys(conversations));
   if (activeId === id) {
     // If deleting active, find another or create new
     const ids = Object.keys(conversations);
-    if (ids.length > 0) {
+    if (tabsState.openIds.length && tabsState.activeId) {
+      activeId = tabsState.activeId;
+    } else if (ids.length > 0) {
       activeId = ids[0];
+      tabsState = openChatTab(tabsState, activeId);
     } else {
       createNewConversation();
     }
+    contextState = await loadConversationState(activeId);
+    restoreTabRefs();
+    hidePendingActionsBar();
+    renderCurrentConversation();
+    restorePendingActionsFor(activeId);
   }
   await saveConversations();
+  renderChatTabs();
   updateHistoryBadge();
   if (isHistoryView) {
     renderHistoryView();
   }
 }
 
+// ---- Chat tab bar ----
+
+/** Render the open-chat tab strip (call after any conversation mutation). */
+function renderChatTabs() {
+  if (!chatTabsEl) return;
+  tabsState = pruneChatTabs(tabsState, Object.keys(conversations));
+  if (activeId && tabsState.openIds.includes(activeId)) {
+    tabsState = activateChatTab(tabsState, activeId);
+  }
+  chatTabsEl.replaceChildren();
+  if (tabsState.openIds.length <= 1) return; // a single tab adds noise, not value
+  const streamingId = streamSession.active ? streamSession.chatId : null;
+  for (const id of tabsState.openIds) {
+    const convo = conversations[id];
+    if (!convo) continue;
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'chat-tab' + (id === activeId ? ' chat-tab-active' : '');
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-selected', String(id === activeId));
+    tab.title = tabTitleFor(convo) + (id === streamingId ? ' — generating…' : '');
+    if (id === streamingId) {
+      const dot = document.createElement('span');
+      dot.className = 'chat-tab-stream-dot';
+      tab.appendChild(dot);
+    }
+    const label = document.createElement('span');
+    label.className = 'chat-tab-label';
+    label.textContent = tabTitleFor(convo);
+    tab.appendChild(label);
+    const close = document.createElement('span');
+    close.className = 'chat-tab-close';
+    close.textContent = '✕';
+    close.title = 'Close tab';
+    close.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeChatTabById(id);
+    });
+    tab.appendChild(close);
+    tab.addEventListener('click', () => switchToConversation(id));
+    // Middle-click closes, like a browser tab.
+    tab.addEventListener('auxclick', (e) => {
+      if (e.button === 1) {
+        e.preventDefault();
+        closeChatTabById(id);
+      }
+    });
+    chatTabsEl.appendChild(tab);
+  }
+}
+
+/** Close one chat tab (the conversation itself stays in history). */
+async function closeChatTabById(id) {
+  if (streamSession.active && streamSession.chatId === id) cancelStream();
+  const next = closeChatTab(tabsState, id);
+  if (next.activeId && next.activeId !== activeId) {
+    await switchToConversation(next.activeId);
+    return; // switchToConversation already saved + re-rendered
+  }
+  tabsState = next;
+  await saveConversations();
+  renderChatTabs();
+}
+
 function listConversationSummaries() {
-  return Object.values(conversations)
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-    .map(c => ({
-      id: c.id,
-      title: c.title,
-      createdAt: c.createdAt,
-      updatedAt: c.updatedAt,
-      messageCount: c.messages.length,
-      isActive: c.id === activeId,
-    }));
+  return searchConversations(conversations, '', { activeId });
 }
 
 function updateHistoryBadge() {
@@ -692,11 +922,12 @@ function renderHistoryView() {
   chatView.classList.add('hidden');
   historyBtn.classList.add('active');
 
-  const summaries = listConversationSummaries();
+  const query = historySearch ? historySearch.value : '';
+  const summaries = searchConversations(conversations, query, { activeId });
   historyList.innerHTML = '';
 
   if (summaries.length === 0) {
-    historyList.innerHTML = '<div class="history-empty">No past conversations yet.</div>';
+    historyList.innerHTML = `<div class="history-empty">${query ? 'No matching chats.' : 'No past conversations yet.'}</div>`;
     return;
   }
 
@@ -725,6 +956,15 @@ function renderHistoryView() {
       const timeStr = formatTime(item.updatedAt);
       metaEl.textContent = `${item.messageCount} msg · ${timeStr}`;
 
+      const renameBtn = document.createElement('button');
+      renameBtn.className = 'history-card-rename';
+      renameBtn.textContent = '✎';
+      renameBtn.title = 'Rename conversation';
+      renameBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        startCardRename(card, item);
+      });
+
       const deleteBtn = document.createElement('button');
       deleteBtn.className = 'history-card-delete';
       deleteBtn.textContent = '✕';
@@ -738,6 +978,7 @@ function renderHistoryView() {
 
       card.appendChild(titleEl);
       card.appendChild(metaEl);
+      card.appendChild(renameBtn);
       card.appendChild(deleteBtn);
 
       card.addEventListener('click', () => switchToConversation(item.id));
@@ -747,6 +988,47 @@ function renderHistoryView() {
 
     historyList.appendChild(groupEl);
   }
+}
+
+/**
+ * Inline rename: swap the card's title for an input. Enter/blur commits
+ * (via lib renameConversation — empty no-ops), Esc cancels. Re-renders the
+ * list + tab bar on commit.
+ */
+function startCardRename(card, item) {
+  const titleEl = card.querySelector('.history-card-title');
+  if (!titleEl || card.querySelector('.history-rename-input')) return;
+  const inputEl = document.createElement('input');
+  inputEl.className = 'history-rename-input';
+  inputEl.type = 'text';
+  inputEl.value = item.title;
+  inputEl.maxLength = 60;
+  inputEl.placeholder = 'Chat title';
+  inputEl.addEventListener('click', (e) => e.stopPropagation());
+  inputEl.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') commit(true);
+    else if (e.key === 'Escape') commit(false);
+  });
+  inputEl.addEventListener('blur', () => commit(true));
+
+  let settled = false;
+  function commit(save) {
+    if (settled) return;
+    settled = true;
+    if (save) {
+      const r = renameConversation(conversations, item.id, inputEl.value);
+      if (r.changed) {
+        conversations = r.convos;
+        saveConversations().then(renderChatTabs);
+      }
+    }
+    renderHistoryView();
+  }
+
+  titleEl.replaceWith(inputEl);
+  inputEl.focus();
+  inputEl.select();
 }
 
 function groupByDate(summaries) {
@@ -782,8 +1064,11 @@ function formatTime(ts) {
 
 // ---- Page Context ----
 async function refreshPageContext() {
-  // Tell the background how much context the active Mode wants (its tier).
-  const mode = resolveMode(activeModeId, customModes);
+  // Capture at the active Mode's tier — INCLUDING any built-in override, so a
+  // user raising a Mode's contextTier in Settings actually captures the
+  // higher-tier fields (the per-turn effectiveTier from decideTurn can only
+  // thin what was captured; it can never widen it).
+  const mode = resolveMode(activeModeId, customModes, modeOverrides);
   const resp = await chrome.runtime.sendMessage({ type: 'GET_PAGE_CONTEXT', tier: mode.contextTier, modeId: activeModeId });
   if (resp && !resp.error) {
     currentContext = resp;
@@ -793,6 +1078,96 @@ async function refreshPageContext() {
     pageUrl.textContent = '— no page —';
     currentContext = null;
   }
+}
+
+/**
+ * Lightweight display adoption of a browser tab: URL/title/tabId straight
+ * from the tabs API — NO capture, so NO debugger banner. Keeps the page bar,
+ * 📎 strip ("this tab" marker), and inspector describing the tab the user is
+ * actually on between sends (the full Mode-tier capture still happens per
+ * send in refreshPageContext). Replaces currentContext wholesale — stale
+ * text from the previous tab must never ride under a new URL.
+ */
+async function adoptActiveTabDisplay(tabId) {
+  try {
+    let id = tabId;
+    if (id == null) {
+      const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
+      id = t?.id;
+    }
+    if (id == null) return;
+    const tab = await chrome.tabs.get(id);
+    if (!tab || !tab.url) return;
+    currentContext = { url: tab.url, title: tab.title || '', tabId: tab.id, viewport: currentContext?.viewport };
+    pageUrl.textContent = tab.title || tab.url;
+    pageUrl.title = tab.url;
+    renderPromptInspector();
+    refreshOpenTabs(); // moves the ◈ this-tab marker
+  } catch { /* tab gone — keep the last known page */ }
+}
+
+// ---- Prompt inspector ----
+// Live preview of the exact prompt that will be sent to Zo for the current
+// input + active Mode, including the context-policy decision (effective tier,
+// opt-in / send-once reason) and a rough token estimate. Computed client-side
+// from the shared lib/prompt.js so it never drifts from what the background
+// actually sends.
+const TIER_NAMES = ['Pointer (URL only)', 'Text', 'Elements', 'Screenshot'];
+let promptInspectorTimer = null;
+function schedulePromptInspector() {
+  clearTimeout(promptInspectorTimer);
+  promptInspectorTimer = setTimeout(renderPromptInspector, 150);
+}
+function renderPromptInspector() {
+  const summary = document.getElementById('prompt-inspector-summary');
+  const meta = document.getElementById('prompt-inspector-meta');
+  const pre = document.getElementById('prompt-preview');
+  if (!summary || !meta || !pre) return;
+
+  const raw = input.value.trim();
+  // If the user is typing a bang, preview the resolved query + its policy effect
+  // (so !context shows full context attaching).
+  let bang = null;
+  if (raw.startsWith('!')) {
+    bang = parseBangCommand(raw);
+  }
+  const isContextBang = !!bang && bang.kind === 'context';
+  const query = bang && typeof bang.query === 'string' && bang.query
+    ? bang.query
+    : (raw || '(your question)');
+  // A mode-switching bang (!summarize, !extract, !research, !qa/!ask) resolves
+  // to a different Mode for the turn — mirror sendQuery so the preview matches
+  // the actual send rather than always showing the active Mode.
+  const bangModeId = bang && bang.kind === 'command' && bang.mode ? bang.mode : null;
+
+  const mode = resolveMode(bangModeId || activeModeId, customModes, modeOverrides);
+  const pageHash = currentContext ? computePageHash(currentContext, mode.contextTier) : null;
+  const decision = decideTurn({
+    mode,
+    query,
+    bang: isContextBang ? bang : null,
+    state: contextState,
+    pageHash,
+    pageBlank: isBlankPage(currentContext?.url || ''),
+  });
+  const described = describePrompt(mode, currentContext, query, { effectiveTier: decision.effectiveTier, tabContexts: previewTabContexts({ includeActive: decision.effectiveTier === 0 }), skills: pickedSkills, workspaceFiles: pickedFiles });
+
+  summary.textContent = `🔎 Prompt preview · ~${described.approxTokens} tokens`;
+  meta.replaceChildren();
+  const chip = (label, value) => {
+    const span = document.createElement('span');
+    const b = document.createElement('b');
+    b.textContent = label + ' ';
+    span.appendChild(b);
+    span.appendChild(document.createTextNode(value));
+    return span;
+  };
+  meta.appendChild(chip('Mode:', `${mode.icon} ${mode.name}`));
+  meta.appendChild(chip('Context:', TIER_NAMES[decision.effectiveTier] || `Tier ${decision.effectiveTier}`));
+  const reasonSpan = document.createElement('span');
+  reasonSpan.textContent = decision.reason;
+  meta.appendChild(reasonSpan);
+  pre.textContent = described.prompt;
 }
 
 // ---- Fetch models and personas ----
@@ -1162,8 +1537,13 @@ async function runPendingActions() {
   // Live header: count includes the done action.
   updateActionRunHeader('⚡ Performing actions…', actions.length, null);
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  const tabId = tab?.id;
+  // Target the active WEB tab, never one of the extension's own pages (the
+  // side panel URL opened as a tab is a legitimate user state — actions must
+  // not run against it). Prefer the active non-extension tab, else the first
+  // non-extension tab in the window.
+  const openTabs = await chrome.tabs.query({ currentWindow: true });
+  const webTabs = openTabs.filter((t) => !/^(chrome-extension|chrome|about|edge|devtools):/i.test(t.url || ''));
+  const tabId = (webTabs.find((t) => t.active) || webTabs[0])?.id;
   if (!tabId) {
     addMessage('error', 'No active tab to execute actions on.');
     pendingActions = null;
@@ -1184,6 +1564,7 @@ async function runPendingActions() {
         // Attach the reasoning bubble to the answer element (the message the
         // user actually reads), not the (possibly empty) streamed-text element.
         addReasoningBubble(doneEl, pendingActionsReasoning);
+        addLinkChipsCard(doneEl, extractUrls(action.response));
       }
       continue;
     }
@@ -1215,29 +1596,72 @@ async function runPendingActions() {
 
   pendingActions = null;
   pendingActionsReasoning = '';
+  clearStoredPendingActions(activeId);
   setTimeout(() => actionsBar.classList.add('hidden'), 1200);
   actionRunning = false;
   runAllBtn.disabled = false;
 }
 
-// ---- Messages ----
-function addMessage(role, text) {
-  text = safeText(text);
-  const div = addMessageDOM(role, text);
-  // Auto-read assistant messages via TTS
-  if (role === 'assistant' && ttsAutoRead && text) {
-    speakText(text);
+/**
+ * Actions that finished streaming while their chat was backgrounded are
+ * stored on the conversation (conv.pendingActions). Switching to that chat
+ * restores the Run All / Skip bar WITHOUT auto-running — the user decides
+ * (the page may have changed since).
+ */
+function restorePendingActionsFor(id) {
+  const conv = conversations[id];
+  const stored = conv && conv.pendingActions;
+  if (!stored || !Array.isArray(stored.actions) || !stored.actions.length) return;
+  pendingActions = stored.actions;
+  pendingActionsReasoning = safeText(stored.reasoning);
+  actionsReasoning.textContent = `🧠 ${pendingActionsReasoning.substring(0, 200)}`;
+  actionsBar.classList.remove('hidden');
+}
+
+function hidePendingActionsBar() {
+  pendingActions = null;
+  pendingActionsReasoning = '';
+  actionsBar.classList.add('hidden');
+}
+
+/** Clear a chat's stored pending actions (Run All finished or Skipped). */
+function clearStoredPendingActions(id) {
+  const conv = conversations[id];
+  if (conv && conv.pendingActions) {
+    delete conv.pendingActions;
+    saveConversations();
   }
-  // Persist non-system, non-thinking messages to current conversation
+}
+
+// ---- Messages ----
+/**
+ * Append a message. Renders into the visible chat AND persists it — except
+ * when `opts.chatId` targets a non-active chat (background-stream
+ * persistence): then it only persists. Returns the DOM element (null for
+ * background writes).
+ */
+function addMessage(role, text, opts = {}) {
+  text = safeText(text);
+  const chatId = opts.chatId || activeId;
+  const isBackground = !!chatId && chatId !== activeId;
+  let div = null;
+  if (!isBackground) {
+    div = addMessageDOM(role, text);
+    // Auto-read assistant messages via TTS
+    if (role === 'assistant' && ttsAutoRead && text) {
+      speakText(text);
+    }
+  }
+  // Persist non-system, non-thinking messages to the target conversation
   if (role !== 'system' && role !== 'thinking') {
-    const conv = getActiveConversation();
+    const conv = conversations[chatId];
     if (conv) {
       conv.messages.push({ role, text, timestamp: Date.now() });
       // Trim to MAX_HISTORY per conversation
       if (conv.messages.length > MAX_HISTORY) {
         conv.messages = conv.messages.slice(-MAX_HISTORY);
       }
-      saveCurrentConversation();
+      saveConversationById(chatId);
     }
   }
   return div;
@@ -1421,6 +1845,568 @@ function appendMentionPill(userBody, label) {
   return pill;
 }
 
+// ---- Tab contexts (referenced tabs as VSCode-style context) ----
+// A chip strip above the composer lists the window's capturable tabs; toggled
+// chips ride along with the next message as a compact manifest + excerpt
+// (refs T1…Tn). `@` in the composer is a keyboard shortcut to toggle the same
+// chips. Full content is pulled on demand via Zo's read_tab action (the
+// background chains the follow-up inside the stream).
+
+const tabRefsEnabled = new Set(); // tabIds currently referenced
+let openTabs = [];                // last GET_OPEN_TABS result (recency order)
+let tabStripCollapsed = false;
+
+function initTabStrip() {
+  if (typeof chrome === 'undefined' || !chrome?.runtime?.sendMessage) return;
+  const collapseBtn = document.getElementById('tab-strip-collapse');
+  if (collapseBtn) {
+    collapseBtn.addEventListener('click', () => {
+      tabStripCollapsed = !tabStripCollapsed;
+      const caret = collapseBtn.querySelector('.tab-strip-caret');
+      if (caret) caret.textContent = tabStripCollapsed ? '▸' : '▾';
+      renderTabStrip();
+    });
+  }
+  refreshOpenTabs();
+  // Keep the strip fresh when the user refocuses the panel.
+  window.addEventListener('focus', refreshOpenTabs);
+  // Track browser-tab switches: adopt the newly active tab for DISPLAY (page
+  // bar + strip + inspector). Scoped to this panel's window — another
+  // window's tab switch must not repaint our page. No capture happens here
+  // (no debugger banner); the real Mode-tier capture is per send.
+  if (chrome.tabs?.onActivated) {
+    chrome.tabs.onActivated.addListener(async (info) => {
+      try {
+        const win = await chrome.windows.getCurrent();
+        if (win && info.windowId !== win.id) return;
+      } catch { /* fall through — adopt anyway */ }
+      adoptActiveTabDisplay(info.tabId);
+    });
+  }
+}
+
+async function refreshOpenTabs() {
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'GET_OPEN_TABS' });
+    openTabs = (resp && Array.isArray(resp.tabs)) ? resp.tabs : [];
+    // Drop toggles for tabs that no longer exist — in the active set AND in
+    // every chat's stashed set.
+    const live = new Set(openTabs.map((t) => t.tabId));
+    for (const id of [...tabRefsEnabled]) {
+      if (!live.has(id)) tabRefsEnabled.delete(id);
+    }
+    for (const set of chatTabRefs.values()) {
+      for (const id of [...set]) {
+        if (!live.has(id)) set.delete(id);
+      }
+    }
+    renderTabStrip();
+  } catch { /* background unavailable — keep last render */ }
+}
+
+function renderTabStrip() {
+  const wrap = document.getElementById('tab-contexts');
+  const strip = document.getElementById('tab-strip');
+  const countEl = document.getElementById('tab-strip-count');
+  if (!wrap || !strip) return;
+  if (!openTabs.length) {
+    wrap.classList.add('hidden');
+    return;
+  }
+  wrap.classList.remove('hidden');
+  if (countEl) countEl.textContent = `(${tabRefsEnabled.size}/${openTabs.length})`;
+
+  strip.replaceChildren();
+  strip.classList.toggle('collapsed', tabStripCollapsed);
+  if (tabStripCollapsed) return;
+
+  for (const t of openTabs) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'tab-chip' + (tabRefsEnabled.has(t.tabId) ? ' tab-chip-on' : '');
+    const label = safeText(t.host || t.title || t.url).slice(0, 24);
+    chip.textContent = (t.active ? '◈ ' : '') + label;
+    chip.title = safeText(t.title || t.url) + (t.active ? ' — this tab' : '') +
+      (tabRefsEnabled.has(t.tabId) ? ' — referenced (click to remove)' : ' — click to reference as context');
+    chip.setAttribute('aria-pressed', String(tabRefsEnabled.has(t.tabId)));
+    chip.addEventListener('click', () => {
+      toggleTabRef(t.tabId);
+    });
+    strip.appendChild(chip);
+  }
+}
+
+function toggleTabRef(tabId) {
+  if (tabRefsEnabled.has(tabId)) tabRefsEnabled.delete(tabId);
+  else tabRefsEnabled.add(tabId);
+  renderTabStrip();
+  closeTabAutocomplete();
+  renderPromptInspector();
+}
+
+/** Mention pills for a sent message's referenced tabs (re-render from history). */
+function renderTabRefPills(userMsgEl, tabRefs) {
+  const userBody = userMsgEl && userMsgEl.querySelector ? userMsgEl.querySelector('.msg-body') : null;
+  if (!userBody) return;
+  for (const tr of (tabRefs || [])) {
+    appendMentionPill(userBody, safeText(tr && (tr.host || tr.title) || (tr && tr.ref) || ''));
+  }
+}
+
+/** Stash the active chat's tab-context toggles (before switching chats). */
+function stashTabRefs() {
+  if (activeId) chatTabRefs.set(activeId, new Set(tabRefsEnabled));
+}
+
+/** Load the active chat's toggles into the strip (after switching chats). */
+function restoreTabRefs() {
+  const saved = activeId ? chatTabRefs.get(activeId) : null;
+  tabRefsEnabled.clear();
+  if (saved) for (const id of saved) tabRefsEnabled.add(id);
+  renderTabStrip();
+  renderPromptInspector();
+}
+
+/**
+ * Inspector preview: synthesized TabContexts from the current toggle state
+ * (openTabs metadata; no capture). The real send replaces these with fresh
+ * captures (stats + excerpt) — refs and ordering match, so the preview shows
+ * the exact manifest structure that will go out. `includeActive` mirrors
+ * sendQuery's tier-0 auto-reference (active tab as T1, not toggled).
+ */
+function previewTabContexts({ includeActive = false } = {}) {
+  const picked = openTabs.filter((t) => tabRefsEnabled.has(t.tabId));
+  let autoActive = null;
+  if (includeActive) {
+    autoActive = openTabs.find((t) => t.active && t.tabId === (currentContext && currentContext.tabId))
+      || openTabs.find((t) => t.active)
+      || null;
+    if (autoActive && tabRefsEnabled.has(autoActive.tabId)) autoActive = null; // already referenced
+  }
+  const list = [...(autoActive ? [autoActive] : []), ...picked];
+  if (!list.length) return [];
+  return assignRefs(list.map((t) => ({
+    tabId: t.tabId,
+    title: t.title || '',
+    url: t.url || '',
+    host: t.host || '',
+    textLength: 0,
+    elementCount: 0,
+    excerpt: '',
+    isActive: !!t.active,
+    available: true,
+  })));
+}
+
+/**
+ * Fetch fresh TabContexts for every referenced tab (called per send — excerpts
+ * are always fresh). Returns { tabContexts, dropped } where dropped are tabs
+ * that closed since they were toggled (they never reach the manifest).
+ */
+async function fetchTabContextsForSend() {
+  if (!tabRefsEnabled.size) return { tabContexts: [], dropped: [] };
+  let resp = null;
+  try {
+    resp = await chrome.runtime.sendMessage({ type: 'GET_TAB_CONTEXTS', tabIds: [...tabRefsEnabled], activeTabId: currentContext?.tabId ?? null });
+  } catch { /* fall through with empty */ }
+  const tabs = (resp && Array.isArray(resp.tabs)) ? resp.tabs : [];
+  const dropped = tabs.filter((t) => !t.url); // no url → tab closed (chrome.tabs.get threw)
+  const alive = tabs.filter((t) => t.url);
+  // Recency order (openTabs) decides ref numbering T1…Tn, matching the strip.
+  const order = new Map(openTabs.map((t, i) => [t.tabId, i]));
+  alive.sort((a, b) => (order.get(a.tabId) ?? 999) - (order.get(b.tabId) ?? 999));
+  return { tabContexts: assignRefs(alive), dropped };
+}
+
+/**
+ * One tab's TabContext (banner-free content-script capture) — used to
+ * auto-reference the ACTIVE browser tab on tier-0 turns. Null when the
+ * capture fails or the tab is gone.
+ */
+async function fetchTabContext(tabId) {
+  if (tabId == null) return null;
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'GET_TAB_CONTEXTS', tabIds: [tabId], activeTabId: tabId });
+    const t = resp && Array.isArray(resp.tabs) ? resp.tabs[0] : null;
+    return t && t.url ? t : null;
+  } catch {
+    return null;
+  }
+}
+
+// -- `@` autocomplete: a keyboard path to toggle chips. Typing `@query` opens
+// the same tab list; selecting toggles the chip and swallows the typed token.
+
+let tabAcItems = [];
+let tabAcIndex = 0;
+
+function closeTabAutocomplete() {
+  const popup = document.getElementById('tab-autocomplete');
+  if (popup) popup.classList.add('hidden');
+  tabAcItems = [];
+  tabAcIndex = 0;
+}
+
+function renderTabAutocomplete(filterText) {
+  const popup = document.getElementById('tab-autocomplete');
+  if (!popup) return;
+  const q = (filterText || '').toLowerCase();
+  tabAcItems = openTabs.filter((t) => {
+    const hay = `${t.title || ''} ${t.host || ''} ${t.url || ''}`.toLowerCase();
+    return !q || hay.includes(q);
+  });
+  if (!tabAcItems.length) { closeTabAutocomplete(); return; }
+  tabAcIndex = 0;
+  popup.replaceChildren();
+  tabAcItems.forEach((t, i) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'tab-ac-item' + (i === tabAcIndex ? ' tab-ac-active' : '');
+    item.textContent = (t.active ? '◈ ' : '') + safeText(t.host || t.title || t.url).slice(0, 30);
+    item.title = safeText(t.title || t.url);
+    item.addEventListener('mousedown', (e) => { e.preventDefault(); selectTabAutocomplete(i); });
+    popup.appendChild(item);
+  });
+  popup.classList.remove('hidden');
+}
+
+function selectTabAutocomplete(i) {
+  const t = tabAcItems[i];
+  if (!t) return;
+  // Swallow the typed `@…` token (from the token start through the caret).
+  const before = input.value.slice(0, input.selectionStart ?? input.value.length);
+  const m = before.match(/(^|\s)@(\S*)$/);
+  if (m) {
+    const start = before.length - m[0].length + m[1].length;
+    const end = input.selectionStart ?? input.value.length;
+    input.value = input.value.slice(0, start) + input.value.slice(end);
+    input.focus();
+  }
+  toggleTabRef(t.tabId);
+  closeTabAutocomplete();
+  syncSendBtn();
+}
+
+function onComposerInputForTabs() {
+  const before = input.value.slice(0, input.selectionStart ?? input.value.length);
+  const m = before.match(/(^|\s)@(\S*)$/);
+  if (m) renderTabAutocomplete(m[2]);
+  else closeTabAutocomplete();
+}
+
+function onComposerKeydownForTabs(e) {
+  const popup = document.getElementById('tab-autocomplete');
+  if (!popup || popup.classList.contains('hidden') || !tabAcItems.length) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    tabAcIndex = (tabAcIndex + (e.key === 'ArrowDown' ? 1 : tabAcItems.length - 1)) % tabAcItems.length;
+    popup.querySelectorAll('.tab-ac-item').forEach((el, i) => el.classList.toggle('tab-ac-active', i === tabAcIndex));
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    e.stopPropagation();
+    selectTabAutocomplete(tabAcIndex);
+  } else if (e.key === 'Escape') {
+    closeTabAutocomplete();
+  }
+}
+
+// ---- Composer reference pickers (#28): `/` skills + `%` workspace files ----
+// Same interaction model as the `@` tab autocomplete: typing the trigger char
+// at a token start opens a popup above the composer; Enter/Tab/click selects;
+// selection attaches a chip for the NEXT turn only (send-once — skills are an
+// invocation, files a reference). Skills are enumerated from the Zo workspace
+// Skills folder over MCP (LIST_SKILLS); files browse /home/workspace via
+// `ls -1F` (LIST_WORKSPACE_DIR). Directory rows navigate; `..` climbs (never
+// above the workspace root).
+
+let skillsCache = null;        // { list: SkillEntry[], fetchedAt } — panel lifetime
+let skillsFetchInFlight = null;
+const pickedSkills = [];       // chips armed for the next send
+const pickedFiles = [];
+let filesDir = { path: WORKSPACE_ROOT, entries: null, loading: false };
+
+const skillAc = { items: [], index: 0 };
+const fileAc = { items: [], index: 0 };
+
+const SKILLS_PANEL_TTL_MS = 5 * 60 * 1000;
+
+function closeSkillPopup() {
+  const popup = document.getElementById('skill-autocomplete');
+  if (popup) popup.classList.add('hidden');
+  skillAc.items = [];
+  skillAc.index = 0;
+}
+
+function closeFilePopup() {
+  const popup = document.getElementById('file-autocomplete');
+  if (popup) popup.classList.add('hidden');
+  fileAc.items = [];
+  fileAc.index = 0;
+}
+
+function closeAllPickerPopups() {
+  closeSkillPopup();
+  closeFilePopup();
+}
+
+async function ensureSkillsLoaded(force = false) {
+  const fresh = skillsCache && (Date.now() - skillsCache.fetchedAt) < SKILLS_PANEL_TTL_MS;
+  if ((skillsCache && fresh) && !force) return skillsCache.list;
+  if (skillsFetchInFlight) return skillsFetchInFlight;
+  skillsFetchInFlight = (async () => {
+    try {
+      const resp = await chrome.runtime.sendMessage({ type: 'LIST_SKILLS' });
+      if (resp && resp.ok && Array.isArray(resp.skills)) {
+        skillsCache = { list: resp.skills, fetchedAt: Date.now() };
+        return resp.skills;
+      }
+      return null; // error rendered by the popup, not a thrown crash
+    } catch {
+      return null;
+    } finally {
+      skillsFetchInFlight = null;
+    }
+  })();
+  return skillsFetchInFlight;
+}
+
+function renderSkillPopup(filterText) {
+  const popup = document.getElementById('skill-autocomplete');
+  if (!popup) return;
+  const list = skillsCache ? skillsCache.list : null;
+  if (!list) {
+    popup.replaceChildren();
+    popup.appendChild(pickerNoteItem(skillsFetchInFlight ? 'Loading skills…' : 'Skills unavailable — check your Zo token.'));
+    popup.classList.remove('hidden');
+    skillAc.items = [];
+    return;
+  }
+  const items = filterPickerEntries(list, filterText);
+  if (!items.length) { closeSkillPopup(); return; }
+  skillAc.items = items;
+  skillAc.index = 0;
+  popup.replaceChildren();
+  items.slice(0, 8).forEach((s, i) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'picker-item' + (i === 0 ? ' picker-item-active' : '');
+    const name = document.createElement('span');
+    name.className = 'picker-item-name';
+    name.textContent = `⚡ ${s.name}`;
+    item.appendChild(name);
+    const desc = String(s.description || '').slice(0, 120);
+    if (desc) {
+      const d = document.createElement('span');
+      d.className = 'picker-item-desc';
+      d.textContent = desc;
+      item.appendChild(d);
+    }
+    item.title = `${s.name}\n${s.description || ''}`;
+    item.addEventListener('mousedown', (e) => { e.preventDefault(); selectSkill(i); });
+    popup.appendChild(item);
+  });
+  popup.classList.remove('hidden');
+}
+
+function selectSkill(i) {
+  const s = skillAc.items[i];
+  if (!s) return;
+  if (!pickedSkills.some((p) => p.id === s.id)) pickedSkills.push({ id: s.id, name: s.name, description: s.description });
+  swallowTriggerToken('/');
+  closeSkillPopup();
+  renderPickerChips();
+  syncSendBtn();
+  renderPromptInspector();
+}
+
+async function loadFilesDir(path) {
+  filesDir = { path, entries: null, loading: true };
+  renderFilePopup('', true);
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'LIST_WORKSPACE_DIR', path });
+    if (resp && resp.ok && resp.path === path && Array.isArray(resp.entries)) {
+      filesDir = { path, entries: resp.entries, loading: false };
+    } else {
+      filesDir = { path, entries: null, loading: false, error: (resp && resp.error) || 'Directory unavailable.' };
+    }
+  } catch {
+    filesDir = { path, entries: null, loading: false, error: 'Background unavailable.' };
+  }
+  renderFilePopup('', true);
+}
+
+function renderFilePopup(filterText, keepFilter) {
+  const popup = document.getElementById('file-autocomplete');
+  if (!popup) return;
+  popup.replaceChildren();
+  const header = document.createElement('div');
+  header.className = 'picker-item picker-item-note';
+  header.textContent = `📄 ${filesDir.path}`;
+  popup.appendChild(header);
+  if (filesDir.loading) {
+    popup.appendChild(pickerNoteItem('Loading…'));
+    popup.classList.remove('hidden');
+    fileAc.items = [];
+    return;
+  }
+  if (!filesDir.entries) {
+    popup.appendChild(pickerNoteItem(filesDir.error || 'Directory unavailable.'));
+    popup.classList.remove('hidden');
+    fileAc.items = [];
+    return;
+  }
+  const rows = [];
+  if (filesDir.path !== WORKSPACE_ROOT) rows.push({ name: '..', path: parentOf(filesDir.path), kind: 'up' });
+  for (const e of filesDir.entries) rows.push(e);
+  const filter = keepFilter ? '' : filterText;
+  const items = filterPickerEntries(rows, filter);
+  if (!items.length) { popup.appendChild(pickerNoteItem('No matches.')); popup.classList.remove('hidden'); fileAc.items = []; return; }
+  fileAc.items = items;
+  fileAc.index = 0;
+  items.slice(0, 8).forEach((e, i) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'picker-item' + (i === 0 ? ' picker-item-active' : '');
+    const name = document.createElement('span');
+    name.className = 'picker-item-name';
+    name.textContent = e.kind === 'dir' ? `📂 ${e.name}/` : e.kind === 'up' ? '⬆ ..' : `📄 ${e.name}`;
+    item.appendChild(name);
+    const sub = document.createElement('span');
+    sub.className = 'picker-item-desc';
+    sub.textContent = e.path || e.name;
+    item.appendChild(sub);
+    item.addEventListener('mousedown', (ev) => { ev.preventDefault(); selectFileRow(i); });
+    popup.appendChild(item);
+  });
+  popup.classList.remove('hidden');
+}
+
+function selectFileRow(i) {
+  const e = fileAc.items[i];
+  if (!e) return;
+  if (e.kind === 'up' || e.kind === 'dir') {
+    // Navigate; keep the `%` token so the user keeps filtering as they browse.
+    loadFilesDir(e.path);
+    return;
+  }
+  if (!pickedFiles.some((p) => p.path === e.path)) pickedFiles.push({ path: e.path });
+  swallowTriggerToken('%');
+  closeFilePopup();
+  renderPickerChips();
+  syncSendBtn();
+  renderPromptInspector();
+}
+
+function pickerNoteItem(text) {
+  const note = document.createElement('div');
+  note.className = 'picker-item picker-item-note';
+  note.textContent = text;
+  return note;
+}
+
+function parentOf(path) {
+  const idx = path.lastIndexOf('/');
+  return idx <= 0 ? WORKSPACE_ROOT : path.slice(0, idx);
+}
+
+/** Remove the typed `/…` or `%…` token (trigger char through the caret). */
+function swallowTriggerToken(trigger) {
+  const before = input.value.slice(0, input.selectionStart ?? input.value.length);
+  const re = new RegExp(`(^|\\s)\\${trigger}(\\S*)$`);
+  const m = before.match(re);
+  if (m) {
+    const start = before.length - m[0].length + m[1].length;
+    const end = input.selectionStart ?? input.value.length;
+    input.value = input.value.slice(0, start) + input.value.slice(end);
+    input.focus();
+  }
+}
+
+function onComposerInputForPickers() {
+  const before = input.value.slice(0, input.selectionStart ?? input.value.length);
+  const slash = before.match(/(^|\s)\/(\S*)$/);
+  const pct = before.match(/(^|\s)%(\S*)$/);
+  if (slash) {
+    closeFilePopup();
+    ensureSkillsLoaded().then(() => renderSkillPopup(slash[2]));
+    renderSkillPopup(slash[2]); // immediate render from cache (or loading note)
+  } else if (pct) {
+    closeSkillPopup();
+    // First open (or after an error): fetch the current directory's listing.
+    if (!filesDir.entries && !filesDir.loading) loadFilesDir(filesDir.path);
+    renderFilePopup(pct[2]);
+  } else {
+    closeSkillPopup();
+    closeFilePopup();
+  }
+}
+
+function onComposerKeydownForPickers(e) {
+  const skillPopup = document.getElementById('skill-autocomplete');
+  const filePopup = document.getElementById('file-autocomplete');
+  const inSkill = skillPopup && !skillPopup.classList.contains('hidden') && skillAc.items.length;
+  const inFile = filePopup && !filePopup.classList.contains('hidden') && fileAc.items.length;
+  if (!inSkill && !inFile) return;
+  const ac = inSkill ? skillAc : fileAc;
+  const popup = inSkill ? skillPopup : filePopup;
+  const select = inSkill ? selectSkill : selectFileRow;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    ac.index = (ac.index + (e.key === 'ArrowDown' ? 1 : ac.items.length - 1)) % ac.items.length;
+    const buttons = [...popup.querySelectorAll('button.picker-item')];
+    buttons.forEach((el, i) => el.classList.toggle('picker-item-active', i === ac.index));
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault();
+    e.stopPropagation();
+    select(ac.index);
+  } else if (e.key === 'Escape') {
+    closeAllPickerPopups();
+  }
+}
+
+/** Chips armed for the next turn (send-once): ⚡ skill invocations + 📄 file refs. */
+function renderPickerChips() {
+  const wrap = document.getElementById('picker-chips');
+  if (!wrap) return;
+  wrap.replaceChildren();
+  if (!pickedSkills.length && !pickedFiles.length) {
+    wrap.classList.add('hidden');
+    return;
+  }
+  wrap.classList.remove('hidden');
+  const addChip = (label, title, onRemove) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'picker-chip';
+    const text = document.createElement('span');
+    text.textContent = label;
+    const x = document.createElement('span');
+    x.className = 'picker-chip-x';
+    x.textContent = '✕';
+    chip.appendChild(text);
+    chip.appendChild(x);
+    chip.title = title;
+    chip.addEventListener('click', onRemove);
+    wrap.appendChild(chip);
+  };
+  for (const s of pickedSkills) {
+    addChip(`⚡ ${s.name}`, `${s.description || s.name} — runs on the next send`, () => {
+      const idx = pickedSkills.indexOf(s);
+      if (idx !== -1) pickedSkills.splice(idx, 1);
+      renderPickerChips();
+      renderPromptInspector();
+    });
+  }
+  for (const f of pickedFiles) {
+    addChip(`📄 ${f.path.split('/').pop()}`, `${f.path} — attached to the next send`, () => {
+      const idx = pickedFiles.indexOf(f);
+      if (idx !== -1) pickedFiles.splice(idx, 1);
+      renderPickerChips();
+      renderPromptInspector();
+    });
+  }
+}
+
 // Collapsible "💭 Thinking" bubble rendered above an assistant message body,
 // showing the reasoning field Zo returns alongside its actions. No-ops on
 // empty reasoning so non-reasoning modes (ask/visual) are unaffected.
@@ -1593,6 +2579,84 @@ function addExploredRegion(parentMsgEl, tools) {
   else parentMsgEl.appendChild(block);
 }
 
+// ---- Link chips + "Open all (N)" (research answers → tabs, backlog #27) ----
+
+/**
+ * Open every URL: first tab foreground, rest background. The opened tabs
+ * become reference chips for the ACTIVE chat (chip strip + @-mention +
+ * read_tab follow-ups — the #27 synergy). Single failures never stop the rest.
+ */
+async function openAllLinks(links) {
+  const urls = (links || []).map((l) => l && l.url).filter(Boolean);
+  if (!urls.length) return;
+  const openedIds = [];
+  for (let i = 0; i < urls.length; i++) {
+    try {
+      const tab = await chrome.tabs.create({ url: urls[i], active: i === 0 });
+      if (tab && tab.id != null) openedIds.push(tab.id);
+    } catch { /* individual open failure — keep going */ }
+  }
+  if (!openedIds.length) return;
+  for (const id of openedIds) tabRefsEnabled.add(id);
+  if (activeId) chatTabRefs.set(activeId, new Set(tabRefsEnabled));
+  refreshOpenTabs();
+  renderTabStrip();
+  renderPromptInspector();
+}
+
+/**
+ * Attach the link-chips card to an assistant message: one chip per URL
+ * (label = host, click opens foreground) + an "Open all (N)" button. Only
+ * rendered for ≥2 unique URLs (a single link is already clickable in the
+ * rendered markdown). Idempotent — safe on history re-render.
+ */
+function addLinkChipsCard(parentMsgEl, links) {
+  if (!parentMsgEl) return null;
+  const list = (links || []).filter((l) => l && typeof l === 'object' && typeof l.url === 'string');
+  if (list.length < 2) return null;
+  if (parentMsgEl.querySelector('.msg-links')) return null; // idempotent
+  const shown = list.slice(0, MAX_LINK_CHIPS);
+  const hiddenCount = list.length - shown.length;
+
+  const card = document.createElement('div');
+  card.className = 'msg-links';
+  const head = document.createElement('div');
+  head.className = 'msg-links-head';
+  head.textContent = `🔗 ${list.length} link${list.length === 1 ? '' : 's'}`;
+  card.appendChild(head);
+
+  const chips = document.createElement('div');
+  chips.className = 'msg-links-chips';
+  for (const l of shown) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'msg-link-chip';
+    chip.textContent = safeText(l.host || l.url);
+    chip.title = safeText(l.url);
+    chip.addEventListener('click', () => {
+      chrome.tabs.create({ url: l.url, active: true });
+    });
+    chips.appendChild(chip);
+  }
+  if (hiddenCount > 0) {
+    const more = document.createElement('span');
+    more.className = 'msg-links-more';
+    more.textContent = `+${hiddenCount} more`;
+    chips.appendChild(more);
+  }
+  card.appendChild(chips);
+
+  const openAll = document.createElement('button');
+  openAll.type = 'button';
+  openAll.className = 'msg-links-open-all';
+  openAll.textContent = `Open all (${shown.length})`;
+  openAll.addEventListener('click', () => openAllLinks(shown));
+  card.appendChild(openAll);
+
+  parentMsgEl.appendChild(card);
+  return card;
+}
+
 // ---- Presets ----
 
 async function loadModes() {
@@ -1612,6 +2676,9 @@ async function loadModes() {
   } else {
     customModes = both[STORAGE_MODES_KEY] || {};
   }
+  // Load per-built-in overrides (Settings editor). Hot-reload when Settings saves.
+  const ov = await chrome.storage.local.get(STORAGE_OVERRIDES_KEY);
+  modeOverrides = (ov && ov[STORAGE_OVERRIDES_KEY]) || {};
   rebuildModeOptions();
 
   // Restore last used Mode. Migrate legacy 'zoActivePreset' → 'zoActiveMode'.
@@ -1637,6 +2704,39 @@ function applyMode() {
   syncModeSelect();
   const desc = mode.description ? ` ${mode.description}` : '';
   addSystemMessage(`🔄 **${mode.icon} ${mode.name}** mode active.${desc}`);
+  renderPromptInspector();
+  // #25: Visual mode (tier 3) needs a vision-capable model. If the
+  // selected model is known to not support images, suggest one that does.
+  if (mode.contextTier >= 3 && config.selectedModel) {
+    checkVisionModelSuggestion();
+  }
+}
+
+/**
+ * #25 — fetch the no-auth model catalog and, if the selected model can't
+ * process images, surface a suggestion (or a warning when no vision model
+ * exists in the catalog). Non-fatal: catalog unavailable = no suggestion.
+ */
+async function checkVisionModelSuggestion() {
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'GET_VISION_CATALOG' });
+    if (!resp?.success || !Array.isArray(resp.models) || resp.models.length === 0) return;
+    const suggestion = visionModelSuggestion(resp.models, config.selectedModel);
+    if (!suggestion) return;
+    if (suggestion.kind === 'suggest') {
+      addSystemMessage(
+        `⚠️ **Visual mode needs a vision model.** ${suggestion.reason} ` +
+        `Switch to **${suggestion.suggestedLabel}** in the model dropdown, or screenshots will be skipped.`
+      );
+    } else {
+      addSystemMessage(
+        `⚠️ **Visual mode needs a vision model.** ${suggestion.reason} ` +
+        `Screenshots will be skipped until a vision-capable model is selected.`
+      );
+    }
+  } catch (e) {
+    console.debug('checkVisionModelSuggestion:', e.message);
+  }
 }
 
 function rebuildModeOptions() {
@@ -1933,7 +3033,7 @@ let streamPort = null;
 // body — a live feed. The final STREAM_DONE may render a collapsed reasoning
 // summary bubble above the body if the user wants a compact view, but the
 // full reasoning stream is always visible in chronological order.
-let streamSession = { active: false, sessionId: 0, msgEl: null, fullText: '', reasoningText: '', remainingActions: null, startTime: 0 };
+let streamSession = { active: false, sessionId: 0, chatId: null, msgEl: null, fullText: '', reasoningText: '', remainingActions: null, startTime: 0 };
 
 // Live "processing" timer: ticks the elapsed time on the in-flight assistant
 // bubble's first line until STREAM_DONE replaces it with the real footer
@@ -1992,8 +3092,10 @@ function cancelStream() {
   streamSession.reasoningText = '';
   streamSession.remainingActions = null;
   streamSession.startTime = 0;
+  streamSession.chatId = null;
   if (typeof input !== 'undefined' && input) input.disabled = false;
   if (typeof sendBtn !== 'undefined' && sendBtn) { sendBtn.disabled = !input?.value?.trim(); }
+  renderChatTabs();
 }
 
 function connectStreamingPort() {
@@ -2027,6 +3129,10 @@ function connectStreamingPort() {
 function handleStreamMessage(msg) {
   // Ignore stale messages from previous sessions
   if (msg.sessionId && msg.sessionId !== streamSession.sessionId) return;
+  // True when this stream belongs to a chat the user has switched away from —
+  // keep accumulating into streamSession, never touch the visible chat DOM.
+  const streamIsBackground = () =>
+    streamSession.active && !!streamSession.chatId && streamSession.chatId !== activeId;
   switch (msg.type) {
     case 'STREAM_REASONING': {
       // Live thinking channel (PartDeltaEvent part_delta_kind:"thinking").
@@ -2034,6 +3140,8 @@ function handleStreamMessage(msg) {
       clearThinkingTimeout();
       msgsEl.querySelectorAll('.msg-reconnecting').forEach(el => el.remove());
       if (!streamSession.active) return;
+      streamSession.reasoningText = safeText(msg.text);
+      if (streamIsBackground()) return;
       if (!streamSession.msgEl) {
         const thinking = msgsEl.querySelector('.msg-thinking');
         if (thinking) thinking.remove();
@@ -2074,6 +3182,7 @@ function handleStreamMessage(msg) {
       // card-like block in chronological order.
       clearThinkingTimeout();
       if (!streamSession.active) return;
+      if (streamIsBackground()) return;
       if (!streamSession.msgEl) {
         const thinking = msgsEl.querySelector('.msg-thinking');
         if (thinking) thinking.remove();
@@ -2143,6 +3252,11 @@ function handleStreamMessage(msg) {
       // Co-browse streams the action envelope as text deltas: the raw JSON
       // accumulates here. Never render it as prose; show a placeholder instead.
       const isActionJson = looksLikeActionJson(msg.text);
+      if (streamIsBackground()) {
+        // Background chat: accumulate only; the bubble re-creates on switch-back.
+        streamSession.fullText += safeText(msg.text);
+        break;
+      }
       if (!streamSession.msgEl) {
         const thinking = msgsEl.querySelector('.msg-thinking');
         if (thinking) thinking.remove();
@@ -2165,7 +3279,7 @@ function handleStreamMessage(msg) {
     }
     case 'STREAM_DONE': {
       clearThinkingTimeout();
-      const domActions = (msg.actions || []).filter((a) => a.type !== 'navigate' && a.type !== 'done');
+      const domActions = (msg.actions || []).filter((a) => a.type !== 'navigate' && a.type !== 'done' && !isContextAction(a));
       // Remove any stale thinking indicator regardless of active state
       const staleThinking = msgsEl.querySelector('.msg-thinking');
       if (staleThinking) staleThinking.remove();
@@ -2210,6 +3324,44 @@ function handleStreamMessage(msg) {
         ? '_Done — see the action timeline above._'
         : candidateText;
 
+      const doneTimestamp = Date.now();
+      const doneDuration = streamSession.startTime ? doneTimestamp - streamSession.startTime : 0;
+
+      // ---- Background chat: persist into its conversation, no DOM ----
+      if (streamSession.chatId && streamSession.chatId !== activeId) {
+        const conv = conversations[streamSession.chatId];
+        if (conv) {
+          if (msg.conversationId) conv.zoThreadId = msg.conversationId;
+          if (responseText) {
+            const reasoningVal = safeText(msg.reasoning) || safeText(streamSession.reasoningText) || undefined;
+            conv.messages.push({ role: 'assistant', text: responseText, reasoning: reasoningVal, timestamp: doneTimestamp, durationMs: doneDuration || undefined });
+            if (conv.messages.length > MAX_HISTORY) {
+              conv.messages = conv.messages.slice(-MAX_HISTORY);
+            }
+          }
+          // Actions from a backgrounded chat are never auto-run against a page
+          // the user isn't looking at — store them as pending for that chat.
+          const bgDom = (msg.actions || []).filter((a) => a.type !== 'navigate' && a.type !== 'done' && !isContextAction(a));
+          if (bgDom.length) {
+            conv.pendingActions = { reasoning: safeText(msg.reasoning), actions: bgDom };
+          }
+          const bgNav = (msg.actions || []).filter((a) => a.type === 'navigate');
+          if (bgNav.length) {
+            conv.messages.push({ role: 'system', text: `📍 Navigation to ${safeText(bgNav[0].url)} deferred — re-ask from this chat.`, timestamp: Date.now() });
+          }
+          saveConversationById(streamSession.chatId);
+        }
+        renderChatTabs(); // clear the pulse
+        input.disabled = false;
+        sendBtn.disabled = false;
+        streamSession.msgEl = null;
+        streamSession.fullText = '';
+        streamSession.reasoningText = '';
+        streamSession.chatId = null;
+        break;
+      }
+      // Active chat: render + persist below.
+
       // Chronological feed: the body already contains everything streamed in order
       // (reasoning tokens → tool cards → answer tokens). At this point, replace
       // the streaming text spans with fully-rendered markdown for proper formatting
@@ -2239,27 +3391,35 @@ function handleStreamMessage(msg) {
         }
       } else {
         // No streaming chunks — fallback to addMessage
+        let fallbackEl = null;
         if (responseText) {
-          const el = addMessage('assistant', responseText);
-          addReasoningBubble(el, msg.reasoning);
+          fallbackEl = addMessage('assistant', responseText);
+          addReasoningBubble(fallbackEl, msg.reasoning);
         } else if (msg.actions?.length) {
           // Response is in actions — will be rendered by handleStreamActions
         } else if (msg.fullText || msg.reasoning) {
-          const el = addMessage('assistant', safeText(msg.fullText) || safeText(msg.reasoning));
-          addReasoningBubble(el, msg.reasoning);
+          fallbackEl = addMessage('assistant', safeText(msg.fullText) || safeText(msg.reasoning));
+          addReasoningBubble(fallbackEl, msg.reasoning);
         } else {
-          // Truly empty response. Don't claim success ("Done.") — surface a
-          // hint so the user knows to check the service-worker console, where
-          // background.js logs the first SSE chunk's fields for diagnosis.
-          addMessage('assistant', '_Zo returned an empty response. Check the service worker console (chrome://extensions → Inspect views: service worker) for `[zo-cobrowse] first SSE chunk` to see the actual stream format._');
+          // Truly empty response. Don't claim success ("Done.") — surface what
+          // the stream actually contained (the STREAM_DIAGNOSTIC event→fields
+          // map, when the background collected one) plus where the full shape
+          // log lives. Server-side failures normally arrive as a `failed`
+          // terminal (STREAM_ERROR error card), so this branch means the stream
+          // completed with no recognizable content at all.
+          const evts = (streamShape && Object.keys(streamShape).length)
+            ? Object.keys(streamShape).map(safeText).join(', ')
+            : '';
+          addMessage('assistant', '_Zo returned an empty response' + (evts ? ` — received events: ${evts}` : '') + '. If this persists, check the service worker console (chrome://extensions → Inspect views: service worker) for `[zo-cobrowse] stream shape:` to see the actual stream format._');
+        }
+        if (!hasActions && fallbackEl && responseText) {
+          addLinkChipsCard(fallbackEl, extractUrls(responseText));
         }
       }
 
       // Finalize: stop the live processing timer and render the full footer
       // (Copy / mode / model / timestamp · total-duration) on the streamed bubble.
-      const doneDuration = streamSession.startTime ? Date.now() - streamSession.startTime : 0;
       stopStreamTimer();
-      const doneTimestamp = Date.now();
       if (streamSession.msgEl) {
         const timerLine = streamSession.msgEl.querySelector('.msg-processing-timer');
         if (timerLine) timerLine.remove();
@@ -2270,20 +3430,26 @@ function handleStreamMessage(msg) {
           modelName: config.selectedModel || undefined,
           durationMs: doneDuration,
         });
+        // Research answers: link chips + Open all (prose answers only — an
+        // action turn's links already ran as navigate/click).
+        if (!hasActions && responseText) {
+          addLinkChipsCard(streamSession.msgEl, extractUrls(responseText));
+        }
       }
 
-      // Persist to conversation
-      if (responseText) {
-        const conv = getActiveConversation();
-        if (conv) {
+      // Persist to conversation (thread id echo + assistant message)
+      const conv = getActiveConversation();
+      if (conv) {
+        if (msg.conversationId) conv.zoThreadId = msg.conversationId;
+        if (responseText) {
           const reasoningVal = safeText(msg.reasoning) || safeText(streamSession.reasoningText) || undefined;
           // Persist to conversation (chronological feed is already in the body; just save reasoning)
           conv.messages.push({ role: 'assistant', text: responseText, reasoning: reasoningVal, timestamp: doneTimestamp, durationMs: doneDuration || undefined });
-          if (conv.messages.length > 50) {
-            conv.messages = conv.messages.slice(-50);
+          if (conv.messages.length > MAX_HISTORY) {
+            conv.messages = conv.messages.slice(-MAX_HISTORY);
           }
-          saveCurrentConversation();
         }
+        saveCurrentConversation();
       }
 
       // Handle structured actions (navigate, dom, done)
@@ -2299,6 +3465,7 @@ function handleStreamMessage(msg) {
       streamSession.msgEl = null;
       streamSession.fullText = '';
       streamSession.reasoningText = '';
+      streamSession.chatId = null;
       break;
     }
     case 'STREAM_ERROR': {
@@ -2309,6 +3476,23 @@ function handleStreamMessage(msg) {
       const reconnErr = msgsEl.querySelector('.msg-reconnecting');
       if (reconnErr) reconnErr.remove();
       streamSession.active = false;
+      // Background chat: persist the error into its conversation; no DOM.
+      if (streamSession.chatId && streamSession.chatId !== activeId) {
+        const conv = conversations[streamSession.chatId];
+        if (conv) {
+          conv.messages.push({ role: 'error', text: `Response interrupted: ${safeText(msg.error)}`, timestamp: Date.now() });
+          saveConversationById(streamSession.chatId);
+        }
+        renderChatTabs(); // clear the pulse
+        input.disabled = false;
+        sendBtn.disabled = false;
+        streamSession.msgEl = null;
+        streamSession.fullText = '';
+        streamSession.reasoningText = '';
+        streamSession.startTime = 0;
+        streamSession.chatId = null;
+        break;
+      }
       const thinking = msgsEl.querySelector('.msg-thinking');
       if (thinking) thinking.remove();
       // Drop the partial assistant bubble (if any) so the processing timer line doesn't linger.
@@ -2327,6 +3511,7 @@ function handleStreamMessage(msg) {
       streamSession.fullText = '';
       streamSession.reasoningText = '';
       streamSession.startTime = 0;
+      streamSession.chatId = null;
       break;
     }
       case 'STREAM_RECONNECT_DONE': {
@@ -2336,7 +3521,8 @@ function handleStreamMessage(msg) {
       break;
     }
       case 'STREAM_RECONNECT': {
-      if (!streamSession.active) return;
+        if (!streamSession.active) return;
+        if (streamIsBackground()) return; // banner belongs to the streaming chat's view
       let reconn = msgsEl.querySelector('.msg-reconnecting');
       if (!reconn) {
         reconn = document.createElement('div');
@@ -2400,6 +3586,9 @@ sendQuery = async function() {
   sendBtn.disabled = true;
 
   await ensureActiveConversation();
+  // The active chat always has an open tab (covers sends after a storage reset).
+  tabsState = openChatTab(tabsState, activeId);
+  renderChatTabs();
   await refreshPageContext();
   if (!currentContext) {
     addMessage('error', 'Could not capture page context. Try loading a webpage first.');
@@ -2420,8 +3609,10 @@ sendQuery = async function() {
   // ---- Quick Commands (!) ----
   let effectiveQuery = query;
   let tempMode = null;
+  let bangResult = null; // preserved for the context-policy decision below
   if (query.startsWith('!')) {
     const bang = parseBangCommand(query);
+    bangResult = bang;
     if (bang.inlineReply) {
       addMessage('user', query);
       addMessage('assistant', bang.inlineReply);
@@ -2493,11 +3684,27 @@ sendQuery = async function() {
     tempMode = bang.mode;
   }
 
+  // ---- Tab contexts: referenced tabs ride along as manifest + excerpt ----
+  // Fresh capture per send (excerpts are cheap + always current). Refs T1…Tn
+  // follow the strip's recency order; closed tabs drop with an inline note.
+  const { tabContexts, dropped } = await fetchTabContextsForSend();
+
+  // ---- Picker chips (#28) are send-once: armed skills/files ride THIS turn,
+  // then clear. (Skills are an invocation — re-arming them every turn would
+  // re-run the skill uninvited.)
+  closeAllPickerPopups();
+  const turnSkills = pickedSkills.slice();
+  const turnFiles = pickedFiles.slice();
+  pickedSkills.length = 0;
+  pickedFiles.length = 0;
+  renderPickerChips();
+
   const userMsgEl = addMessage('user', query);
   // When a page is captured for this turn, show a Zo-style mention pill
   // (file-mention badge) in the user message so it reads like Zo's
-  // composer-shell with an attached file/page reference.
-  if (currentContext && (currentContext.title || currentContext.url)) {
+  // composer-shell with an attached file/page reference. Blank/new-tab pages
+  // get no pill — a cold-start turn references nothing.
+  if (currentContext && (currentContext.title || currentContext.url) && !isBlankPage(currentContext.url || '')) {
     const userBody = userMsgEl && userMsgEl.querySelector
       ? userMsgEl.querySelector('.msg-body')
       : null;
@@ -2506,12 +3713,79 @@ sendQuery = async function() {
       appendMentionPill(userBody, host);
     }
   }
+  if (tabContexts.length) {
+    renderTabRefPills(userMsgEl, tabContexts.map((t) => ({ ref: t.ref, host: t.host, title: t.title })));
+    const conv = getActiveConversation();
+    if (conv && conv.messages.length) {
+      conv.messages[conv.messages.length - 1].tabRefs = tabContexts.map((t) => ({ ref: t.ref, host: t.host, title: t.title }));
+      saveCurrentConversation();
+    }
+  }
+  if (dropped.length) {
+    addMessage('system', `📎 ${dropped.length} referenced tab${dropped.length === 1 ? '' : 's'} closed — skipped.`);
+  }
+  // Picker pills (send-once chips re-render as mention pills, like tab refs).
+  if (turnSkills.length || turnFiles.length) {
+    const userBody = userMsgEl && userMsgEl.querySelector ? userMsgEl.querySelector('.msg-body') : null;
+    if (userBody) {
+      for (const s of turnSkills) appendMentionPill(userBody, `⚡ ${s.name}`);
+      for (const f of turnFiles) appendMentionPill(userBody, `📄 ${f.path.split('/').pop()}`);
+    }
+    const conv = getActiveConversation();
+    if (conv && conv.messages.length) {
+      const last = conv.messages[conv.messages.length - 1];
+      if (turnSkills.length) last.skillRefs = turnSkills.map((s) => ({ name: s.name }));
+      if (turnFiles.length) last.fileRefs = turnFiles.map((f) => ({ path: f.path }));
+      saveCurrentConversation();
+    }
+  }
   addMessage('thinking', 'Zo is thinking. Press Esc to stop.');
   startThinkingTimeout();
 
   // Resolve the Mode for this turn: a bang command can override the active
   // Mode for a single turn (tempMode), else use the selected Mode.
   const modeId = tempMode || activeModeId;
+  const mode = resolveMode(modeId, customModes, modeOverrides);
+
+  // ---- Context policy: opt-in DOM + send-once ----
+  // Decides how much of the captured page context to embed in the prompt this
+  // turn (effectiveTier). Reads default to URL-only; !context and action turns
+  // attach the Mode's full context; same-page follow-ups dedupe to URL-only.
+  // The capture above is at the Mode tier (IPC, not billed tokens); buildPrompt
+  // (in the background) thins what actually reaches Zo using effectiveTier.
+  const pageHash = computePageHash(currentContext, mode.contextTier);
+  const pageBlank = isBlankPage(currentContext?.url || '');
+  const turnDecision = decideTurn({
+    mode,
+    query: effectiveQuery,
+    bang: bangResult,
+    state: contextState,
+    pageHash,
+    pageBlank,
+  });
+  contextState = turnDecision.newState;
+  saveConversationState(activeId, contextState);
+  const effectiveTier = turnDecision.effectiveTier;
+
+  // ---- Auto-reference the active tab on tier-0 turns ----
+  // Whenever the policy thins this turn to URL-only (reads, same-page
+  // follow-ups), the active browser tab still rides along as T1 (manifest
+  // line + 500-char excerpt) so Zo always knows what page you're on.
+  // Banner-free capture (content-script path); full DOM stays opt-in
+  // (!context / action turns). Refs renumber so the active tab is T1.
+  // Blank/new-tab pages are never auto-referenced (cold start: no page).
+  let sendTabContexts = tabContexts;
+  if (effectiveTier === 0 && currentContext && currentContext.tabId != null && !pageBlank) {
+    const activeRef = await fetchTabContext(currentContext.tabId);
+    if (activeRef) sendTabContexts = assignRefs(ensureActiveTabRef(tabContexts, activeRef));
+  }
+
+  renderPromptInspector(); // dedup state advanced — refresh the preview
+
+  // Per-chat threading: send the chat's stored Zo thread id (the background
+  // echoes the effective id back on STREAM_DONE / the fallback response).
+  const activeConv = getActiveConversation();
+  const threadId = (activeConv && activeConv.zoThreadId) || undefined;
 
   // --- Streaming path: (re)connect port if needed ---
   if (!streamPort) connectStreamingPort();
@@ -2519,6 +3793,7 @@ sendQuery = async function() {
     streamSession.sessionId++;
     const thisSessionId = streamSession.sessionId;
     streamSession.active = true;
+    streamSession.chatId = activeId; // routes background-stream persistence
     streamSession.msgEl = null;
     streamSession.fullText = '';
     streamSession.reasoningText = '';
@@ -2527,12 +3802,19 @@ sendQuery = async function() {
       streamPort.postMessage({
         sessionId: thisSessionId,
         type: 'ASK_ZO',
+        chatId: activeId,
+        conversationId: threadId,
         pageContext: currentContext,
         userQuery: effectiveQuery,
         modelName: config.selectedModel || undefined,
         personaId: config.selectedPersona || undefined,
         modeId,
         customModes,
+        effectiveTier,
+        modeOverrides,
+        ...(sendTabContexts.length ? { tabContexts: sendTabContexts } : {}),
+        ...(turnSkills.length ? { skills: turnSkills } : {}),
+        ...(turnFiles.length ? { workspaceFiles: turnFiles } : {}),
       });
     } catch (e) {
       // Port disconnected between check and postMessage — fall through to non-streaming fallback
@@ -2548,13 +3830,26 @@ sendQuery = async function() {
   // --- Fallback: one-shot sendMessage if port unavailable ---
   const resp = await chrome.runtime.sendMessage({
     type: 'ASK_ZO',
+    chatId: activeId,
+    conversationId: threadId,
     pageContext: currentContext,
     userQuery: effectiveQuery,
     modelName: config.selectedModel || undefined,
     personaId: config.selectedPersona || undefined,
     modeId,
     customModes,
+    effectiveTier,
+    modeOverrides,
+    ...(sendTabContexts.length ? { tabContexts: sendTabContexts } : {}),
+    ...(turnSkills.length ? { skills: turnSkills } : {}),
+    ...(turnFiles.length ? { workspaceFiles: turnFiles } : {}),
   });
+
+  // Persist the echoed thread id for this chat (before any early return).
+  if (resp && resp.conversationId && activeConv) {
+    activeConv.zoThreadId = resp.conversationId;
+    saveConversationById(activeId);
+  }
 
   const thinking = msgsEl.querySelector('.msg-thinking');
   if (thinking) thinking.remove();

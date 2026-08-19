@@ -6,13 +6,14 @@ guards against regressions.
 
 ## The test suite
 
-**494 tests across 23 files, 0 failures (1240 `expect()` calls).** Every
+**767 tests across 33 files, 0 failures (1978 `expect()` calls).** Every
 extension JS file transpiles cleanly via `bun build`.
 
 ```bash
-bun test            # run the suite
-bun test --watch    # watch mode
+bun test tests/     # run the unit + integration suite
+bun run test:watch  # watch mode
 bun run verify      # full gate: tests → release checks → transpile check
+bun run test:e2e    # real-Chromium E2E (separate Playwright suite — see below)
 ```
 
 ## Verification layer (Zod schemas)
@@ -75,18 +76,85 @@ Plus: `action-timeline`, `actions`, `config-behavior`, `error-handling`,
 
 `scripts/verify.sh` — runs in three stages:
 
-1. **Tests** — `bun test`
+1. **Tests** — `bun test tests/`
 2. **Release checks** — `bun run lint` → `scripts/check-release.sh`
 3. **Transpile check** — loops `bun build <file>` over every `extension/*.js`
    entry point to confirm each transpiles cleanly
 
 It runs locally (pre-commit hook), and CI mirrors it on every push and PR.
 
+CI also collects **coverage**: the `test` job runs with Bun's built-in
+`--coverage` (text summary in the job log + `coverage/lcov.info` uploaded as
+the `coverage-lcov` artifact). The same summary is available locally with
+`bun run test:coverage`. Two caveats when reading the numbers:
+
+- Only what the bun suite executes counts — the Playwright e2e layer runs in
+  a separate Chromium process and does **not** feed these counters, so paths
+  covered only by real-browser tests (omnibox, panel shell, live extension
+  APIs) show as uncovered.
+- `extension/lib/*` is directly imported (96–100%); the chrome-coupled entry
+  files are exercised through the integration harness, so their percentages
+  reflect the in-process paths only.
+
 ## Adding a feature
 
 1. **Extend the relevant schema first** (`tests/schemas/…`), then write the
    code + a test that validates the code's output against the schema.
 2. This catches structural regressions that `.toContain()` misses.
+
+## Integration tests (`tests/integration/`)
+
+Above the unit layer, the integration tests load the REAL extension scripts —
+`background.js` as a module, `content.js` executed against a happy-dom page,
+`sidepanel.js` against the real `sidepanel.html` — and wire them together on
+a shared fake-chrome **message bus** (`tests/helpers/chrome-mock.ts`):
+`runtime.sendMessage` actually dispatches, `runtime.connect()` returns live
+port pairs, storage areas keep real stores and broadcast `onChanged`, and
+`tabs.sendMessage` routes to a mounted content-script target. The Zo API is
+a recording fetch mock (`tests/helpers/zo-fetch-mock.ts`) that streams the
+committed SSE fixtures through the real reader loop — including *gated*
+streams (`deferredSse`) the test releases chunk-by-chunk for deterministic
+mid-stream UI assertions.
+
+This closes the long-standing gap (ticket-25 audit): "No E2E tests for the
+sidepanel↔background message flow." Key harness constraints to know before
+adding tests there:
+
+- **bun runs all test files in one process with a shared module registry** —
+  every file that imports `background.js`/`sidepanel.js` must use a unique
+  cache-busting query string (`?file=<name>`), and **only ONE sidepanel
+  instance may exist per process** (it reads `document` at call time).
+- That's why all panel scenarios live in `tests/integration/extension-flow.test.ts`
+  — driven through the real background, so what's asserted is the actual
+  wire protocol.
+
+## Browser E2E (`e2e/`, Playwright)
+
+A second suite runs the extension in a **real Chromium** (Playwright
+persistent context + `--load-extension`, MV3-compatible new headless):
+
+```bash
+bun run test:e2e         # headless
+bun run test:e2e:headed  # watch it drive
+```
+
+Layout: `e2e/mock-zo/server.mjs` is a local mock Zo API + static fixture
+site (SSE over real HTTP, scenarios routed by keywords in the request's
+`## User Request`); `e2e/helpers/extension.ts` launches the extension, seeds
+config through the real service worker, and opens `sidepanel.html` as a tab
+(the side-panel shell isn't drivable over CDP — a documented workaround; the
+harness keeps the website tab active so captures target it). The 6 spec files
+cover onboarding, streaming (progressive text, thinking trace, error card +
+retry), the action loop (real DOM mutation on the fixture site), capture +
+context policy, the options page (Test Connection, prompts editor), and
+persistence across panel reload.
+
+E2E runs as its own `e2e` CI job (not in the pre-commit gate — too slow for
+every commit) and needs `bunx playwright install chromium` once locally.
+
+**Known limits (stay manual):** the omnibox, `chrome.commands` hotkeys, the
+true side-panel shell lifecycle, MV3 service-worker suspension, and anything
+against the live Zo API.
 
 ## Documentation site
 

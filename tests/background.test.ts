@@ -170,30 +170,16 @@ describe("background Mode system", () => {
   it("imports the Mode catalog from lib/modes.js", () => {
     expect(code).toContain("resolveMode");
     expect(code).toContain("DEFAULT_MODE_ID");
-    expect(code).toContain("ACTION_SCHEMA_COMPACT");
     expect(code).toContain("./lib/modes.js");
   });
 
-  it("assembles prompts via a single buildPrompt helper", () => {
-    expect(code).toContain("function buildPrompt");
-    expect(code).toContain("contextTier");
-  });
-
-  it("gates the action-schema behind mode.expectJson (no leak for read-only modes)", () => {
-    // buildPrompt pushes the plain-markdown hint for non-JSON modes, and the
-    // action schema only for JSON modes. This is the line that prevents
-    // "Respond with JSON {actions}" from leaking into prompts for
-    // ask/research/summarize/extract/visual/custom modes.
-    expect(code).toContain("wantJson ? ACTION_SCHEMA_COMPACT : PLAIN_RESPONSE_HINT");
-  });
-
-  it("imports intent detection and downgrades JSON mode for read-only queries", () => {
-    // Co-browse (the default, expectJson:true) must drop the action envelope
-    // when the query is a read-only intent ("Summarize", "What is…?"), so Zo
-    // replies in plain markdown instead of {actions:[...]}.
-    expect(code).toMatch(/import\s*\{[^}]*shouldDowngradeToJsonDisabled[^}]*\}\s*from\s*['"]\.\/lib\/intent\.js['"]/);
-    expect(code).toContain("shouldDowngradeToJsonDisabled(mode, userQuery)");
-    expect(code).toContain("jsonDisabled");
+  it("delegates prompt assembly to lib/prompt.js (single source of truth)", () => {
+    // buildPrompt + safeText live in the pure lib now (shared with the
+    // side-panel inspector + Settings editor). background must import and
+    // call buildPrompt rather than define its own copy.
+    expect(code).toMatch(/import\s*\{[^}]*buildPrompt[^}]*\}\s*from\s*['"]\.\/lib\/prompt\.js['"]/);
+    expect(code).toContain("buildPrompt(mode, pageContext, userQuery");
+    expect(code).not.toContain("function buildPrompt");
   });
 
   it("uses tier-gated context capture in getActiveTabContext", () => {

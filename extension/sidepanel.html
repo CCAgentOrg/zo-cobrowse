@@ -26,6 +26,10 @@
       </div>
     </header>
 
+    <!-- ── Chat tabs: several conversations open at once (click to switch,
+         ✕ to close; the ✚ in the header opens a new one) ── -->
+    <div id="chat-tabs" class="chat-tabs" role="tablist" aria-label="Open chats"></div>
+
     <!-- ── Page bar ── -->
     <div class="page-bar">
       <span class="page-icon">◈</span>
@@ -87,6 +91,30 @@
         </div>
       </div>
 
+      <!-- Prompt inspector: live preview of exactly what will be sent to Zo -->
+      <details id="prompt-inspector" class="prompt-inspector">
+        <summary><span id="prompt-inspector-summary">🔎 Prompt preview</span></summary>
+        <div class="prompt-inspector-meta" id="prompt-inspector-meta"></div>
+        <pre class="prompt-preview" id="prompt-preview"></pre>
+      </details>
+
+      <!-- Tab contexts: reference open tabs as VSCode-style context (chips +
+           @ autocomplete). Toggled tabs ride along as a compact manifest +
+           excerpt; Zo can pull full content via read_tab. -->
+      <div id="tab-contexts" class="tab-contexts hidden">
+        <button id="tab-strip-collapse" class="tab-strip-collapse" type="button" title="Show/hide open tabs">
+          📎 Tabs <span id="tab-strip-count"></span> <span class="tab-strip-caret">▾</span>
+        </button>
+        <div id="tab-strip" class="tab-strip" role="listbox" aria-label="Open tabs — click to reference as context"></div>
+      </div>
+      <div id="tab-autocomplete" class="tab-autocomplete hidden"></div>
+
+      <!-- Composer reference pickers (#28): `/` skills + `%` workspace files.
+           Selected entries arm chips (below) that ride the NEXT turn only. -->
+      <div id="skill-autocomplete" class="tab-autocomplete hidden" role="listbox" aria-label="Zo skills — run on next send"></div>
+      <div id="file-autocomplete" class="tab-autocomplete hidden" role="listbox" aria-label="Zo workspace files — attach to next send"></div>
+      <div id="picker-chips" class="picker-chips hidden"></div>
+
       <!-- Input area -->
       <div class="input-area">
         <button id="mic-btn" class="btn btn-ghost btn-icon mic-btn" title="Voice input">🎤</button>
@@ -102,6 +130,10 @@
       <div class="history-header">
         <button id="back-to-chat-btn" class="btn btn-ghost btn-sm">← Back</button>
         <span class="history-title">Conversations</span>
+      </div>
+      <div class="history-search-wrap">
+        <input id="history-search" class="history-search" type="search"
+               placeholder="Search chats…" autocomplete="off" spellcheck="false" />
       </div>
       <div id="history-list"></div>
     </div>

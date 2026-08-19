@@ -73,3 +73,35 @@ describe("options.html shortcuts", () => {
     expect(html).toContain('id="reset-defaults"');
   });
 });
+
+describe("options Prompts editor (mode tuning)", () => {
+  const html = readFileSync(OPTIONS_HTML_PATH, "utf-8");
+  const code = readFileSync(resolve(import.meta.dir, "../extension/options.js"), "utf-8");
+
+  it("renders the Prompts card with the 5 mode knobs + live preview", () => {
+    expect(html).toContain("✎ Prompts");
+    expect(html).toContain('id="prompt-mode-select"');
+    expect(html).toContain('id="prompt-system"');
+    expect(html).toContain('id="prompt-instructions"');
+    expect(html).toContain('id="prompt-tier"');
+    expect(html).toContain('id="prompt-budget"');
+    expect(html).toContain('id="prompt-json"');
+    expect(html).toContain('id="prompt-preview-pre"');
+  });
+
+  it("saves built-in edits to the overrides catalog and customs to cobrowse_modes", () => {
+    // Built-ins → cobrowse_mode_overrides (sparse, per-id); customs → cobrowse_modes.
+    expect(code).toContain("cobrowse_mode_overrides");
+    expect(code).toContain("cobrowse_modes");
+    expect(code).toContain("mergeOverride");
+    expect(code).toContain("describePrompt");
+    expect(code).toContain("EDITABLE_MODE_FIELDS");
+    // Dynamic import (keeps options.js a classic script the suite parses).
+    expect(code).toContain("import('./lib/modes.js')");
+    expect(code).toContain("import('./lib/prompt.js')");
+  });
+
+  it("resets built-in overrides via Reset to defaults", () => {
+    expect(code).toContain("cobrowse_mode_overrides"); // cleared in reset localKeys
+  });
+});

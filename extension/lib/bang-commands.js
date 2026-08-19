@@ -77,6 +77,7 @@ export function parseBangCommand(rawQuery) {
     for (const [cmd, def] of Object.entries(BANG_COMMANDS)) {
       lines.push(`• \`!${cmd}\` — ${def.desc}`);
     }
+    lines.push('• `!context <question>` — Attach this page (text + elements) for one turn, then answer');
     lines.push('• `!save` — Save this page to your Zo workspace as markdown');
     lines.push('• `!help` — Show this list');
     return { handled: true, kind: 'inline', inlineReply: lines.join('\n') };
@@ -110,6 +111,20 @@ export function parseBangCommand(rawQuery) {
       };
     }
     return { handled: true, kind: 'duckdb', isDuckdb: true, naturalQuery };
+  }
+
+  // !context / !dom / !ctx — attach full page context for THIS one turn only.
+  // Does NOT switch modes (unlike the `command` kind); the active Mode's tier
+  // is what gets attached. The context policy (lib/context-policy.js) keys off
+  // kind === 'context' to force an attach, overriding opt-in / send-once.
+  if (name === 'context' || name === 'dom' || name === 'ctx') {
+    if (!args) {
+      return {
+        handled: true, kind: 'inline',
+        inlineReply: 'Usage: `!context <question>` — attaches the page (text + elements) to this one turn, then answers. Example: `!context summarize the pricing`.',
+      };
+    }
+    return { handled: true, kind: 'context', isContext: true, query: args };
   }
 
   // Look up the command

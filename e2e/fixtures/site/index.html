@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>E2E Fixture Home</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; }
+    .card { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; margin: 1rem 0; max-width: 30rem; }
+    .tall { height: 3000px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Fixture Home</h1>
+    <p>A static page the e2e suite can rely on: stable text, stable selectors.</p>
+    <nav>
+      <a id="nav-form" href="form.html">Go to the form page</a>
+      <a id="nav-long" href="long.html">Go to the long page</a>
+    </nav>
+    <div class="card" id="status-card">Status: idle</div>
+    <button id="action-btn" type="button">Do a thing</button>
+    <ol id="log"></ol>
+  </main>
+  <script>
+    // Observable page-side effects the extension's click/fill actions drive.
+    document.getElementById("action-btn").addEventListener("click", () => {
+      document.getElementById("status-card").textContent = "Status: thing done";
+      const li = document.createElement("li");
+      li.textContent = "action-btn clicked";
+      document.getElementById("log").appendChild(li);
+    });
+  </script>
+</body>
+</html>

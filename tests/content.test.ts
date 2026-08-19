@@ -64,8 +64,8 @@ describe("content.js captureContext — extraction contract", () => {
     expect(fn).toContain("doc.body");
   });
 
-  it("slices visibleText to the maxTextLen budget (default param 8000)", () => {
-    expect(fn).toMatch(/maxTextLen\s*=\s*8000/);
+  it("slices visibleText to the maxTextLen budget (8000 default, 20000 pull:'page')", () => {
+    expect(fn).toMatch(/maxTextLen\s*=\s*pull === 'page' \? 20000 : 8000/);
     expect(fn).toContain(".substring(0, maxTextLen)");
   });
 
@@ -79,9 +79,9 @@ describe("content.js captureContext — extraction contract", () => {
     expect(fn).toContain("rect.height");
   });
 
-  it("caps formFields at 30 and clickable at 50", () => {
-    expect(fn).toContain("formFields.slice(0, 30)");
-    expect(fn).toContain("clickableEls.slice(0, 50)");
+  it("caps formFields at 30 and clickable at 50 (raised for pull captures)", () => {
+    expect(fn).toContain("pull === 'form' ? 300 : pull === 'dom' ? 150 : 30");
+    expect(fn).toContain("pull === 'dom' ? 200 : 50");
   });
 
   it("captures a selector + placeholder + truncated value per form field", () => {

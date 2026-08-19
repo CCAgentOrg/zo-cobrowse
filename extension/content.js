@@ -8,14 +8,31 @@
     return !PAGE_DEAD.test(location.protocol);
   }
 
-  /** Grab structured page context for Zo's AI */
-  function captureContext(maxTextLen = 8000) {
+  /** Grab structured page context for Zo's AI.
+   *  tier 0 = URL/title/viewport only; 1 = +visibleText; 2 = +clickable+forms.
+   *  (Screenshots for tier 3 are captured separately by the background.)
+   *  opts.pull — capture-shape hint from the pull loop (#24): 'page' raises
+   *  the text cap (read_page), 'dom' raises element caps (get_dom), 'form'
+   *  returns all form fields (get_form). */
+  function captureContext(tier, opts) {
+    const t = (typeof tier === 'number' && tier >= 0 && tier <= 3) ? tier : 2;
+    const pull = opts && typeof opts.pull === 'string' ? opts.pull : null;
+    const maxTextLen = pull === 'page' ? 20000 : 8000;
     const doc = document;
+
+    const base = {
+      url: location.href,
+      title: doc.title,
+      viewport: { w: window.innerWidth, h: window.innerHeight },
+    };
+    if (t === 0) return base;
 
     // Structured visible text — prefer <main>/<article>, fallback to body
     const mainEl = doc.querySelector('main, article, [role="main"], #content, .content');
     const bodyText = (mainEl || doc.body)?.innerText || '';
     const visibleText = bodyText.substring(0, maxTextLen);
+    const out = { ...base, visibleText };
+    if (t === 1) return out;
 
     // Form field summary (for fill actions)
     const formFields = [];
@@ -43,15 +60,10 @@
       clickableEls.push({ text, tag: el.tagName.toLowerCase(), selector: buildSelector(el) });
     });
 
-    return {
-      url: location.href,
-      title: doc.title,
-      visibleText,
-      formFields: formFields.slice(0, 30),
-      clickable: clickableEls.slice(0, 50),
-      viewport: { w: window.innerWidth, h: window.innerHeight },
-      documentSize: { w: doc.documentElement.scrollWidth, h: doc.documentElement.scrollHeight },
-    };
+    out.formFields = formFields.slice(0, pull === 'form' ? 300 : pull === 'dom' ? 150 : 30);
+    out.clickable = clickableEls.slice(0, pull === 'dom' ? 200 : 50);
+    out.documentSize = { w: doc.documentElement.scrollWidth, h: doc.documentElement.scrollHeight };
+    return out;
   }
 
   /** Build a simple CSS selector for an element */
@@ -153,7 +165,7 @@
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     switch (request.type) {
       case 'CAPTURE_CONTEXT':
-        sendResponse(isAlive() ? captureContext() : { error: 'Extension context unavailable' });
+        sendResponse(isAlive() ? captureContext(request.tier, { pull: request.pull }) : { error: 'Extension context unavailable' });
         break;
       case 'EXECUTE_ACTION':
         if (request.actions && Array.isArray(request.actions)) {

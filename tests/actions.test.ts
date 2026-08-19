@@ -63,6 +63,15 @@ describe("action schema", () => {
     const result = Action.safeParse({ type: "done", response: "finished" });
     expect(result.success).toBe(true);
   });
+
+  it("validates the context-only pull actions (#24)", () => {
+    expect(Action.safeParse({ type: "read_tab", ref: "T1" }).success).toBe(true);
+    expect(Action.safeParse({ type: "read_page" }).success).toBe(true);
+    expect(Action.safeParse({ type: "get_dom" }).success).toBe(true);
+    expect(Action.safeParse({ type: "get_form" }).success).toBe(true);
+    // read_tab without a usable ref is NOT a valid action
+    expect(Action.safeParse({ type: "read_tab" }).success).toBe(false);
+  });
 });
 
 describe("background.js action execution", () => {

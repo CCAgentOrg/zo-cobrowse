@@ -17,7 +17,11 @@
 export const ACTION_SCHEMA_COMPACT =
   'Respond with JSON {"actions":[...]}. ' +
   'Actions: click{selector} | fill{selector,value} | extract{selector,attribute} | ' +
-  'navigate{url} | scroll{direction,amount?} | wait{ms} | done{response}.';
+  'navigate{url} | scroll{direction,amount?} | wait{ms} | done{response}' +
+  ' | read_tab{ref} — request full content of a referenced tab (context only)' +
+  ' | read_page — fetch full text of the current page (context only)' +
+  ' | get_dom — fetch all interactive elements of the current page (context only)' +
+  ' | get_form — fetch all form fields of the current page (context only).';
 
 /**
  * Fallback instructions for Modes that don't define their own.
@@ -115,18 +119,54 @@ export const BUILTIN_MODES = {
 export const DEFAULT_MODE_ID = 'cobrowse';
 
 /**
+ * The user-tunable Mode knobs. The remaining fields (id/name/icon/builtin) are
+ * identity and stay fixed for built-ins. The Settings editor persists a sparse
+ * subset of these per built-in id in the cobrowse_mode_overrides catalog.
+ */
+export const EDITABLE_MODE_FIELDS = Object.freeze([
+  'systemPrompt',
+  'instructions',
+  'contextTier',
+  'textBudget',
+  'expectJson',
+]);
+
+/**
+ * Merge a (possibly sparse) builtin override over a COPY of the base Mode.
+ * Only the editable knobs are taken from the override; identity fields
+ * (id/name/icon/builtin) always come from the base — so a built-in stays a
+ * built-in and "Reset to original" is just deleting the override entry. The
+ * base object (a BUILTIN_MODES entry) is never mutated.
+ *
+ * @param {object} base   a full Mode (typically a BUILTIN_MODES entry)
+ * @param {object} [override]  a sparse partial carrying only edited knobs
+ * @returns {object} a full Mode with overrides applied
+ */
+export function mergeOverride(base, override) {
+  if (!override || typeof override !== 'object') return base;
+  const out = { ...base };
+  for (const k of EDITABLE_MODE_FIELDS) {
+    if (override[k] !== undefined) out[k] = override[k];
+  }
+  return out;
+}
+
+/**
  * Resolve a Mode id to a Mode object.
  * Custom modes override built-ins by id; unknown/missing ids fall back to
- * the default Mode so callers never receive null.
+ * the default Mode so callers never receive null. Built-in resolution also
+ * applies any stored per-id overrides (editable knobs only), so user edits
+ * made in Settings take effect without mutating the immutable BUILTIN_MODES.
  *
  * @param {string} modeId
  * @param {Record<string, object>} [customModes={}]
+ * @param {Record<string, object>} [overrides={}]  per-built-in-id sparse overrides
  * @returns {object} a full Mode object
  */
-export function resolveMode(modeId, customModes = {}) {
+export function resolveMode(modeId, customModes = {}, overrides = {}) {
   if (modeId && customModes[modeId]) return normalizeMode(customModes[modeId], modeId);
-  if (modeId && BUILTIN_MODES[modeId]) return BUILTIN_MODES[modeId];
-  return BUILTIN_MODES[DEFAULT_MODE_ID];
+  if (modeId && BUILTIN_MODES[modeId]) return mergeOverride(BUILTIN_MODES[modeId], overrides[modeId]);
+  return mergeOverride(BUILTIN_MODES[DEFAULT_MODE_ID], overrides[DEFAULT_MODE_ID]);
 }
 
 /**
@@ -163,6 +203,22 @@ export function presetToMode(preset) {
 export const ACTION_TYPE_NAMES = ['click', 'fill', 'extract', 'navigate', 'scroll', 'wait', 'done'];
 
 /**
+ * Context-only ("pull") action names (#24) — intercepted by the background's
+ * in-stream pull loop and NEVER executed against the DOM. They are excluded
+ * from ACTION_TYPE_NAMES (the executor list) but known to normalizeActions so
+ * a canonical `{type:'read_tab',ref}` from Zo survives parsing (it used to be
+ * silently stripped before extractPullRequests could see it).
+ */
+export const CONTEXT_ACTION_NAMES = ['read_tab', 'read_page', 'get_dom', 'get_form'];
+
+/** True for context-only pull actions — filtered wherever actions execute. */
+export function isContextAction(a) {
+  return !!(a && typeof a === 'object' && CONTEXT_ACTION_NAMES.includes(a.type));
+}
+
+const KNOWN_ACTION_NAMES = [...ACTION_TYPE_NAMES, ...CONTEXT_ACTION_NAMES];
+
+/**
  * Normalize Zo's action payload to the canonical "type-first" form the
  * extension executes:
  *
@@ -187,7 +243,7 @@ export function normalizeActions(actions) {
   const out = [];
   for (const a of actions) {
     if (!a || typeof a !== 'object' || Array.isArray(a)) continue;
-    if (typeof a.type === 'string' && ACTION_TYPE_NAMES.includes(a.type)) {
+    if (typeof a.type === 'string' && KNOWN_ACTION_NAMES.includes(a.type)) {
       // Already canonical. Keep as-is (the consumers own validation).
       out.push(a);
       continue;
@@ -195,7 +251,7 @@ export function normalizeActions(actions) {
     // Key-first: a single key that is a known action type, mapped to its args.
     let found = false;
     for (const key of Object.keys(a)) {
-      if (ACTION_TYPE_NAMES.includes(key)) {
+      if (KNOWN_ACTION_NAMES.includes(key)) {
         const args = (a[key] && typeof a[key] === 'object' && !Array.isArray(a[key])) ? a[key] : {};
         out.push({ type: key, ...args });
         found = true;
@@ -206,7 +262,7 @@ export function normalizeActions(actions) {
       // Singular `{"action":"click",...}` variant — real multi-action captures
       // emit this non-spec form (qa-notes.md §"Action envelope shape"). Map
       // a top-level `action` naming a known type onto the canonical `type`.
-      if (typeof a.action === 'string' && ACTION_TYPE_NAMES.includes(a.action)) {
+      if (typeof a.action === 'string' && KNOWN_ACTION_NAMES.includes(a.action)) {
         const { action, args, ...rest } = a;
         // args may be an object (common) or absent; merge into the flat action.
         const argsObj = (args && typeof args === 'object' && !Array.isArray(args)) ? args : {};

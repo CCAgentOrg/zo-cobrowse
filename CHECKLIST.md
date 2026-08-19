@@ -3,6 +3,16 @@
 > Use this before every release, build, or QA pass.  
 > Check off items as you verify them in a **loaded Chrome instance** with the extension installed in developer mode.
 
+> **Automated first (2026-08-16):** before walking this list, run
+> `bun run test:e2e` (real-Chromium Playwright suite) and
+> `bun test tests/` (unit + integration). Sections marked **[auto]** below are
+> covered end-to-end by those suites against the mock Zo API — re-check them
+> manually only when their code paths change or before a release sign-off.
+> Automated: §3 Core Chat (streaming, error+retry), §14 Onboarding,
+> §18 History (list/search), §19 Page Context Capture (tiers 0/2 + `!context`),
+> §20 Action Execution (fill/click/scroll on a live page), and the Settings
+> Test Connection + prompts editor parts of §2.
+
 ---
 
 ## 1. Installation & Load
