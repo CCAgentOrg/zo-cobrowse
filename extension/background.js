@@ -1868,6 +1868,37 @@ async function executeActions(actions, tabId) {
 }
 
 function executeDomAction(action) {
+  // fill_form twin of content.js#resolveFieldTarget — inlined here because
+  // this function is serialized into the page by chrome.scripting.executeScript
+  // and cannot close over module scope.
+  const resolveFieldTarget = (target, selector) => {
+    if (selector) {
+      const el = document.querySelector(selector);
+      if (el) return el;
+    }
+    const t = String(target || '').trim().toLowerCase();
+    if (!t) return null;
+    const fields = Array.from(document.querySelectorAll('input, textarea, select'))
+      .filter((f) => f.type !== 'hidden');
+    for (const label of document.querySelectorAll('label')) {
+      if ((label.textContent || '').trim().toLowerCase() !== t) continue;
+      const forEl = label.htmlFor ? document.getElementById(label.htmlFor) : null;
+      const inner = label.querySelector('input, textarea, select');
+      const el = forEl || inner;
+      if (el) return el;
+    }
+    const byAria = fields.find((f) =>
+      (f.getAttribute('aria-label') || '').trim().toLowerCase() === t ||
+      (f.getAttribute('aria-labelledby') || '').trim().split(/\s+/).some((id) => {
+        const lab = id && document.getElementById(id);
+        return lab && (lab.textContent || '').trim().toLowerCase() === t;
+      }));
+    if (byAria) return byAria;
+    return fields.find((f) =>
+      (f.placeholder || '').trim().toLowerCase() === t ||
+      (f.name || '').toLowerCase() === t ||
+      (f.id || '').toLowerCase() === t) || null;
+  };
   return new Promise((resolve, reject) => {
     const el = action.selector ? document.querySelector(action.selector) : null;
     if (!el && action.selector) {
@@ -1888,6 +1919,26 @@ function executeDomAction(action) {
         el.dispatchEvent(new Event('change', { bubbles: true }));
         resolve({ ok: true, type: 'fill' });
         break;
+      case 'fill_form': {
+        const results = [];
+        for (const entry of action.values || []) {
+          const field = resolveFieldTarget(entry.target, entry.selector);
+          if (!field) { results.push({ ok: false, target: entry.target, error: 'no field matched' }); continue; }
+          field.focus();
+          field.value = String(entry.value == null ? '' : entry.value);
+          field.dispatchEvent(new Event('input', { bubbles: true }));
+          field.dispatchEvent(new Event('change', { bubbles: true }));
+          results.push({ ok: true, target: entry.target, type: field.type || field.tagName.toLowerCase() });
+        }
+        const failed = results.filter((r) => !r.ok);
+        resolve({
+          ok: failed.length === 0,
+          type: 'fill_form',
+          fields: results,
+          ...(failed.length ? { error: `${failed.length} field(s) unmatched: ${failed.map((f) => f.target).join(', ')}` } : {}),
+        });
+        break;
+      }
       case 'extract':
         resolve({
           ok: true,

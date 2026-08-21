@@ -8,9 +8,9 @@ import { ACTION_TYPES } from "./schemas/actions";
 // in background.js, not inside its executeDomAction switch.
 const CONTEXT_ONLY = new Set(["read_tab", "read_page", "get_dom", "get_form"]);
 const BACKGROUND_ABOVE_SWITCH = new Set(["navigate", "done"]);
-// fill_form lands with its executors (form-fill Task 3); the schema ships
-// first so the contract is authoritative from day one.
-const PENDING = new Set<string>(["fill_form"]);
+// fill_form executors landed with form-fill Task 3; the set stays for the
+// next schema-first action type.
+const PENDING = new Set<string>([]);
 
 const DOM_TYPES = ACTION_TYPES.filter(
   (x) => !CONTEXT_ONLY.has(x) && !PENDING.has(x),
