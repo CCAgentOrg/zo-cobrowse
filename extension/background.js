@@ -27,6 +27,7 @@ import {
   pullCaptureOpts,
   MAX_PULL_CYCLES,
 } from './lib/pull.js';
+import { isSensitiveForm } from './lib/formfill.js';
 import {
   loadConversationState,
   saveConversationState,
@@ -339,7 +340,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       // here so a degenerate Zo response that still asks after the budget
       // note no-ops safely.
       const domActions = (request.actions || []).filter((a) => a && !isContextAction(a));
-      executeActions(domActions, request.tabId || senderTabId(sender)).then(sendResponse);
+      runExecuteActions(domActions, request.tabId || senderTabId(sender), { confirmed: request.confirmed }).then(sendResponse);
       return true;
     }
     case 'GET_OPEN_TABS': {
@@ -1802,7 +1803,81 @@ async function testConnection() {
 
 
 
-async function executeActions(actions, tabId) {
+/** EXECUTE_ACTIONS entry (#26 two-phase gate). A batch containing fill_form
+ *  first re-captures the LIVE form (client-side truth, never the model's
+ *  self-assessment) and runs isSensitiveForm: sensitive -> respond
+ *  {needsConfirm,...} without executing; the sidepanel's review card re-sends
+ *  with confirmed:true. The verdict is re-derived on confirm too - a form
+ *  that flipped sensitive since the review re-parks, and the submit backstop
+ *  inside executeActions needs the flag either way (confirming a FILL never
+ *  authorizes a SUBMIT). */
+async function runExecuteActions(domActions, target, { confirmed } = {}) {
+  const hasFill = domActions.some((a) => a.type === 'fill_form');
+  if (!hasFill) return executeActions(domActions, target);
+  const pre = await captureFormFields(target);
+  if (!pre) {
+    // Unreadable page (no content script / capture failed): execute without a
+    // review, stamped so the card can say "unverified form - no review". A
+    // page we can't read is also a page whose fields we can't resolve - expect
+    // per-field misses rather than silent wrong fills.
+    return { ...await executeActions(domActions, target), unverifiedForm: true };
+  }
+  const verdict = isSensitiveForm(pre.formFields, pre.url);
+  if (verdict.sensitive && !confirmed) {
+    return { needsConfirm: true, actions: domActions, fields: pre.formFields, url: pre.url, reasons: verdict.reasons };
+  }
+  return executeActions(domActions, target, { sensitive: verdict.sensitive });
+}
+
+/** Pre-flight form capture for the sensitivity gate: the #24 get_form pull
+ *  shape ({formFields, url}) off the live tab. Null = unreadable -> fail open. */
+async function captureFormFields(tabId) {
+  try {
+    const cap = await getActiveTabContext(tabId, 2, null, { pull: 'form' });
+    if (cap && !cap.error && !cap.blank && cap.url) {
+      return { formFields: Array.isArray(cap.formFields) ? cap.formFields : [], url: cap.url };
+    }
+  } catch {
+    // unreadable - caller fails open
+  }
+  return null;
+}
+
+// Submit-looking button text for the backstop (probe.type 'submit' alone
+// misses <button>Place order</button> without an explicit type attribute).
+const SUBMIT_TEXT_RE = /submit|pay|checkout|order|place|buy/i;
+
+/** Probe a click target for the submit backstop: {form,type,text} of the
+ *  element, or null on any failure (fail-open - a broken probe must not
+ *  brick clicking). */
+async function probeClickTarget(tabId, selector) {
+  try {
+    const resp = await evalInPage(tabId, probeExpr(String(selector || '')), 4000);
+    if (resp.ok && resp.value) return resp.value;
+  } catch {
+    // debugger not available - fall through
+  }
+  try {
+    const [r] = await chrome.scripting.executeScript({ target: { tabId }, func: probeFn, args: [String(selector || '')] });
+    return (r && r.result) || null;
+  } catch {
+    return null;
+  }
+}
+
+function probeExpr(sel) {
+  return '(function(){var el=document.querySelector(' + JSON.stringify(sel) + ');'
+    + 'if(!el)return null;'
+    + 'return{form:!!el.closest("form"),type:el.type||"",text:(el.textContent||el.value||"").trim().substring(0,40)};})()';
+}
+
+function probeFn(sel) {
+  const el = document.querySelector(sel);
+  if (!el) return null;
+  return { form: !!el.closest('form'), type: el.type || '', text: (el.textContent || el.value || '').trim().substring(0, 40) };
+}
+
+async function executeActions(actions, tabId, opts = {}) {
   if (!tabId) {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     tabId = tabs[0]?.id;
@@ -1819,6 +1894,19 @@ async function executeActions(actions, tabId) {
     if (action.type === 'done') {
       results.push({ ok: true, type: 'done', response: action.response });
       continue;
+    }
+
+    // Submit backstop (#26): on a page the gate flagged sensitive, a click on
+    // a form's submit/pay control is refused - the user reviews and submits.
+    // Prompt-side rule alone can be ignored by the model; this cannot.
+    if (opts.sensitive && action.type === 'click') {
+      const probe = await probeClickTarget(tabId, action.selector);
+      const isSubmit = probe && probe.form &&
+        (probe.type === 'submit' || SUBMIT_TEXT_RE.test(probe.text || ''));
+      if (isSubmit) {
+        results.push({ ok: false, type: 'click', blocked: true, error: 'blocked submit on sensitive page - review and submit yourself' });
+        continue;
+      }
     }
 
     let result;
