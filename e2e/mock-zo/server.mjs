@@ -78,6 +78,7 @@ function pickScenario(input) {
   if (String(input || "").includes("## Auto-fetched:")) return "pull-followup";
   const q = userRequest(input);
   if (q.includes("schema")) return "pull-form";
+  if (q.includes("checkout")) return "fill-form";
   if (q.includes("fill")) return "fill";
   if (q.includes("click")) return "click";
   if (q.includes("scroll")) return "scroll";
@@ -229,6 +230,22 @@ const server = http.createServer(async (req, res) => {
         actions: [
           { type: "fill", selector: "#name", value: "Pulled E2E" },
           { type: "done", response: "Filled using the pulled form schema." },
+        ],
+      });
+      return streamSse(res, [textStart(envelope), completed()], { delayMs: 40 });
+    }
+    if (scenario === "fill-form") {
+      // #26: batch fill by human-facing cues; password/card values omitted by
+      // the prompt rule — the review card lists them as "left for you".
+      const envelope = JSON.stringify({
+        reasoning: "I will batch-fill the checkout form; secrets stay with the user.",
+        actions: [
+          { type: "fill_form", values: [
+            { target: "Email", value: "e2e@example.com" },
+            { target: "Password", value: "" },
+            { target: "Card number", value: "" },
+          ] },
+          { type: "done", response: "Filled what I could — review the card." },
         ],
       });
       return streamSse(res, [textStart(envelope), completed()], { delayMs: 40 });
