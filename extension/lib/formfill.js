@@ -5,8 +5,9 @@
 
 // "ccnum"/"exp-date" variants cover real-world card-field names ("ccnumber",
 // "exp_month") that the bare "card"/"expir" stems miss — the #26 plan's own
-// truth-table test pinned these.
-const SENSITIVE_FIELD_RE = /card|cc[-_.\s]?num|ccv|cvc|cvv|expir|exp[-_.\s]?(date|month|mo|year|yr)|ssn|social|security|tax|pin\b|passport|licen[cs]e/i;
+// truth-table test pinned these. "password" covers label-only password rows
+// whose captured metadata couldn't be joined (no placeholder/name match).
+const SENSITIVE_FIELD_RE = /password|card|cc[-_.\s]?num|ccv|cvc|cvv|expir|exp[-_.\s]?(date|month|mo|year|yr)|ssn|social|security|tax|pin\b|passport|licen[cs]e/i;
 const SENSITIVE_URL_RE = /login|signin|sign-in|signup|sign-up|register|checkout|payment|billing|account|password|banking/i;
 
 /**

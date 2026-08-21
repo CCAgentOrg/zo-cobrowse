@@ -61,4 +61,14 @@ describe("reviewRows", () => {
   it("survives fields=null", () => {
     expect(reviewRows(action, null)).toHaveLength(3);
   });
+  it("marks a label-only password row secret even when metadata can't be joined", () => {
+    // Real capture: a password input labeled "Password" may carry name "pw"
+    // and no placeholder — findMeta misses, but the row must still be secret.
+    const rows = reviewRows(
+      { type: "fill_form" as const, values: [{ target: "Password", value: "" }] },
+      [F({ type: "password", name: "pw" })],
+    );
+    expect(rows[0].secret).toBe(true);
+    expect(rows[0].value).toBe("");
+  });
 });

@@ -3,6 +3,7 @@
 import { parseBangCommand, BANG_COMMANDS } from './lib/bang-commands.js';
 import { BUILTIN_MODES, DEFAULT_MODE_ID, resolveMode, presetToMode, normalizeActions, isContextAction } from './lib/modes.js';
 import { looksLikeActionJson } from './lib/intent.js';
+import { reviewRows } from './lib/formfill.js';
 import {
   createConversationState,
   decideTurn,
@@ -1251,17 +1252,19 @@ function escapeHtml(s) {
 // inside. Repeated consecutive actions collapse into a single card with a
 // "× N" count.
 const ACTION_META = {
-  click:    { icon: '👆', label: 'Click' },
-  fill:     { icon: '✏️', label: 'Fill' },
-  scroll:   { icon: '📜', label: 'Scroll' },
-  navigate: { icon: '🔗', label: 'Navigate' },
-  extract:  { icon: '📋', label: 'Extract' },
-  wait:     { icon: '⏳', label: 'Wait' },
-  done:     { icon: '✅', label: 'Done' },
+  click:     { icon: '👆', label: 'Click' },
+  fill:      { icon: '✏️', label: 'Fill' },
+  fill_form: { icon: '📝', label: 'Fill form' },
+  scroll:    { icon: '📜', label: 'Scroll' },
+  navigate:  { icon: '🔗', label: 'Navigate' },
+  extract:   { icon: '📋', label: 'Extract' },
+  wait:      { icon: '⏳', label: 'Wait' },
+  done:      { icon: '✅', label: 'Done' },
 };
 
 function actionDetail(action) {
   if (action.response) return '';
+  if (action.type === 'fill_form') return action.values?.length ? `${action.values.length} fields` : '';
   return action.selector || action.url || action.value || action.ms || '';
 }
 
@@ -1477,6 +1480,7 @@ function renderActionTimeline() {
     const meta = ACTION_META[g.action.type] || { icon: '•', label: g.action.type };
     const card = document.createElement('div');
     card.className = 'action-card pending';
+    card.classList.add(`action-card-${g.action.type}`);
     // Map every original index in this group to the same card so
     // updateActionCard(i) resolves the group's card for any member action.
     for (const idx of g.indices) card.dataset.index = card.dataset.index || String(idx);
@@ -1522,6 +1526,89 @@ function updateActionRunHeader(label, count, durationMs) {
   if (durEl) durEl.textContent = durationMs != null ? `· ${formatDuration(durationMs)}` : '';
 }
 
+/** Editable review card for a parked sensitive fill_form (#26). Resolves with
+ *  the (possibly edited) fill_form action on confirm, or null on cancel.
+ *  Secret rows render "left for you 🔑" — values for password/card fields are
+ *  never round-tripped through the card (reviewRows blanks them). */
+function renderFormReview(payload) {
+  return new Promise((resolve) => {
+    const fill = (payload.actions || []).find((a) => a && a.type === 'fill_form');
+    if (!fill) { resolve(null); return; }
+    const rows = reviewRows(fill, payload.fields);
+    const host = document.createElement('div');
+    host.className = 'msg form-review-card';
+    let hostName = '';
+    try { hostName = new URL(payload.url).host; } catch { hostName = safeText(payload.url || ''); }
+    const title = document.createElement('div');
+    title.className = 'form-review-title';
+    title.textContent = `Review before filling — ${hostName}`;
+    host.appendChild(title);
+    for (const r of payload.reasons || []) {
+      const chip = document.createElement('span');
+      chip.className = 'form-review-chip';
+      chip.textContent = safeText(r);
+      host.appendChild(chip);
+    }
+    const edits = new Map();
+    for (const row of rows) {
+      const line = document.createElement('label');
+      line.className = 'form-review-row';
+      if (row.secret) {
+        line.textContent = `${row.target}: left for you 🔑`;
+      } else {
+        line.textContent = row.target + ' ';
+        const input = document.createElement('input');
+        input.dataset.target = row.target;
+        input.value = row.value;
+        input.addEventListener('input', () => edits.set(row.target, input.value));
+        line.appendChild(input);
+      }
+      host.appendChild(line);
+    }
+    const confirm = document.createElement('button');
+    confirm.className = 'btn btn-primary form-review-confirm';
+    const cancel = document.createElement('button');
+    cancel.className = 'btn btn-ghost form-review-cancel';
+    confirm.textContent = `Fill ${rows.filter((r) => !r.secret).length} fields`;
+    cancel.textContent = 'Cancel';
+    confirm.addEventListener('click', () => {
+      const edited = { ...fill, values: fill.values.map((v) => (edits.has(v.target) ? { ...v, value: edits.get(v.target) } : v)) };
+      host.remove();
+      resolve(edited);
+    });
+    cancel.addEventListener('click', () => {
+      host.remove();
+      resolve(null);
+    });
+    host.append(confirm, cancel);
+    msgsEl.appendChild(host);
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+  });
+}
+
+/** Per-field ✓/✗ rows inside a fill_form timeline card (#26). One card, N
+ *  field outcomes — mirrors the card-per-action convention of the timeline. */
+function renderFillFormFieldResults(index, result) {
+  const timeline = document.getElementById('action-timeline');
+  if (!timeline) return;
+  const card = [...timeline.querySelectorAll('.action-card')].find((c) =>
+    (c.dataset.indices || '').split(',').map(Number).includes(index),
+  );
+  if (!card) return;
+  if (result.unverifiedForm) {
+    const note = document.createElement('div');
+    note.className = 'field-result field-result-note';
+    note.textContent = '⚠️ unverified form — page was unreadable, no review shown';
+    card.appendChild(note);
+  }
+  for (const f of result.fields || []) {
+    const row = document.createElement('div');
+    row.className = 'field-result';
+    row.textContent = f.ok ? `✓ ${f.target}` : `✗ ${f.target} — ${safeText(f.error || 'failed')}`;
+    card.appendChild(row);
+  }
+}
+
 // ---- Execute pending actions ----
 async function runPendingActions() {
   if (!pendingActions || actionRunning) return;
@@ -1556,7 +1643,7 @@ async function runPendingActions() {
   for (let i = 0; i < actions.length; i++) {
     // Stop if the user clicked Skip (nulls pendingActions) between awaits.
     if (!pendingActions) break;
-    const action = actions[i];
+    let action = actions[i];
     if (action.type === 'done') {
       updateActionCard(i, 'done');
       if (action.response) {
@@ -1572,11 +1659,36 @@ async function runPendingActions() {
     // No separate inline ".msg-action" message — the card in the run timeline
     // is the inline record now (avoids the prior duplicate rendering).
     const actionStart = Date.now();
-    const result = await chrome.runtime.sendMessage({
+    let result = await chrome.runtime.sendMessage({
       type: 'EXECUTE_ACTIONS',
       actions: [action],
       tabId,
     });
+    // Two-phase sensitivity gate (#26): the background parked a sensitive
+    // fill_form for review. Show the editable card and await the user's
+    // decision — confirm re-sends the (possibly edited) values with
+    // confirmed:true; cancel drops the fill and stops the batch.
+    if (result?.needsConfirm) {
+        const decision = await renderFormReview(result);
+      if (!decision) {
+        updateActionCard(i, 'error', 'skipped');
+        addMessageDOM('assistant', 'Skipped the form fill — nothing was entered. You can fill it yourself or ask again.');
+        break;
+      }
+      action = decision;
+      result = await chrome.runtime.sendMessage({
+        type: 'EXECUTE_ACTIONS',
+        actions: [decision],
+        tabId,
+        confirmed: true,
+      });
+    }
+    if (action.type === 'fill_form') {
+      // EXECUTE_ACTIONS returns the aggregate {ok, results:[…]}; the
+      // fill_form per-field outcomes live on the single-action result.
+      const single = Array.isArray(result?.results) ? result.results[0] : result;
+      if (single?.fields) renderFillFormFieldResults(i, single);
+    }
     if (!result?.ok) {
       const err = result?.error || 'unknown error';
       updateActionCard(i, 'error', err);

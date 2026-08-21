@@ -202,7 +202,7 @@ export function presetToMode(preset) {
  * (Kept here — next to ACTION_SCHEMA_COMPACT, the single source of truth —
  * rather than duplicated in background.js.)
  */
-export const ACTION_TYPE_NAMES = ['click', 'fill', 'extract', 'navigate', 'scroll', 'wait', 'done'];
+export const ACTION_TYPE_NAMES = ['click', 'fill', 'fill_form', 'extract', 'navigate', 'scroll', 'wait', 'done'];
 
 /**
  * Context-only ("pull") action names (#24) — intercepted by the background's
