@@ -220,3 +220,33 @@ The extension is green-tested with a hardened streaming path. Remaining work is 
 
 - `bun run verify` green (767 tests / 33 files after merging dev's #24 cold-start work in; lint, transpile).
 - `bun run test:e2e` green (15 specs, ~45s).
+
+
+---
+
+## 2026-08-21 — Form-fill round (#26: batch `fill_form` + confirm-before-fill)
+
+**Scope:** the #26 quality layer over #24's `get_form` pull — batch form filling by human-facing field cues, a sensitivity gate that parks sensitive fills behind an editable review card, and a submit backstop. Plan: `docs/superpowers/plans/2026-08-20-form-fill.md` (PR #35), spec: `docs/superpowers/specs/2026-08-20-form-fill-design.md`.
+
+### Delivered
+
+- **`fill_form {values:[{target,value,selector?}]}` action** (`FillFormAction` in `tests/schemas/actions.ts`): one action fills N fields; `resolveFieldTarget` (content.js primary + a serialized twin inside `executeDomAction`'s executeScript fallback) resolves each `target` by label text (for=/nested) → `aria-label`/`aria-labelledby` → placeholder → name → id → optional CSS selector passthrough. Result shape carries per-field `{ok,target,type?,error?}`; the debugger-eval fast path is skipped for fill_form by design.
+- **Sensitivity gate** (`extension/lib/formfill.js`, pure + Zod schema): `EXECUTE_ACTIONS` batches containing `fill_form` first re-capture the live form (tier-2 `{pull:'form'}` — client-side truth, never the model's self-assessment) and run `isSensitiveForm` (password/card/CVV/expiry/identity fields, or login/checkout/payment/billing/account URLs). Sensitive → `{needsConfirm, actions, fields, url, reasons}` **without executing**; the verdict is re-derived on `confirmed:true` (a form that flipped sensitive re-parks) and stamps `unverifiedForm` when the pre-flight capture fails (fail-open, surfaced in the card).
+- **Review card** (sidepanel `renderFormReview`): editable input per non-secret row, "left for you 🔑" for secret rows (password/card values are blanked by `reviewRows` and never round-tripped through the card), reason chips, **Fill N fields** / **Cancel**. Confirm re-sends the edited map with `confirmed:true`; cancel drops the fill and explains. `fill_form` renders as ONE timeline card with per-field ✓/✗ rows.
+- **Submit backstop** (`executeActions` + `probeClickTarget`): on a page the gate flagged sensitive, a click whose resolved target is a form's submit/pay control is refused (`blocked submit on sensitive page`); non-submit clicks pass (probe fails open). Belt-and-suspenders with the prompt rule — confirming a FILL never authorizes a SUBMIT.
+- **Prompt rules** (`ACTION_SCHEMA_COMPACT` + cobrowse instructions): prefer `fill_form` for 2+ fields, never propose password/card/CVV values, never click submit/pay on login/payment/checkout/account pages.
+- **Executor-coverage contract** (`tests/actions-coverage.test.ts`): every `ACTION_TYPES` entry must appear as an executor case in content.js and background.js — new action types can't ship executor-less again.
+
+### Findings / deviations from the plan
+
+- **Plan bug (fixed per the plan's own truth-table test):** the plan's `SENSITIVE_FIELD_RE` didn't match `ccnumber`/`exp-date` field names its own test asserted; extended with `cc[-_.]?num` + `exp[-_.]?(date|month|year)` variants, later also `password` (a label-only Password row whose captured metadata can't be joined must still render secret).
+- **Plan gap (fixed):** `ACTION_TYPE_NAMES` (lib/modes.js) lacked `fill_form` — `normalizeActions` silently dropped every fill_form action before execution; caught by the integration test, fixed + pinned by an updated count test.
+- **Plan gap (fixed):** the sidepanel reads the per-action result from the aggregate `EXECUTE_ACTIONS` response (`result.results[0]`), not `result.fields` as sketched.
+- **Confirm semantics (design-aligned deviation):** the plan's `runExecuteActions` sketch only computed `sensitive` when unconfirmed, which would have disabled the backstop on the confirmed path its own test exercised; the verdict is now re-derived on confirm (re-park on flip + backstop always armed on sensitive pages).
+- **`ACTION_SCHEMA_COMPACT` length guard** raised 600 → 760 (713 actual): the new action + safety rules legitimately grew the compact schema; the guard stays tight vs the legacy ~600-char block it was created against.
+- **Tooling (documented in-test):** bun 1.3.10 + happy-dom natively crash (segfault, no leak — RSS flat at ~123MB) when descendant class selectors (`.action-card-fill_form .field-result`) or attribute selectors query the live panel DOM after a full prior test file ran; the extension-flow scenario syncs on bounded sleeps + single-class queries + JS traversal instead. Real-Chromium coverage unaffected (e2e uses the same selectors fine).
+
+### Verification
+
+- `bun run verify` green — 873 tests / 39 files (0 failures), lint, transpile.
+- `bun run test:e2e` green — 21 passed + 1 skipped (ZO_DEMO-gated demo spec), incl. the new `e2e/11-fill-form.spec.ts` (park → edit → confirm → page filled, secrets untouched; cancel path). One transient 09-open-all flake under full-suite load passed on re-run and in isolation.
