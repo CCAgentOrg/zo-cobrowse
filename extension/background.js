@@ -477,7 +477,17 @@ function makeActionEval(action) {
     const a = ${a};
     try {
       if (a.type === 'navigate' || a.type === 'done') return { ok: true, type: a.type };
-      const el = a.selector ? document.querySelector(a.selector) : null;
+      let el = a.selector ? document.querySelector(a.selector) : null;
+      if (a.selector && !el) {
+        // Playwright :has-text()/:text() fallback — not valid CSS.
+        const hm = a.selector.match(/:has-text\(\s*["']([^"']+)["']\s*\)|:text\(\s*["']([^"']+)["']\s*\)/i);
+        if (hm) {
+          const ht = (hm[1] || hm[2]).toLowerCase().trim();
+          for (const c of document.querySelectorAll('a, button, [role=button], [onclick], input[type=submit], input[type=button]')) {
+            if ((c.textContent || '').trim().toLowerCase().includes(ht)) { el = c; break; }
+          }
+        }
+      }
       if (a.selector && !el) return { ok: false, error: 'Element not found: ' + a.selector, type: a.type };
       switch (a.type) {
         case 'click':
@@ -2042,7 +2052,17 @@ function executeDomAction(action) {
     return candidates.length ? pickVisible(candidates) : null;
   };
   return new Promise((resolve, reject) => {
-    const el = action.selector ? document.querySelector(action.selector) : null;
+    let el = action.selector ? document.querySelector(action.selector) : null;
+    if (!el && action.selector) {
+      // Playwright :has-text()/:text() fallback — not valid CSS.
+      const hm = action.selector.match(/:has-text\(\s*["']([^"']+)["']\s*\)|:text\(\s*["']([^"']+)["']\s*\)/i);
+      if (hm) {
+        const ht = (hm[1] || hm[2]).toLowerCase().trim();
+        for (const c of document.querySelectorAll('a, button, [role=button], [onclick], input[type=submit], input[type=button]')) {
+          if ((c.textContent || '').trim().toLowerCase().includes(ht)) { el = c; break; }
+        }
+      }
+    }
     if (!el && action.selector) {
       reject(new Error(`Element not found: ${action.selector}`));
       return;

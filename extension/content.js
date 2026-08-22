@@ -221,11 +221,44 @@
     return resolveByQuestion(t);
   }
 
+  /** Check whether a string is a valid CSS selector (guards against
+   *  Playwright pseudo-selectors like :has-text()/:text() that Zo may
+   *  emit — those throw in document.querySelector). */
+  function isValidCssSelector(sel) {
+    if (!sel || typeof sel !== 'string') return false;
+    // Reject known non-CSS pseudo-selectors up front.
+    if (/:has-text|:text\(|:has\(/i.test(sel)) return false;
+    try { document.querySelector(sel); return true; }
+    catch { return false; }
+  }
+
+  /** Resolve a click target: pure CSS selector preferred, but fall back to
+   *  text matching when Zo emits Playwright-style :has-text("…") selectors.
+   *  Returns an element or null. */
+  function resolveClickTarget(selector) {
+    if (!selector) return null;
+    // Fast path: valid CSS.
+    if (isValidCssSelector(selector)) return document.querySelector(selector);
+    // Extract text from Playwright :has-text("…") / :text("…").
+    const m = selector.match(/:has-text\(\s*["']([^"']+)["']\s*\)|:text\(\s*["']([^"']+)["']\s*\)/i);
+    const txt = m ? (m[1] || m[2]) : null;
+    if (txt) {
+      const norm = txt.toLowerCase().trim();
+      for (const el of document.querySelectorAll('a, button, [role=button], [onclick], input[type=submit], input[type=button], [type=submit]')) {
+        if ((el.textContent || '').trim().toLowerCase().includes(norm)) return el;
+      }
+    }
+    return null;
+  }
+
   /** Execute a single action */
   async function executeAction(action) {
     switch (action.type) {
       case 'click': {
-        const el = await waitForElement(action.selector);
+        const el = resolveClickTarget(action.selector) || await waitForElement(
+          isValidCssSelector(action.selector) ? action.selector : ''
+        );
+        if (!el) throw new Error(`Element not found: ${action.selector}`);
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         await sleep(300);
         el.click();
