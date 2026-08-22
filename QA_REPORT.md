@@ -250,3 +250,35 @@ The extension is green-tested with a hardened streaming path. Remaining work is 
 
 - `bun run verify` green — 873 tests / 39 files (0 failures), lint, transpile.
 - `bun run test:e2e` green — 21 passed + 1 skipped (ZO_DEMO-gated demo spec), incl. the new `e2e/11-fill-form.spec.ts` (park → edit → confirm → page filled, secrets untouched; cancel path). One transient 09-open-all flake under full-suite load passed on re-run and in isolation.
+
+
+---
+
+## 2026-08-21 — "Any form" round (#26.2: builder-style forms + section-by-section co-browse)
+
+**Scope:** make the #26 form-fill experience work on ANY form — not just well-labeled ones — driven by a live Zo Ambassador application on form.typeform.com/to/ruHPhO5n. The user's target UX: Zo fills each section, the user reviews and advances.
+
+### Live-probe findings (Typeform, headless Chromium)
+
+- All sections' inputs render in ONE DOM at once (11 inputs); only the viewport distinguishes the current section.
+- Inputs carry **no usable metadata**: no `label`/`for`, no `aria-label`, no `name` — UUID ids, and every text field shares the placeholder "Type your answer here...". The existing resolver (label → aria → placeholder → name) cannot disambiguate.
+- The **question text is a plain div — the input wrapper's previous sibling** ("First name*"), sometimes with a section fieldset `aria-labelledby` pointing at a group title ("1 Tell us about yourself"). No headings anywhere.
+- The advance control (OK) sits **outside any `<form>`** → the #26 submit backstop correctly does not fight section navigation.
+
+### Delivered (generic — nothing Typeform-specific)
+
+- **Question-aware capture**: `formFields[].question` on all three capture paths (content script, CDP eval, executeScript) via `nearestQuestion` — explicit label/aria first, then the universal title-above-field convention: climb from the field and read the nearest preceding sibling's text (guarded: ≤160 chars, no interactive descendants, not button-ish). `compactForm` renders it (`[input#uuid type=text "Type your answer here..."] — First name*`), so both the tier-2 prompt section and the `get_form` pull teach Zo the question cues.
+- **Question-scoped resolution**: `resolveByQuestion` fallback in both executors (content.js + the serialized `executeDomAction` twin) — a cue matches a text leaf exactly (normalized: case, whitespace, trailing `*`/`:` decorations), then associates the field by shared wrapper (climb until the subtree contains a field).
+- **Viewport preference** (`pickVisible`): when equal cues match several fields (identical placeholders, repeated questions), the field intersecting the viewport wins — long/SPA forms resolve to the section the user is actually looking at.
+- **Co-browse pacing rule** (cobrowse instructions): on one-question-per-screen forms, fill only the visible section per turn, then `done` — the user reviews and presses Next; Zo continues when asked. `ACTION_SCHEMA_COMPACT` wording now targets "question/label/placeholder text" (722 chars, still under the 760 guard).
+- `reviewRows` joins captured `question` text, so the review card labels builder-form fields correctly.
+
+### Findings / fixes while executing
+
+- **Template-literal escape bug (CDP path only):** a `\s` inside the `captureExpr` template literal renders as a bare `s` (unknown escape drops the backslash — the same reason `SEL_HELPER` writes `\s+`), turning the whitespace normalizer into `replace(/s+/g,' ')` and EATING EVERY "s" from captured question text ("Fir t name*"). Caught by the e2e's prompt assertion; fixed by double-escaping in the embedded string. The content-script and executeScript paths were unaffected.
+- bun's bare `bunx` in this sandbox intermittently fails with `CouldntReadCurrentDirectory`; `/home/logic/.bun/bin/bun x ...` is the reliable invocation.
+
+### Verification
+
+- `bun run verify` green — 879 tests / 39 files (0 failures; +6: question join, compactForm cue, pacing rule, capture join, question resolution, viewport preference).
+- `bun run test:e2e` green — 22 passed + 2 skipped (both ZO_DEMO demo specs), incl. new `e2e/12-any-form.spec.ts`: builder-style fixture (no labels/names, shared placeholder, div titles, OK outside forms) — turn 1 fills the visible section by question text (prompt shown to carry `— First name*`), the user presses OK themselves, turn 2 "continue" fills the next section, section-1 values unchanged, nothing auto-submitted.

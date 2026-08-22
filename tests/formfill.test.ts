@@ -2,7 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { isSensitiveForm, redactValue, reviewRows } from "../extension/lib/formfill";
 import { SensitivityVerdictSchema, ReviewRowSchema } from "./schemas/formfill";
 
-const F = (over: Record<string, unknown> = {}) => ({ type: "text", name: "", placeholder: "", ...over });
+const F = (over: Record<string, unknown> = {}) => ({ type: "text", name: "", placeholder: "", question: "", ...over });
 
 describe("isSensitiveForm", () => {
   it("flags password fields", () => {
@@ -70,5 +70,12 @@ describe("reviewRows", () => {
     );
     expect(rows[0].secret).toBe(true);
     expect(rows[0].value).toBe("");
+  });
+  it("joins captured question text — builder forms with identical placeholders", () => {
+    const rows = reviewRows(
+      { type: "fill_form" as const, values: [{ target: "Your name", value: "Ada" }] },
+      [F({ question: "Your name", placeholder: "Type your answer here..." })],
+    );
+    expect(rows[0]).toMatchObject({ target: "Your name", type: "text", secret: false });
   });
 });

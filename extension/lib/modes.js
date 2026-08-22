@@ -17,7 +17,7 @@
 export const ACTION_SCHEMA_COMPACT =
   'Respond with JSON {"actions":[...]}. ' +
   'Actions: click{selector} | fill{selector,value} | ' +
-  'fill_form{values:[{target,value}]} — batch-fill by label/placeholder text (PREFER for 2+ fields) | ' +
+  'fill_form{values:[{target,value}]} — batch-fill by question/label/placeholder text (PREFER for 2+ fields) | ' +
   'extract{selector,attribute} | navigate{url} | scroll{direction,amount?} | wait{ms} | done{response}' +
   ' | read_tab{ref} — request full content of a referenced tab (context only)' +
   ' | read_page — fetch full text of the current page (context only)' +
@@ -50,7 +50,7 @@ export const BUILTIN_MODES = {
     name: 'Co-browse',
     icon: '🤖',
     systemPrompt: "You are Zo — the user's AI co-browsing assistant. You see the page they're on and can control the browser.",
-    instructions: 'Act on the page to fulfill the request. Use the ELEMENTS list when targeting clicks/fills. Prefer fill_form for multi-field forms; omit password/card/CVV values; never click submit on login/payment/checkout/account pages.',
+    instructions: 'Act on the page to fulfill the request. Use the ELEMENTS list when targeting clicks/fills. Prefer fill_form for multi-field forms (target = the field\'s question text); omit password/card/CVV values; never click submit on login/payment/checkout/account pages. On one-question-per-screen forms, fill only the visible section per turn and let the user review + advance.',
     contextTier: TIER.ELEMENTS,
     textBudget: 4000,
     expectJson: true,

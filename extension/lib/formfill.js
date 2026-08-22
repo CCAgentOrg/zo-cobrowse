@@ -44,6 +44,7 @@ export function reviewRows(action, fields) {
   const caps = Array.isArray(fields) ? fields : [];
   const findMeta = (v) => caps.find((f) =>
     (f.placeholder && f.placeholder === v.target) ||
+    (f.question && f.question === v.target) ||
     (f.name && f.name === v.target) ||
     (v.selector && f.selector === v.selector)) || null;
   return (action.values || []).map((v) => {

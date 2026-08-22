@@ -79,6 +79,8 @@ function pickScenario(input) {
   const q = userRequest(input);
   if (q.includes("schema")) return "pull-form";
   if (q.includes("checkout")) return "fill-form";
+  if (q.includes("application")) return "app-section-1";
+  if (q.includes("continue") || q.includes("next section")) return "app-section-2";
   if (q.includes("fill")) return "fill";
   if (q.includes("click")) return "click";
   if (q.includes("scroll")) return "scroll";
@@ -230,6 +232,35 @@ const server = http.createServer(async (req, res) => {
         actions: [
           { type: "fill", selector: "#name", value: "Pulled E2E" },
           { type: "done", response: "Filled using the pulled form schema." },
+        ],
+      });
+      return streamSse(res, [textStart(envelope), completed()], { delayMs: 40 });
+    }
+    if (scenario === "app-section-1") {
+      // "Any form" round: builder-style form — target by QUESTION text (the
+      // fields share one placeholder); fill only the VISIBLE section, then
+      // done so the user reviews + advances (co-browse pacing).
+      const envelope = JSON.stringify({
+        reasoning: "This is a one-question-per-screen form; I'll fill the visible section and let the user review it.",
+        actions: [
+          { type: "fill_form", values: [
+            { target: "First name", value: "Ada Lovelace" },
+            { target: "Work email", value: "ada@example.dev" },
+          ] },
+          { type: "done", response: "Filled the visible section — review it and press OK when ready, then ask me to continue." },
+        ],
+      });
+      return streamSse(res, [textStart(envelope), completed()], { delayMs: 40 });
+    }
+    if (scenario === "app-section-2") {
+      const envelope = JSON.stringify({
+        reasoning: "The user advanced to section 2; filling the now-visible section.",
+        actions: [
+          { type: "fill_form", values: [
+            { target: "Share your website", value: "https://ada.example.dev" },
+            { target: "Tell us about you", value: "I build browser tooling." },
+          ] },
+          { type: "done", response: "Section 2 filled — review and submit when ready." },
         ],
       });
       return streamSse(res, [textStart(envelope), completed()], { delayMs: 40 });

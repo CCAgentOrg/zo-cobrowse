@@ -572,7 +572,8 @@ async function getActiveTabContext(tabId, tier, modeId, opts) {
     } else {
       captureExpr = `(function(){${SEL_HELPER}
         var m=document.querySelector('main,article,[role=main],#content,.content');var b=document.body;var tx=(m||b)?.innerText||'';
-        var ff=[];document.querySelectorAll('input:not([type=hidden]),textarea,select').forEach(function(el){var r=el.getBoundingClientRect();if(r.width===0||r.height===0)return;ff.push({tag:el.tagName.toLowerCase(),type:el.type||'text',name:el.name||el.id||'',selector:sel(el),placeholder:el.placeholder||''});});
+        function qfor(el){var lab=el.id?document.querySelector('label[for="'+(window.CSS&&CSS.escape?CSS.escape(el.id):el.id)+'"]'):null;if(lab&&(lab.textContent||'').trim())return lab.textContent.trim().substring(0,120);var ar=(el.getAttribute('aria-label')||'').trim();if(ar)return ar.substring(0,120);var sc=el;for(var i=0;i<8&&sc;i++){var sib=sc.previousElementSibling;while(sib){var t=(sib.innerText||'').trim();if(t&&t.length<=160&&!/^(ok|next|submit|start|back)$/i.test(t)&&!sib.querySelector('button, a[href], input, textarea, select'))return t.replace(/\\s+/g,' ').substring(0,120);sib=sib.previousElementSibling;}sc=sc.parentElement;}return '';}
+        var ff=[];document.querySelectorAll('input:not([type=hidden]),textarea,select').forEach(function(el){var r=el.getBoundingClientRect();if(r.width===0||r.height===0)return;ff.push({tag:el.tagName.toLowerCase(),type:el.type||'text',name:el.name||el.id||'',selector:sel(el),placeholder:el.placeholder||'',question:qfor(el)});});
         var ck=[];document.querySelectorAll('a,button,[role=button],[onclick],input[type=submit],input[type=button]').forEach(function(el){var r=el.getBoundingClientRect();if(r.width<8||r.height<8)return;var tx=(el.textContent||el.value||'').trim().substring(0,60);if(!tx)return;ck.push({text:tx,tag:el.tagName.toLowerCase(),selector:sel(el)});});
         return{url:location.href,title:document.title,visibleText:tx.substring(0,${textBudget}),formFields:ff.slice(0,${formCap}),clickable:ck.slice(0,${clickCap}),viewport:{w:window.innerWidth,h:window.innerHeight}};
       })()`;
@@ -617,6 +618,31 @@ async function getActiveTabContext(tabId, tier, modeId, opts) {
             const p = el.parentElement; if (p) { const sib = Array.from(p.children).filter((x) => x.tagName === el.tagName); if (sib.length > 1) s += ':nth-of-type(' + (sib.indexOf(el) + 1) + ')'; }
             return s;
           }
+          // Nearest question title (mirror of content.js#nearestQuestion):
+          // explicit label/aria first, then title-above-field sibling climb.
+          function nearestQuestion(el) {
+            const id = el.id;
+            if (id) {
+              const lab = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+              if (lab && (lab.textContent || '').trim()) return lab.textContent.trim().slice(0, 120);
+            }
+            const aria = (el.getAttribute('aria-label') || '').trim();
+            if (aria) return aria.slice(0, 120);
+            let scope = el;
+            for (let i = 0; i < 8 && scope; i++) {
+              let sib = scope.previousElementSibling;
+              while (sib) {
+                const txt = (sib.innerText || '').trim();
+                if (txt && txt.length <= 160 && !/^(ok|next|submit|start|back)$/i.test(txt) &&
+                    !sib.querySelector('button, a[href], input, textarea, select')) {
+                  return txt.replace(/\s+/g, ' ').slice(0, 120);
+                }
+                sib = sib.previousElementSibling;
+              }
+              scope = scope.parentElement;
+            }
+            return '';
+          }
           const formCap = pull === 'form' ? 300 : pull === 'dom' ? 150 : 30;
           const clickCap = pull === 'dom' ? 200 : 50;
           const m = document.querySelector('main, article, [role="main"], #content, .content');
@@ -625,7 +651,7 @@ async function getActiveTabContext(tabId, tier, modeId, opts) {
           document.querySelectorAll('input:not([type="hidden"]), textarea, select').forEach((el) => {
             const r = el.getBoundingClientRect();
             if (r.width === 0 || r.height === 0) return;
-            formFields.push({ tag: el.tagName.toLowerCase(), type: el.type || 'text', name: el.name || el.id || '', selector: sel(el), placeholder: el.placeholder || '' });
+            formFields.push({ tag: el.tagName.toLowerCase(), type: el.type || 'text', name: el.name || el.id || '', selector: sel(el), placeholder: el.placeholder || '', question: nearestQuestion(el) });
           });
           const clickable = [];
           document.querySelectorAll('a, button, [role="button"], [onclick], input[type="submit"], input[type="button"]').forEach((el) => {
@@ -1982,10 +2008,38 @@ function executeDomAction(action) {
         return lab && (lab.textContent || '').trim().toLowerCase() === t;
       }));
     if (byAria) return byAria;
-    return fields.find((f) =>
+    // Viewport preference + question-text fallback (mirror of content.js).
+    const pickVisible = (list) => {
+      for (const f of list) {
+        const r = f.getBoundingClientRect();
+        if (r.top < window.innerHeight && r.bottom > 0) return f;
+      }
+      return list[0] || null;
+    };
+    const normCue = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ').replace(/[:*]+$/, '').trim();
+    const byAttr = fields.filter((f) =>
       (f.placeholder || '').trim().toLowerCase() === t ||
       (f.name || '').toLowerCase() === t ||
-      (f.id || '').toLowerCase() === t) || null;
+      (f.id || '').toLowerCase() === t);
+    if (byAttr.length) return pickVisible(byAttr);
+    const cues = [];
+    for (const el of document.querySelectorAll('h1,h2,h3,h4,h5,h6,legend,label,p,span,div,td,th,fieldset')) {
+      if (el.querySelector('input, textarea, select')) continue;
+      const txt = (el.innerText || '').trim();
+      if (!txt || txt.length > 160) continue;
+      if (normCue(txt) !== normCue(t)) continue;
+      cues.push(el);
+    }
+    const candidates = [];
+    for (const cue of cues) {
+      let scope = cue;
+      for (let i = 0; i < 8 && scope; i++) {
+        const inner = scope.querySelector('input, textarea, select');
+        if (inner) { candidates.push(inner); break; }
+        scope = scope.parentElement;
+      }
+    }
+    return candidates.length ? pickVisible(candidates) : null;
   };
   return new Promise((resolve, reject) => {
     const el = action.selector ? document.querySelector(action.selector) : null;
