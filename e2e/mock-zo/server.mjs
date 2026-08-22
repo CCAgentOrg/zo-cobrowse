@@ -283,13 +283,12 @@ const server = http.createServer(async (req, res) => {
     }
     if (scenario === "fill") {
       const envelope = JSON.stringify({
-        reasoning: "I will fill the name, email, and plan, then submit.",
+        reasoning: "Filling the form fields. The user will review and submit.",
         actions: [
           { type: "fill", selector: "#name", value: "E2E Tester" },
           { type: "fill", selector: "#email", value: "e2e@example.test" },
           { type: "fill", selector: "#plan", value: "pro" },
-          { type: "click", selector: "#submit-btn" },
-          { type: "done", response: "Form filled and submitted." },
+          { type: "done", response: "Form filled — review it and submit when ready." },
         ],
       });
       return streamSse(res, [textStart(envelope), completed()], { delayMs: 40 });

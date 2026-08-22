@@ -102,16 +102,17 @@ describe("ACTION_SCHEMA_COMPACT", () => {
     }
   });
 
-  it("documents fill_form + the sensitive-form rules", () => {
+  it("documents fill_form + the no-auto-submit rule", () => {
     expect(ACTION_SCHEMA_COMPACT).toContain("fill_form{values:[{target,value}]}");
     expect(ACTION_SCHEMA_COMPACT).toMatch(/question\/label\/placeholder text/);
-    expect(ACTION_SCHEMA_COMPACT).toMatch(/never click submit\/pay/i);
+    expect(ACTION_SCHEMA_COMPACT).toMatch(/never click submit.*done\(\)/i);
     expect(ACTION_SCHEMA_COMPACT).toMatch(/password/i);
   });
 
-  it("cobrowse instructions carry the multi-screen pacing rule", () => {
+  it("cobrowse instructions carry the no-auto-submit + pacing rules", () => {
     expect(BUILTIN_MODES.cobrowse.instructions).toMatch(/fill_form/);
     expect(BUILTIN_MODES.cobrowse.instructions).toMatch(/visible section/);
+    expect(BUILTIN_MODES.cobrowse.instructions).toMatch(/never click submit.*done\(\)/i);
   });
 
   it("teaches the context-only pull actions (never cross-tab DOM actions)", () => {
