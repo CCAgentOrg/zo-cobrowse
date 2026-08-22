@@ -78,6 +78,9 @@ function pickScenario(input) {
   if (String(input || "").includes("## Auto-fetched:")) return "pull-followup";
   const q = userRequest(input);
   if (q.includes("schema")) return "pull-form";
+  if (q.includes("checkout")) return "fill-form";
+  if (q.includes("application")) return "app-section-1";
+  if (q.includes("continue") || q.includes("next section")) return "app-section-2";
   if (q.includes("fill")) return "fill";
   if (q.includes("click")) return "click";
   if (q.includes("scroll")) return "scroll";
@@ -233,15 +236,59 @@ const server = http.createServer(async (req, res) => {
       });
       return streamSse(res, [textStart(envelope), completed()], { delayMs: 40 });
     }
+    if (scenario === "app-section-1") {
+      // "Any form" round: builder-style form — target by QUESTION text (the
+      // fields share one placeholder); fill only the VISIBLE section, then
+      // done so the user reviews + advances (co-browse pacing).
+      const envelope = JSON.stringify({
+        reasoning: "This is a one-question-per-screen form; I'll fill the visible section and let the user review it.",
+        actions: [
+          { type: "fill_form", values: [
+            { target: "First name", value: "Ada Lovelace" },
+            { target: "Work email", value: "ada@example.dev" },
+          ] },
+          { type: "done", response: "Filled the visible section — review it and press OK when ready, then ask me to continue." },
+        ],
+      });
+      return streamSse(res, [textStart(envelope), completed()], { delayMs: 40 });
+    }
+    if (scenario === "app-section-2") {
+      const envelope = JSON.stringify({
+        reasoning: "The user advanced to section 2; filling the now-visible section.",
+        actions: [
+          { type: "fill_form", values: [
+            { target: "Share your website", value: "https://ada.example.dev" },
+            { target: "Tell us about you", value: "I build browser tooling." },
+          ] },
+          { type: "done", response: "Section 2 filled — review and submit when ready." },
+        ],
+      });
+      return streamSse(res, [textStart(envelope), completed()], { delayMs: 40 });
+    }
+    if (scenario === "fill-form") {
+      // #26: batch fill by human-facing cues; password/card values omitted by
+      // the prompt rule — the review card lists them as "left for you".
+      const envelope = JSON.stringify({
+        reasoning: "I will batch-fill the checkout form; secrets stay with the user.",
+        actions: [
+          { type: "fill_form", values: [
+            { target: "Email", value: "e2e@example.com" },
+            { target: "Password", value: "" },
+            { target: "Card number", value: "" },
+          ] },
+          { type: "done", response: "Filled what I could — review the card." },
+        ],
+      });
+      return streamSse(res, [textStart(envelope), completed()], { delayMs: 40 });
+    }
     if (scenario === "fill") {
       const envelope = JSON.stringify({
-        reasoning: "I will fill the name, email, and plan, then submit.",
+        reasoning: "Filling the form fields. The user will review and submit.",
         actions: [
           { type: "fill", selector: "#name", value: "E2E Tester" },
           { type: "fill", selector: "#email", value: "e2e@example.test" },
           { type: "fill", selector: "#plan", value: "pro" },
-          { type: "click", selector: "#submit-btn" },
-          { type: "done", response: "Form filled and submitted." },
+          { type: "done", response: "Form filled — review it and submit when ready." },
         ],
       });
       return streamSse(res, [textStart(envelope), completed()], { delayMs: 40 });

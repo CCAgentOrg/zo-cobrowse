@@ -60,6 +60,8 @@ function loadRealRunner(win: Window): { executeAction: Exe; waitForElement: (sel
     "const sleep = (ms) => new Promise(r => setTimeout(r, ms));\n";
   vm.runInContext(
     prologue +
+    extractFn("isValidCssSelector") + "\n" +
+    extractFn("resolveClickTarget") + "\n" +
     extractFn("waitForElement") + "\n" +
     extractFn("executeAction") + "\n" +
     "self.__capture = { waitForElement, executeAction };",
@@ -135,6 +137,17 @@ describe("content.js fill — end-to-end DOM", () => {
 
   it("click path works and returns ok", async () => {
     const res = await executeAction({ type: "click", selector: "#name" });
+    expect(res!.ok).toBe(true);
+  });
+
+  it("click resolves Playwright :has-text() selectors by text content", async () => {
+    // Add a button with visible text so resolveClickTarget can find it.
+    const btn = win.document.createElement("button");
+    btn.textContent = "Subscribe Now";
+    btn.type = "submit";
+    win.document.querySelector("#contact")!.appendChild(btn);
+    // The selector is NOT valid CSS — must fall back to text match.
+    const res = await executeAction({ type: "click", selector: 'button:has-text("Subscribe Now")' });
     expect(res!.ok).toBe(true);
   });
 });
